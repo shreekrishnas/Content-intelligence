@@ -1,4 +1,5 @@
 import { useState, useEffect, lazy, Suspense } from "react";
+import { useAppStore } from "@/store";
 import Atmosphere from "./Atmosphere";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
@@ -26,8 +27,13 @@ const pages: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
 };
 
 export default function AppShell() {
-  const [activeTab, setActiveTab] = useState("analyze");
+  const activeTab = useAppStore((s) => s.activeTab);
+  const setActiveTab = useAppStore((s) => s.setActiveTab);
   const [theme, setTheme] = useState<"light" | "dark">(getInitialTheme);
+
+  useEffect(() => {
+    if (activeTab === "dashboard") setActiveTab("analyze");
+  }, [activeTab, setActiveTab]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -38,17 +44,18 @@ export default function AppShell() {
     setTheme((prev) => (prev === "dark" ? "light" : "dark"));
   };
 
-  const ActivePage = pages[activeTab];
+  const currentTab = activeTab === "dashboard" ? "analyze" : activeTab;
+  const ActivePage = pages[currentTab];
 
   return (
     <div className="app-outer">
       <Atmosphere />
       <div className="app-shell">
         <div className="glass-panel">
-          <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+          <Sidebar activeTab={currentTab} onTabChange={setActiveTab} />
           <div className="app-content">
-            <Topbar activeTab={activeTab} onToggleTheme={toggleTheme} theme={theme} />
-            <div className="app-main page-enter" key={activeTab}>
+            <Topbar activeTab={currentTab} onToggleTheme={toggleTheme} theme={theme} />
+            <div className="app-main page-enter" key={currentTab}>
               <Suspense fallback={<div className="empty-state"><p>Loading...</p></div>}>
                 {ActivePage && <ActivePage />}
               </Suspense>
