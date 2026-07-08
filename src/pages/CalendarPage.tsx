@@ -1,5 +1,8 @@
-import { useState } from 'react';
-import { useAppStore, type CalendarEntry } from '@/store';
+import { useState, useEffect, useCallback } from 'react';
+import { useAccount } from '@/contexts/AccountContext';
+import { api } from '@/lib/api';
+import { auditLog } from '@/lib/audit';
+import type { CalendarItem } from '@/types';
 
 function showToast(msg: string, kind: 'success' | 'error' | 'warn' = 'success') {
   const el = document.createElement('div');
@@ -11,104 +14,87 @@ function showToast(msg: string, kind: 'success' | 'error' | 'warn' = 'success') 
   setTimeout(() => { el.style.transition = 'opacity .3s ease'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3200);
 }
 
-type StatusFilter = 'all' | 'approved' | 'scheduled' | 'published';
+type StatusFilter = 'all' | 'scheduled' | 'published' | 'cancelled';
 
 const STATUS_BADGE: Record<string, { bg: string; color: string; label: string }> = {
-  approved: { bg: '#10B98118', color: '#10B981', label: 'Approved' },
   scheduled: { bg: '#0EA5E918', color: '#0EA5E9', label: 'Scheduled' },
   published: { bg: '#6366F118', color: '#6366F1', label: 'Published' },
+  cancelled: { bg: '#9CA3AF18', color: '#9CA3AF', label: 'Cancelled' },
 };
 
-function getStatus(entry: CalendarEntry): string {
-  if ((entry as any).status === 'published') return 'published';
-  if (entry.scheduled) return 'scheduled';
-  return 'approved';
-}
-
 export default function CalendarPage() {
-  const calendar = useAppStore((s) => s.calendar);
-  const updateCalendarEntry = useAppStore((s) => s.updateCalendarEntry);
-  const deleteCalendarEntry = useAppStore((s) => s.deleteCalendarEntry);
-
-  const [viewEntry, setViewEntry] = useState<CalendarEntry | null>(null);
+  const { accountId } = useAccount();
+  const [items, setItems] = useState<CalendarItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [scheduleId, setScheduleId] = useState<string | null>(null);
   const [scheduleDate, setScheduleDate] = useState('');
 
-  const filtered = calendar
-    .filter((e) => statusFilter === 'all' || getStatus(e) === statusFilter)
+  const loadItems = useCallback(async () => {
+    if (!accountId) return;
+    setLoading(true);
+    const { data } = await api.calendar.list(accountId);
+    setItems(data || []);
+    setLoading(false);
+  }, [accountId]);
+
+  useEffect(() => { loadItems(); }, [loadItems]);
+
+  const filtered = items
+    .filter((e) => statusFilter === 'all' || e.status === statusFilter)
     .sort((a, b) => {
-      if (a.scheduled && b.scheduled) return new Date(a.scheduled).getTime() - new Date(b.scheduled).getTime();
-      if (a.scheduled) return -1;
-      if (b.scheduled) return 1;
-      return b.approvedAt - a.approvedAt;
+      if (a.scheduled_for && b.scheduled_for) return new Date(a.scheduled_for).getTime() - new Date(b.scheduled_for).getTime();
+      if (a.scheduled_for) return -1;
+      if (b.scheduled_for) return 1;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
 
-  const counts = { all: calendar.length, approved: 0, scheduled: 0, published: 0 };
-  calendar.forEach((e) => {
-    const s = getStatus(e);
-    if (s === 'approved') counts.approved++;
-    else if (s === 'scheduled') counts.scheduled++;
-    else if (s === 'published') counts.published++;
+  const counts = { all: items.length, scheduled: 0, published: 0, cancelled: 0 };
+  items.forEach((e) => {
+    if (e.status in counts) (counts as any)[e.status]++;
   });
 
-  function handleSchedule(id: string) {
-    if (!scheduleDate) {
-      showToast('Pick a date and time first', 'warn');
-      return;
-    }
-    updateCalendarEntry(id, { scheduled: scheduleDate });
+  async function handleSchedule(id: string) {
+    if (!scheduleDate) { showToast('Pick a date first', 'warn'); return; }
+    const { error } = await api.calendar.schedule(id, scheduleDate);
+    if (error) { showToast(error, 'error'); return; }
+
+    await auditLog({
+      accountId: accountId!,
+      action: 'schedule',
+      targetType: 'calendar_item',
+      targetId: id,
+      detail: { scheduled_for: scheduleDate },
+    });
+
     setScheduleId(null);
     setScheduleDate('');
     showToast('Content scheduled');
+    loadItems();
   }
 
-  function handleMarkPublished(id: string) {
-    updateCalendarEntry(id, { scheduled: calendar.find((c) => c.id === id)?.scheduled ?? new Date().toISOString() } as any);
-    const entry = calendar.find((c) => c.id === id);
-    if (entry) {
-      updateCalendarEntry(id, { ...entry, scheduled: entry.scheduled } as any);
-    }
-    useAppStore.setState((s) => ({
-      calendar: s.calendar.map((c) => c.id === id ? { ...c, status: 'published' } as any : c),
-    }));
-    showToast('Marked as published');
-  }
+  async function handleExport(item: CalendarItem) {
+    const { data, error } = await api.calendar.export(item.id);
+    if (error) { showToast(error, 'error'); return; }
 
-  function handleCopyContent(entry: CalendarEntry) {
-    navigator.clipboard.writeText(entry.draft).then(
-      () => showToast('Content copied to clipboard'),
-      () => showToast('Copy failed', 'error'),
-    );
-  }
-
-  function handleExport(entry: CalendarEntry) {
-    const status = getStatus(entry);
-    const text = [
-      `Title: ${entry.title}`,
-      `Format: ${entry.format}`,
-      `Status: ${status}`,
-      `Approved: ${new Date(entry.approvedAt).toLocaleDateString()}`,
-      entry.scheduled ? `Scheduled: ${new Date(entry.scheduled).toLocaleString()}` : '',
-      '',
-      '---',
-      '',
-      entry.draft,
-    ].filter(Boolean).join('\n');
-
-    const blob = new Blob([text], { type: 'text/plain' });
+    const blob = new Blob([data!], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${entry.title.replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
+    a.download = `${(item.title || 'content').replace(/[^a-zA-Z0-9]/g, '_')}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('Exported as .txt');
+    showToast('Exported');
   }
 
-  function handleDelete(id: string) {
-    deleteCalendarEntry(id);
-    showToast('Entry removed');
+  if (loading) {
+    return (
+      <div>
+        <p className="eyebrow">Publishing</p>
+        <h1 className="page-title">Content Calendar</h1>
+        <div className="empty-state"><p>Loading...</p></div>
+      </div>
+    );
   }
 
   return (
@@ -118,7 +104,7 @@ export default function CalendarPage() {
       <p className="page-desc">Approved content ready for scheduling and publishing.</p>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-        {(['all', 'approved', 'scheduled', 'published'] as StatusFilter[]).map((s) => (
+        {(['all', 'scheduled', 'published', 'cancelled'] as StatusFilter[]).map((s) => (
           <button
             key={s}
             className="badge"
@@ -132,54 +118,44 @@ export default function CalendarPage() {
 
       {filtered.length === 0 ? (
         <div className="empty-state">
-          <p>No {statusFilter === 'all' ? 'approved content' : `${statusFilter} content`} yet.</p>
-          <p style={{ marginTop: 8, opacity: 0.7 }}>Approve drafts in the Studio to populate the calendar.</p>
+          <p>{items.length === 0 ? 'No calendar items yet. Approve drafts in Studio to populate the calendar.' : `No ${statusFilter} content.`}</p>
         </div>
       ) : (
         <div className="glass-card-static" style={{ padding: 0 }}>
-          {filtered.map((entry, i) => {
-            const status = getStatus(entry);
-            const badge = STATUS_BADGE[status] || STATUS_BADGE.approved;
+          {filtered.map((item, i) => {
+            const badge = STATUS_BADGE[item.status] || STATUS_BADGE.scheduled;
             return (
-              <div key={entry.id}>
+              <div key={item.id}>
                 <div
                   style={{
                     display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px',
-                    borderBottom: i < filtered.length - 1 && scheduleId !== entry.id ? '1px solid var(--border)' : undefined,
+                    borderBottom: i < filtered.length - 1 && scheduleId !== item.id ? '1px solid var(--border)' : undefined,
                     flexWrap: 'wrap',
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 180 }}>
-                    <p style={{ fontWeight: 600, fontSize: 14 }}>{entry.title}</p>
+                    <p style={{ fontWeight: 600, fontSize: 14 }}>{item.title || 'Untitled'}</p>
                     <p style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
-                      {entry.format} &middot; Approved {new Date(entry.approvedAt).toLocaleDateString()}
-                      {entry.scheduled && ` · Scheduled ${new Date(entry.scheduled).toLocaleString()}`}
+                      {item.format || 'N/A'}
+                      {item.scheduled_for && ` · ${new Date(item.scheduled_for).toLocaleString()}`}
                     </p>
                   </div>
 
                   <span className="badge" style={{ background: badge.bg, color: badge.color }}>{badge.label}</span>
 
-                  <button className="btn btn-ghost btn-sm" onClick={() => setViewEntry(entry)}>View</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => handleCopyContent(entry)}>Copy</button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleExport(entry)}>Export</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleExport(item)}>Export</button>
 
-                  {status === 'approved' && (
+                  {item.status === 'scheduled' && !item.scheduled_for && (
                     <button
                       className="btn btn-primary btn-sm"
-                      onClick={() => { setScheduleId(scheduleId === entry.id ? null : entry.id); setScheduleDate(''); }}
+                      onClick={() => { setScheduleId(scheduleId === item.id ? null : item.id); setScheduleDate(''); }}
                     >
-                      Schedule
+                      Set Date
                     </button>
                   )}
-                  {status === 'scheduled' && (
-                    <button className="btn btn-primary btn-sm" onClick={() => handleMarkPublished(entry.id)}>
-                      Mark Published
-                    </button>
-                  )}
-                  <button className="btn btn-danger btn-sm" onClick={() => handleDelete(entry.id)}>Remove</button>
                 </div>
 
-                {scheduleId === entry.id && (
+                {scheduleId === item.id && (
                   <div style={{
                     padding: '12px 20px', background: 'var(--surface-card)',
                     borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : undefined,
@@ -192,57 +168,13 @@ export default function CalendarPage() {
                       onChange={(e) => setScheduleDate(e.target.value)}
                       style={{ flex: 1, minWidth: 200 }}
                     />
-                    <button className="btn btn-primary btn-sm" onClick={() => handleSchedule(entry.id)}>Confirm</button>
+                    <button className="btn btn-primary btn-sm" onClick={() => handleSchedule(item.id)}>Confirm</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => setScheduleId(null)}>Cancel</button>
                   </div>
                 )}
               </div>
             );
           })}
-        </div>
-      )}
-
-      {viewEntry && (
-        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setViewEntry(null); }}>
-          <div className="glass-modal">
-            <h3 style={{ fontWeight: 700, marginBottom: 4 }}>{viewEntry.title}</h3>
-            <p style={{ fontSize: 12, opacity: 0.6, marginBottom: 8 }}>
-              {viewEntry.format} &middot; Approved {new Date(viewEntry.approvedAt).toLocaleDateString()}
-            </p>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-              <span className="badge" style={{ background: STATUS_BADGE[getStatus(viewEntry)].bg, color: STATUS_BADGE[getStatus(viewEntry)].color }}>
-                {STATUS_BADGE[getStatus(viewEntry)].label}
-              </span>
-              {viewEntry.scheduled && (
-                <span className="badge">Scheduled: {new Date(viewEntry.scheduled).toLocaleString()}</span>
-              )}
-            </div>
-
-            {viewEntry.quality && (
-              <div style={{ marginBottom: 12 }}>
-                <h4 style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Quality</h4>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {Object.entries(viewEntry.quality).map(([k, v]) => {
-                    const color = v === 'ok' ? '#10B981' : v === 'fail' ? '#DC2626' : '#F59E0B';
-                    return (
-                      <span key={k} style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-                        {k}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div className="hairline" />
-            <pre style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.6 }}>{viewEntry.draft}</pre>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-              <button className="btn btn-ghost btn-sm" onClick={() => handleCopyContent(viewEntry)}>Copy</button>
-              <button className="btn btn-secondary btn-sm" onClick={() => handleExport(viewEntry)}>Export</button>
-              <button className="btn btn-ghost" onClick={() => setViewEntry(null)}>Close</button>
-            </div>
-          </div>
         </div>
       )}
     </div>

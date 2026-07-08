@@ -1,21 +1,15 @@
-import { useState, useEffect, lazy, Suspense } from "react";
-import { useAppStore } from "@/store";
-import Atmosphere from "./Atmosphere";
-import Sidebar from "./Sidebar";
-import Topbar from "./Topbar";
+import { useEffect, lazy, Suspense } from 'react';
+import { useAppStore } from '@/store';
+import Atmosphere from './Atmosphere';
+import Sidebar from './Sidebar';
+import Topbar from './Topbar';
 
-const AnalyzePage = lazy(() => import("@/pages/AnalyzePage"));
-const OpportunitiesPage = lazy(() => import("@/pages/OpportunitiesPage"));
-const StudioPage = lazy(() => import("@/pages/StudioPage"));
-const KnowledgeBasePage = lazy(() => import("@/pages/KnowledgeBasePage"));
-const CalendarPage = lazy(() => import("@/pages/CalendarPage"));
-const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
-
-function getInitialTheme(): "light" | "dark" {
-  const stored = localStorage.getItem("theme");
-  if (stored === "light" || stored === "dark") return stored;
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
+const AnalyzePage = lazy(() => import('@/pages/AnalyzePage'));
+const OpportunitiesPage = lazy(() => import('@/pages/OpportunitiesPage'));
+const StudioPage = lazy(() => import('@/pages/StudioPage'));
+const KnowledgeBasePage = lazy(() => import('@/pages/KnowledgeBasePage'));
+const CalendarPage = lazy(() => import('@/pages/CalendarPage'));
+const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 
 const pages: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
   analyze: AnalyzePage,
@@ -29,22 +23,18 @@ const pages: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
 export default function AppShell() {
   const activeTab = useAppStore((s) => s.activeTab);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
-  const [theme, setTheme] = useState<"light" | "dark">(getInitialTheme);
+  const theme = useAppStore((s) => s.theme);
+  const toggleTheme = useAppStore((s) => s.toggleTheme);
 
   useEffect(() => {
-    if (activeTab === "dashboard") setActiveTab("analyze");
+    if (activeTab === 'dashboard') setActiveTab('analyze');
   }, [activeTab, setActiveTab]);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("theme", theme);
+    document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
-  };
-
-  const currentTab = activeTab === "dashboard" ? "analyze" : activeTab;
+  const currentTab = activeTab === 'dashboard' ? 'analyze' : activeTab;
   const ActivePage = pages[currentTab];
 
   return (
