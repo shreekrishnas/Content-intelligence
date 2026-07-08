@@ -2,8 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppStore } from '@/store';
 import type { KnowledgeFile, OpportunityItem, AnalysisItem } from '@/store';
 import { api } from '@/lib/api';
-
-const supabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL;
+import { supabaseConfigured } from '@/lib/supabase';
 
 const SOURCE_TYPES = [
   { id: 'et_video', label: 'ET Video', formats: ['Blog', 'Voice Page', 'Single Image', 'Carousel'] },

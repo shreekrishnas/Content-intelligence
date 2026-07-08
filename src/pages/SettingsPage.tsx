@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useAppStore, type IntegrationItem } from '@/store';
 import { useAuthStore } from '@/stores/authStore';
-
-const supabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL;
+import { supabaseConfigured } from '@/lib/supabase';
 
 function showToast(msg: string, kind: 'success' | 'error' | 'warn' = 'success') {
   const el = document.createElement('div');

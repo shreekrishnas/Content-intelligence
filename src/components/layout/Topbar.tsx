@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/stores/authStore";
+import { supabaseConfigured } from "@/lib/supabase";
 
 interface TopbarProps {
   activeTab: string;
@@ -45,7 +46,7 @@ export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps)
         <div className="topbar-sub">{meta.subtitle}</div>
       </div>
       <div className="topbar-right">
-        <span className="pill">{import.meta.env.VITE_SUPABASE_URL ? '● Connected' : '○ Local mode'}</span>
+        <span className="pill">{supabaseConfigured ? '● Connected' : '○ Local mode'}</span>
         {user && (
           <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
             {user.name || user.email}

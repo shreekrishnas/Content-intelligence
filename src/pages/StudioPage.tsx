@@ -1,9 +1,9 @@
 import { useState, useRef } from 'react';
 import { useAppStore, type OpportunityItem } from '@/store';
 import { api } from '@/lib/api';
+import { supabaseConfigured } from '@/lib/supabase';
 
 const uid = (prefix: string) => prefix + '_' + Math.random().toString(36).slice(2, 9);
-const supabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL;
 
 function showToast(msg: string, kind: 'success' | 'error' | 'warn' = 'success') {
   const el = document.createElement('div');

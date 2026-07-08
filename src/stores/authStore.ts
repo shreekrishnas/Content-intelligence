@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { supabase } from "@/lib/supabase";
+import { supabase, supabaseConfigured } from "@/lib/supabase";
 import type { User } from "@/types";
 import type { Session, AuthChangeEvent } from "@supabase/supabase-js";
 
@@ -140,8 +140,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   loginDemo: () => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    if (supabaseUrl) {
+    if (supabaseConfigured) {
       // Supabase is configured; demo mode should not be used
       return;
     }

@@ -4,7 +4,7 @@ import { useAuthStore } from "./stores/authStore";
 import AppShell from "./components/layout/AppShell";
 import { ToastProvider } from "./components/ui/Toast";
 
-const supabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL;
+import { supabaseConfigured } from "./lib/supabase";
 
 function AuthPage() {
   const { signIn, signUp, loginDemo, loading, error } = useAuthStore();
