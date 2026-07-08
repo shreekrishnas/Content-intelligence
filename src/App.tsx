@@ -49,54 +49,6 @@ function ErrorScreen({ title, message }: { title: string; message: string }) {
   );
 }
 
-function SetupScreen() {
-  return (
-    <div className="app-outer">
-      <div className="atmosphere" />
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '100vh',
-          position: 'relative',
-          zIndex: 1,
-        }}
-      >
-        <div
-          className="glass-card-static"
-          style={{ maxWidth: 520, width: '100%', padding: '2.5rem', textAlign: 'center' }}
-        >
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: '1rem',
-              background: 'linear-gradient(135deg, #F59E0B, #D97706)',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: '1rem',
-            }}
-          >
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2l1.8 5.6L19 9.5l-5.2 1.9L12 17l-1.8-5.6L5 9.5l5.2-1.9L12 2z" />
-            </svg>
-          </div>
-          <h1 className="page-title" style={{ marginBottom: 8 }}>Setup Required</h1>
-          <p className="page-desc" style={{ marginBottom: '1.5rem' }}>
-            The database connection is not configured yet. Set <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> environment variables to connect.
-          </p>
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', background: 'var(--bg-secondary)', borderRadius: '0.5rem', padding: '1rem', textAlign: 'left' }}>
-            <p style={{ margin: '0 0 0.5rem' }}>1. Create a Supabase project</p>
-            <p style={{ margin: '0 0 0.5rem' }}>2. Run the migration scripts from <code>supabase/migrations/</code></p>
-            <p style={{ margin: 0 }}>3. Add the project URL and anon key to your environment</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function LoadingScreen() {
   return (
@@ -114,15 +66,10 @@ function AccountGate() {
 
   if (loading) return <LoadingScreen />;
 
-  if (error === 'not_configured') return <SetupScreen />;
-
-  if (error === 'no_account') {
-    return (
-      <ErrorScreen
-        title="No Account Selected"
-        message="This app must be opened from your dashboard with an account_id parameter. Navigate to your dashboard and select an account to continue."
-      />
-    );
+  // When DB is not configured or no account_id, let the user through
+  // so they can explore the UI. Pages show empty states gracefully.
+  if (error === 'not_configured' || error === 'no_account') {
+    return <AppShell />;
   }
 
   if (error === 'access_denied' || error === 'not_found') {
@@ -134,7 +81,7 @@ function AccountGate() {
     );
   }
 
-  if (!account) return <LoadingScreen />;
+  if (!account && accountId) return <LoadingScreen />;
 
   return <AppShell />;
 }
