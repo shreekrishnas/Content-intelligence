@@ -1,14 +1,20 @@
 import { create } from "zustand";
-import type { User } from "../types";
+import { supabase } from "@/lib/supabase";
+import type { User } from "@/types";
+import type { Session, AuthChangeEvent } from "@supabase/supabase-js";
 
 interface AuthState {
   user: User | null;
-  /** Enter demo mode with a fake user (no Supabase required). */
+  session: Session | null;
+  loading: boolean;
+  error: string | null;
+  initialized: boolean;
+
+  initialize: () => Promise<void>;
+  signUp: (email: string, password: string, name: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
+  signOut: () => Promise<void>;
   loginDemo: () => void;
-  /** Clear the current session. */
-  logout: () => void;
-  /** Set user directly (used when Supabase auth is wired up). */
-  setUser: (user: User | null) => void;
 }
 
 const DEMO_USER: User = {
@@ -20,12 +26,125 @@ const DEMO_USER: User = {
   created_at: new Date().toISOString(),
 };
 
-export const useAuthStore = create<AuthState>((set) => ({
+function mapSupabaseUser(supaUser: { id: string; email?: string; user_metadata: Record<string, any>; created_at: string }): User {
+  const meta = supaUser.user_metadata ?? {};
+  return {
+    id: supaUser.id,
+    org_id: meta.org_id ?? "",
+    name: meta.name ?? meta.full_name ?? null,
+    email: supaUser.email ?? "",
+    is_org_admin: meta.is_org_admin ?? false,
+    created_at: supaUser.created_at,
+  };
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
+  session: null,
+  loading: false,
+  error: null,
+  initialized: false,
 
-  loginDemo: () => set({ user: DEMO_USER }),
+  initialize: async () => {
+    // Skip if already initialized
+    if (get().initialized) return;
 
-  logout: () => set({ user: null }),
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
 
-  setUser: (user) => set({ user }),
+      if (data.session) {
+        set({
+          session: data.session,
+          user: mapSupabaseUser(data.session.user),
+          initialized: true,
+        });
+      } else {
+        set({ initialized: true });
+      }
+    } catch {
+      // If Supabase is not configured, just mark as initialized
+      set({ initialized: true });
+    }
+
+    // Listen for auth state changes
+    supabase.auth.onAuthStateChange(
+      (_event: AuthChangeEvent, session: Session | null) => {
+        if (session) {
+          set({
+            session,
+            user: mapSupabaseUser(session.user),
+          });
+        } else {
+          set({ session: null, user: null });
+        }
+      },
+    );
+  },
+
+  signUp: async (email, password, name) => {
+    set({ loading: true, error: null });
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { name },
+        },
+      });
+      if (error) throw error;
+
+      if (data.session) {
+        set({
+          session: data.session,
+          user: mapSupabaseUser(data.session.user),
+          loading: false,
+        });
+      } else {
+        // Email confirmation required
+        set({ loading: false, error: "Check your email to confirm your account." });
+      }
+    } catch (err: any) {
+      set({ loading: false, error: err.message ?? "Sign up failed" });
+    }
+  },
+
+  signIn: async (email, password) => {
+    set({ loading: true, error: null });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+
+      set({
+        session: data.session,
+        user: mapSupabaseUser(data.session.user),
+        loading: false,
+      });
+    } catch (err: any) {
+      set({ loading: false, error: err.message ?? "Sign in failed" });
+    }
+  },
+
+  signOut: async () => {
+    set({ loading: true, error: null });
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      set({ user: null, session: null, loading: false });
+    } catch (err: any) {
+      set({ loading: false, error: err.message ?? "Sign out failed" });
+    }
+  },
+
+  loginDemo: () => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (supabaseUrl) {
+      // Supabase is configured; demo mode should not be used
+      return;
+    }
+    set({ user: DEMO_USER, session: null, error: null });
+  },
 }));

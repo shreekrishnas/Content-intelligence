@@ -1,3 +1,5 @@
+import { useAuthStore } from "@/stores/authStore";
+
 interface TopbarProps {
   activeTab: string;
   onToggleTheme: () => void;
@@ -27,12 +29,14 @@ const tabMeta: Record<string, { title: string; subtitle: string }> = {
   },
   settings: {
     title: "Settings",
-    subtitle: "Integration status — nothing here pretends to be connected when it isn't.",
+    subtitle: "Integration status and account configuration.",
   },
 };
 
 export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps) {
   const meta = tabMeta[activeTab] ?? { title: activeTab, subtitle: "" };
+  const user = useAuthStore((s) => s.user);
+  const signOut = useAuthStore((s) => s.signOut);
 
   return (
     <div className="topbar">
@@ -41,7 +45,12 @@ export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps)
         <div className="topbar-sub">{meta.subtitle}</div>
       </div>
       <div className="topbar-right">
-        <span className="pill">&#9888; Demo mode — AI calls are mocked</span>
+        <span className="pill">{import.meta.env.VITE_SUPABASE_URL ? '● Connected' : '○ Local mode'}</span>
+        {user && (
+          <span style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+            {user.name || user.email}
+          </span>
+        )}
         <div className="icon-btn" onClick={onToggleTheme} title="Toggle theme">
           {theme === "dark" ? (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
@@ -53,6 +62,13 @@ export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps)
               <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />
             </svg>
           )}
+        </div>
+        <div className="icon-btn" onClick={() => signOut()} title="Sign out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
         </div>
       </div>
     </div>

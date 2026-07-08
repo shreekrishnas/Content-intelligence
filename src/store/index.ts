@@ -23,6 +23,9 @@ export interface KnowledgeFile {
   sample: boolean;
   uploadedAt: number;
   personaMeta?: PersonaMeta;
+  content?: string;
+  fileSize?: number;
+  chunkCount?: number;
 }
 
 export interface IntegrationItem {
@@ -33,6 +36,8 @@ export interface IntegrationItem {
   provider: string;
   status: string;
   fallback: string;
+  config?: Record<string, string>;
+  lastTested?: number;
 }
 
 export interface OpportunityItem {
@@ -138,12 +143,11 @@ export interface AppState {
   // Calendar
   calendar: CalendarEntry[];
   addCalendarEntry: (entry: CalendarEntry) => void;
+  updateCalendarEntry: (id: string, updates: Partial<CalendarEntry>) => void;
+  deleteCalendarEntry: (id: string) => void;
 
-  // Auth (simplified for demo)
-  user: { id: string; email: string; name: string } | null;
-  activeAccountId: string | null;
-  setUser: (user: AppState['user']) => void;
-  setActiveAccountId: (id: string | null) => void;
+  // Integrations update
+  updateIntegration: (id: string, updates: Partial<IntegrationItem>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -274,7 +278,7 @@ const defaultIntegrations: IntegrationItem[] = [
     provider: 'Claude API',
     status: 'Not Connected',
     fallback:
-      'Showing sample analysis using keyword heuristics (DEMO MODE).',
+      'Local keyword-heuristic analysis when API is not connected.',
   },
   {
     id: 'urlfetch',
@@ -329,14 +333,12 @@ const defaultIntegrations: IntegrationItem[] = [
 
 type AppPersist = PersistOptions<AppState, Pick<AppState,
   'theme' | 'activeTab' | 'kb' | 'integrations' | 'analyses' |
-  'opportunities' | 'activeStudioOpp' | 'studioAsset' | 'calendar' |
-  'user' | 'activeAccountId'
+  'opportunities' | 'activeStudioOpp' | 'studioAsset' | 'calendar'
 >>;
 
 const persistConfig: AppPersist = {
-  name: 'cia_rh_state_v1',
+  name: 'cia_rh_state_v2',
 
-  // Only persist data slices, not action functions.
   partialize: (state) => ({
     theme: state.theme,
     activeTab: state.activeTab,
@@ -347,8 +349,6 @@ const persistConfig: AppPersist = {
     activeStudioOpp: state.activeStudioOpp,
     studioAsset: state.studioAsset,
     calendar: state.calendar,
-    user: state.user,
-    activeAccountId: state.activeAccountId,
   }),
 
   // Deep-merge persisted state with defaults so newly added fields never
@@ -422,12 +422,22 @@ export const useAppStore = create<AppState>()(
       calendar: [],
       addCalendarEntry: (entry) =>
         set((s) => ({ calendar: [...s.calendar, entry] })),
+      updateCalendarEntry: (id, updates) =>
+        set((s) => ({
+          calendar: s.calendar.map((c) =>
+            c.id === id ? { ...c, ...updates } : c,
+          ),
+        })),
+      deleteCalendarEntry: (id) =>
+        set((s) => ({ calendar: s.calendar.filter((c) => c.id !== id) })),
 
-      // ----- Auth -----
-      user: null,
-      activeAccountId: null,
-      setUser: (user) => set({ user }),
-      setActiveAccountId: (id) => set({ activeAccountId: id }),
+      // ----- Integrations -----
+      updateIntegration: (id, updates) =>
+        set((s) => ({
+          integrations: s.integrations.map((i) =>
+            i.id === id ? { ...i, ...updates } : i,
+          ),
+        })),
     }),
     persistConfig,
   ),
