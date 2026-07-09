@@ -1,6 +1,6 @@
+import { useState, useRef, useEffect } from 'react';
 import { useAccount } from '@/contexts/AccountContext';
 import { useAuthStore } from '@/stores/authStore';
-import { supabaseConfigured } from '@/lib/supabase';
 
 interface TopbarProps {
   activeTab: string;
@@ -35,9 +35,118 @@ const tabMeta: Record<string, { title: string; subtitle: string }> = {
   },
 };
 
+function AccountSwitcher() {
+  const { account, accounts, switchAccount } = useAccount();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 12px',
+          borderRadius: 8,
+          border: '1px solid var(--border)',
+          background: 'var(--surface-card)',
+          color: 'var(--text-primary)',
+          fontSize: '0.78rem',
+          fontWeight: 600,
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <span style={{
+          width: 8, height: 8, borderRadius: '50%',
+          background: 'var(--status-success)', flexShrink: 0,
+        }} />
+        {account?.name || 'Select Account'}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+          style={{ transform: open ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s ease' }}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(100% + 4px)',
+          right: 0,
+          minWidth: 200,
+          background: 'var(--surface-card)',
+          border: '1px solid var(--border)',
+          borderRadius: 10,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          zIndex: 100,
+          overflow: 'hidden',
+          backdropFilter: 'blur(20px)',
+        }}>
+          <div style={{
+            padding: '8px 12px',
+            fontSize: '0.65rem',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            color: 'var(--text-muted)',
+            borderBottom: '1px solid var(--border)',
+          }}>
+            Switch Account
+          </div>
+          {accounts.map((acc) => {
+            const isActive = acc.id === account?.id;
+            return (
+              <button
+                key={acc.id}
+                onClick={() => { switchAccount(acc.id); setOpen(false); }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: 'none',
+                  background: isActive ? 'var(--accent-primary)' : 'transparent',
+                  color: isActive ? '#fff' : 'var(--text-primary)',
+                  fontSize: '0.8rem',
+                  fontWeight: isActive ? 600 : 400,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) (e.target as HTMLElement).style.background = 'var(--surface-hover)';
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) (e.target as HTMLElement).style.background = 'transparent';
+                }}
+              >
+                <span style={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: isActive ? '#fff' : 'var(--text-muted)',
+                  flexShrink: 0, opacity: isActive ? 1 : 0.4,
+                }} />
+                {acc.name}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps) {
   const meta = tabMeta[activeTab] ?? { title: activeTab, subtitle: '' };
-  const { account } = useAccount();
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
 
@@ -48,14 +157,7 @@ export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps)
         <div className="topbar-sub">{meta.subtitle}</div>
       </div>
       <div className="topbar-right">
-        {account && (
-          <span className="pill" title={`Account: ${account.id}`}>
-            {account.name}
-          </span>
-        )}
-        {!account && (
-          <span className="pill">{supabaseConfigured ? 'Connected' : 'Setup Required'}</span>
-        )}
+        <AccountSwitcher />
         {user && (
           <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
             {user.name || user.email}
