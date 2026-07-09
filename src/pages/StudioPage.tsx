@@ -17,21 +17,60 @@ function showToast(msg: string, kind: 'success' | 'error' | 'warn' = 'success') 
   setTimeout(() => { el.style.transition = 'opacity .3s ease'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3200);
 }
 
-function QualityPanel({ quality }: { quality: Record<string, string> }) {
+function QualityPanel({ quality }: { quality: any }) {
+  if (!quality) return null;
+
+  const scores = quality.scores || {};
+  const issues = quality.issues || [];
+
   return (
     <div className="glass-card-static" style={{ padding: 20, marginBottom: 16 }}>
       <h4 style={{ fontWeight: 700, marginBottom: 12 }}>Quality Review</h4>
-      <div className="grid grid-4">
-        {Object.entries(quality).map(([k, v]) => {
-          const color = v === 'ok' ? '#10B981' : v === 'fail' ? '#DC2626' : '#F59E0B';
-          return (
-            <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
-              <span style={{ fontSize: 13 }}>{k}</span>
-            </div>
-          );
-        })}
-      </div>
+
+      {Object.keys(scores).length > 0 && (
+        <div className="grid grid-4" style={{ gap: 8, marginBottom: 16 }}>
+          {Object.entries(scores).map(([k, v]) => {
+            const score = Number(v);
+            const color = score >= 0.8 ? '#10B981' : score >= 0.5 ? '#F59E0B' : '#DC2626';
+            return (
+              <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>{k.replace(/_/g, ' ')}</div>
+                  <div style={{ fontSize: 11, opacity: 0.7 }}>{(score * 100).toFixed(0)}%</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {issues.length > 0 && (
+        <div>
+          <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8 }}>Issues</div>
+          {issues.map((issue: any, i: number) => {
+            const sevColor = issue.severity === 'high' ? '#DC2626' : issue.severity === 'medium' ? '#F59E0B' : '#9CA3AF';
+            return (
+              <div key={i} style={{ padding: '8px 0', borderBottom: i < issues.length - 1 ? '1px solid var(--border)' : undefined }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+                  <span className="badge" style={{ fontSize: '0.6rem', background: sevColor + '18', color: sevColor }}>{issue.severity}</span>
+                  <span className="badge" style={{ fontSize: '0.6rem' }}>{issue.category}</span>
+                </div>
+                <div style={{ fontSize: 13 }}>{issue.description}</div>
+                {issue.suggestion && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{issue.suggestion}</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {quality.visual_recommendation && (
+        <div style={{ marginTop: 16, padding: 12, background: 'var(--surface-card)', borderRadius: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Visual Recommendation</div>
+          <div style={{ fontSize: 13 }}>{quality.visual_recommendation.concept}</div>
+          <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>Format: {quality.visual_recommendation.format}</div>
+        </div>
+      )}
     </div>
   );
 }
@@ -146,12 +185,17 @@ export default function StudioPage() {
       setWorkingMsg('Generating outline...');
       try {
         const kbChunks = await getKbChunks();
-        const res = await api.studio.generateOutline(activeOpp!.id, kbChunks);
+        const res = await api.studio.generateOutline(activeOpp!, kbChunks);
         if (res.error) throw new Error(res.error);
+
+        const output = res.data;
+        const outlineText = typeof output === 'string'
+          ? output
+          : formatOutline(output);
 
         setStudioAsset({
           stage: 'outline',
-          outline: res.data!,
+          outline: outlineText,
           draft: '',
           feedbackLog: [],
           sourceRefs: [],
@@ -185,7 +229,8 @@ export default function StudioPage() {
           <div className="grid grid-2" style={{ gap: 12 }}>
             <ContextRow label="Content Angle" value={activeOpp.content_angle || 'N/A'} />
             <ContextRow label="Format" value={activeOpp.format || 'N/A'} />
-            {(activeOpp as any).persona_name && <ContextRow label="Persona" value={(activeOpp as any).persona_name} />}
+            {activeOpp.persona_name && <ContextRow label="Persona" value={activeOpp.persona_name} />}
+            {activeOpp.priority && <ContextRow label="Priority" value={activeOpp.priority} />}
           </div>
         </div>
 
@@ -209,14 +254,19 @@ export default function StudioPage() {
     try {
       const currentContent = contentRef.current?.innerText || (stage === 'outline' ? asset.outline : asset.draft);
       const kbChunks = await getKbChunks();
-      const res = await api.studio.regenerate(currentContent, feedback, kbChunks);
+      const res = await api.studio.regenerate(activeOpp!, currentContent, feedback, kbChunks);
       if (res.error) throw new Error(res.error);
+
+      const output = res.data;
+      const newContent = typeof output === 'string'
+        ? output
+        : (output?.content || JSON.stringify(output, null, 2));
 
       const newLog = [...asset.feedbackLog, { stage, feedback, at: Date.now() }];
       if (stage === 'outline') {
-        setStudioAsset({ ...asset, outline: res.data!, feedbackLog: newLog });
+        setStudioAsset({ ...asset, outline: newContent, feedbackLog: newLog });
       } else {
-        setStudioAsset({ ...asset, draft: res.data!, feedbackLog: newLog });
+        setStudioAsset({ ...asset, draft: newContent, feedbackLog: newLog });
       }
       setFeedback('');
       showToast('Content regenerated');
@@ -234,10 +284,15 @@ export default function StudioPage() {
     setWorkingMsg('Generating draft from outline...');
     try {
       const kbChunks = await getKbChunks();
-      const res = await api.studio.generateDraft(activeOpp!.id, outlineText, kbChunks);
+      const res = await api.studio.generateDraft(activeOpp!, outlineText, kbChunks);
       if (res.error) throw new Error(res.error);
 
-      setStudioAsset({ ...asset, stage: 'draft', outline: outlineText, draft: res.data! });
+      const output = res.data;
+      const draftText = typeof output === 'string'
+        ? output
+        : (output?.content || JSON.stringify(output, null, 2));
+
+      setStudioAsset({ ...asset, stage: 'draft', outline: outlineText, draft: draftText });
 
       await auditLog({
         accountId: accountId!,
@@ -261,7 +316,7 @@ export default function StudioPage() {
     setWorkingMsg('Running quality review...');
     try {
       const kbChunks = await getKbChunks();
-      const res = await api.studio.qualityReview(draftText, kbChunks);
+      const res = await api.studio.qualityReview(activeOpp!, draftText, kbChunks);
       if (res.error) throw new Error(res.error);
 
       setStudioAsset({ ...asset, stage: 'approved', draft: draftText, quality: res.data });
@@ -291,6 +346,7 @@ export default function StudioPage() {
       format: activeOpp!.format,
       scheduled_for: null,
       status: 'scheduled',
+      body: asset.draft,
     });
     if (error) { showToast(error, 'error'); return; }
 
@@ -327,7 +383,7 @@ export default function StudioPage() {
             <pre style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.6 }}>{asset.draft}</pre>
           </div>
 
-          {asset.quality && <QualityPanel quality={asset.quality} />}
+          <QualityPanel quality={asset.quality} />
 
           {!asset.calendared ? (
             <button className="btn btn-brand" onClick={handleSendToCalendar}>Send to Calendar</button>
@@ -375,4 +431,40 @@ export default function StudioPage() {
       )}
     </div>
   );
+}
+
+function formatOutline(output: any): string {
+  if (!output) return '';
+  const lines: string[] = [];
+  if (output.title) lines.push(`# ${output.title}\n`);
+  if (output.format) lines.push(`Format: ${output.format}`);
+  if (output.target_persona) lines.push(`Target Persona: ${output.target_persona}`);
+  if (output.estimated_word_count) lines.push(`Estimated Words: ${output.estimated_word_count}`);
+  lines.push('');
+
+  if (output.sections?.length) {
+    output.sections.forEach((s: any, i: number) => {
+      lines.push(`## ${i + 1}. ${s.heading}`);
+      if (s.purpose) lines.push(`Purpose: ${s.purpose}`);
+      s.key_points?.forEach((p: string) => lines.push(`  - ${p}`));
+      if (s.estimated_words) lines.push(`  (~${s.estimated_words} words)`);
+      lines.push('');
+    });
+  }
+
+  if (output.key_messages?.length) {
+    lines.push('### Key Messages');
+    output.key_messages.forEach((m: string) => lines.push(`- ${m}`));
+    lines.push('');
+  }
+
+  if (output.suggested_cta && output.suggested_cta !== 'N/A') {
+    lines.push(`### Call to Action\n${output.suggested_cta}\n`);
+  }
+
+  if (output.seo_keywords?.length) {
+    lines.push(`SEO Keywords: ${output.seo_keywords.join(', ')}`);
+  }
+
+  return lines.join('\n');
 }

@@ -139,8 +139,36 @@ Remember: every claim must cite [Source: ${body.source_title}] or [KB: chunk_id]
       );
     }
 
+    // Save analysis to DB
+    let analysisId: string | null = null;
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const insertRes = await fetch(`${supabaseUrl}/rest/v1/analyses`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseServiceKey,
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify({
+          account_id: body.account_id,
+          source_text: body.source_text.substring(0, 10000),
+          source_type: body.source_type,
+          result: analysis,
+        }),
+      });
+      if (insertRes.ok) {
+        const rows = await insertRes.json();
+        if (rows?.length > 0) analysisId = rows[0].id;
+      }
+    } catch {
+      // Non-fatal: analysis still returned to client
+    }
+
     return new Response(
-      JSON.stringify({ success: true, analysis }),
+      JSON.stringify({ success: true, analysis, id: analysisId }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   } catch (error) {

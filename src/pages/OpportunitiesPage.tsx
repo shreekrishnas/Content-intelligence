@@ -17,6 +17,7 @@ function showToast(msg: string, kind: 'success' | 'error' | 'warn' = 'success') 
 
 const PRIORITY_COLORS: Record<string, string> = {
   high: '#DC2626',
+  medium: '#F59E0B',
   standard: '#0EA5E9',
   low: '#9CA3AF',
 };
@@ -69,6 +70,13 @@ export default function OpportunitiesPage() {
     showToast('Opportunity sent to Studio');
   }
 
+  async function handleDrop(opp: Opportunity) {
+    const { error } = await api.opportunities.updateStatus(opp.id, 'dropped');
+    if (error) { showToast(error, 'error'); return; }
+    showToast('Opportunity dropped');
+    loadOpps();
+  }
+
   if (loading) {
     return (
       <div>
@@ -110,14 +118,14 @@ export default function OpportunitiesPage() {
       ) : (
         <div className="grid grid-3">
           {filtered.map((opp) => {
-            const pc = PRIORITY_COLORS[(opp as any).priority] || '#9CA3AF';
+            const pc = PRIORITY_COLORS[opp.priority || 'standard'] || '#9CA3AF';
             const sc = STATUS_COLORS[opp.status] || STATUS_COLORS.open;
             return (
               <div className="glass-card-static" key={opp.id} style={{ padding: 20 }}>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-                  {(opp as any).priority && (
+                  {opp.priority && (
                     <span className="badge" style={{ background: pc + '18', color: pc, fontWeight: 600 }}>
-                      {(opp as any).priority}
+                      {opp.priority}
                     </span>
                   )}
                   <span className="badge" style={{ background: sc.bg, color: sc.color }}>
@@ -127,10 +135,10 @@ export default function OpportunitiesPage() {
 
                 <h3 style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{opp.title}</h3>
 
-                {(opp as any).persona_name && (
+                {opp.persona_name && (
                   <p style={{ fontSize: 13, opacity: 0.75, marginBottom: 4 }}>
-                    {(opp as any).persona_name}
-                    {(opp as any).persona_relevance_score != null && ` — relevance ${(opp as any).persona_relevance_score}`}
+                    {opp.persona_name}
+                    {opp.persona_relevance_score != null && ` — relevance ${opp.persona_relevance_score}`}
                   </p>
                 )}
 
@@ -141,15 +149,22 @@ export default function OpportunitiesPage() {
                 {opp.format && (
                   <p style={{ fontSize: 12, opacity: 0.7, marginBottom: 4 }}><strong>Format:</strong> {opp.format}</p>
                 )}
-                {(opp as any).recommendation_reason && (
-                  <p style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>{(opp as any).recommendation_reason}</p>
+                {opp.recommendation_reason && (
+                  <p style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>{opp.recommendation_reason}</p>
                 )}
 
-                {opp.status === 'open' && (
-                  <button className="btn btn-primary btn-sm" onClick={() => handleSendToStudio(opp)}>
-                    Send to Studio &rarr;
-                  </button>
-                )}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {opp.status === 'open' && (
+                    <>
+                      <button className="btn btn-primary btn-sm" onClick={() => handleSendToStudio(opp)}>
+                        Send to Studio &rarr;
+                      </button>
+                      <button className="btn btn-ghost btn-sm" onClick={() => handleDrop(opp)}>
+                        Drop
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             );
           })}

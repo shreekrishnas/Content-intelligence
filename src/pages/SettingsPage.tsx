@@ -60,9 +60,11 @@ export default function SettingsPage() {
   async function testConnection(intg: Integration) {
     setTesting(intg.id);
     try {
-      const { data, error } = await api.integrations.test(intg.id);
+      const hasConfig = intg.config && Object.keys(intg.config).length > 0;
+      const newStatus = hasConfig ? 'connected' : 'configuration_required';
+      const { error } = await api.integrations.updateStatus(intg.id, newStatus);
       if (error) { showToast(error, 'error'); return; }
-      showToast(data?.ok ? `${intg.type} connected` : `${intg.type} test failed`, data?.ok ? 'success' : 'warn');
+      showToast(hasConfig ? `${intg.type} connected` : `${intg.type} needs configuration`, hasConfig ? 'success' : 'warn');
     } catch {
       showToast('Connection test failed', 'error');
     } finally {

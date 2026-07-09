@@ -3,6 +3,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { AccountProvider, useAccount } from './contexts/AccountContext';
 import AppShell from './components/layout/AppShell';
+import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/Toast';
 
 function ErrorScreen({ title, message }: { title: string; message: string }) {
@@ -97,13 +98,15 @@ export default function App() {
   if (!initialized) return <LoadingScreen />;
 
   return (
-    <BrowserRouter>
-      <ToastProvider>
-        <AccountProvider>
-          <AccountGate />
-        </AccountProvider>
-        <div id="toastRoot" />
-      </ToastProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <ToastProvider>
+          <AccountProvider>
+            <AccountGate />
+          </AccountProvider>
+          <div id="toastRoot" />
+        </ToastProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }

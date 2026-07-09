@@ -126,7 +126,6 @@ export const api = {
 
       const fileRow = row as KnowledgeFile;
 
-      // Chunk and store asynchronously, but don't block the upload response
       parseFile(file)
         .then((text) => {
           const chunks = chunkText(text);
@@ -212,20 +211,39 @@ export const api = {
   },
 
   // --------------------------------------------------------------------------
-  // Analysis
+  // Analysis — calls analyze-content Edge Function
   // --------------------------------------------------------------------------
   analysis: {
     async run(params: {
       accountId: string;
       sourceText: string;
       sourceType: string;
+      sourceTitle: string;
+      sourceOwner?: string;
+      sourceUrl?: string;
+      marketingNotes?: string;
       knowledgeChunks?: string[];
     }): Promise<Result<Analysis>> {
       const { data, error } = await supabase.functions.invoke(
         'analyze-content',
-        { body: params },
+        {
+          body: {
+            source_text: params.sourceText,
+            source_type: params.sourceType,
+            source_title: params.sourceTitle || 'Untitled Source',
+            source_owner: params.sourceOwner,
+            source_url: params.sourceUrl,
+            marketing_notes: params.marketingNotes,
+            knowledge_chunks: params.knowledgeChunks?.map((text, i) => ({
+              id: `chunk-${i}`,
+              content: text,
+            })),
+            account_id: params.accountId,
+          },
+        },
       );
       if (error) return err(error.message);
+      if (data?.error) return err(data.error);
       return ok(data as Analysis);
     },
 
@@ -241,110 +259,128 @@ export const api = {
   },
 
   // --------------------------------------------------------------------------
-  // Opportunities
-  // --------------------------------------------------------------------------
-  opportunities: {
-    async list(accountId: string): Promise<Result<Opportunity[]>> {
-      const { data, error } = await supabase
-        .from('opportunities')
-        .select('*')
-        .eq('account_id', accountId)
-        .order('created_at', { ascending: false });
-      if (error) return err(pgError(error));
-      return ok(data as Opportunity[]);
-    },
-
-    async updateStatus(
-      id: string,
-      status: Opportunity['status'],
-    ): Promise<Result<void>> {
-      const { error } = await supabase
-        .from('opportunities')
-        .update({ status })
-        .eq('id', id);
-      if (error) return err(pgError(error));
-      return ok(undefined as void);
-    },
-  },
-
-  // --------------------------------------------------------------------------
-  // Studio (content generation via Edge Functions)
+  // Studio — calls generate-content Edge Function
   // --------------------------------------------------------------------------
   studio: {
     async generateOutline(
-      opportunityId: string,
+      opportunity: Opportunity,
       kbChunks: string[],
-    ): Promise<Result<string>> {
+    ): Promise<Result<any>> {
       const { data, error } = await supabase.functions.invoke(
         'generate-content',
         {
           body: {
-            action: 'outline',
-            opportunityId,
-            knowledgeChunks: kbChunks,
+            task: 'outline',
+            opportunity: {
+              title: opportunity.title,
+              content_angle: opportunity.content_angle || '',
+              recommended_format: opportunity.format || 'blog_post',
+              priority: opportunity.priority,
+              persona_match: opportunity.persona_name || 'General',
+              suggested_cta: opportunity.suggested_cta,
+              source_context: opportunity.source_context,
+            },
+            knowledge_chunks: kbChunks.map((text, i) => ({
+              id: `chunk-${i}`,
+              content: text,
+            })),
           },
         },
       );
       if (error) return err(error.message);
-      return ok(data.outline as string);
+      if (data?.error) return err(data.error);
+      return ok(data.output);
     },
 
     async generateDraft(
-      opportunityId: string,
+      opportunity: Opportunity,
       outline: string,
       kbChunks: string[],
-    ): Promise<Result<string>> {
+    ): Promise<Result<any>> {
       const { data, error } = await supabase.functions.invoke(
         'generate-content',
         {
           body: {
-            action: 'draft',
-            opportunityId,
-            outline,
-            knowledgeChunks: kbChunks,
+            task: 'draft',
+            opportunity: {
+              title: opportunity.title,
+              content_angle: opportunity.content_angle || '',
+              recommended_format: opportunity.format || 'blog_post',
+              priority: opportunity.priority,
+              persona_match: opportunity.persona_name || 'General',
+              suggested_cta: opportunity.suggested_cta,
+              source_context: opportunity.source_context,
+            },
+            existing_content: outline,
+            knowledge_chunks: kbChunks.map((text, i) => ({
+              id: `chunk-${i}`,
+              content: text,
+            })),
           },
         },
       );
       if (error) return err(error.message);
-      return ok(data.draft as string);
+      if (data?.error) return err(data.error);
+      return ok(data.output);
     },
 
     async regenerate(
+      opportunity: Opportunity,
       content: string,
       feedback: string,
       kbChunks: string[],
-    ): Promise<Result<string>> {
+    ): Promise<Result<any>> {
       const { data, error } = await supabase.functions.invoke(
         'generate-content',
         {
           body: {
-            action: 'regenerate',
-            content,
+            task: 'regenerate',
+            opportunity: {
+              title: opportunity.title,
+              content_angle: opportunity.content_angle || '',
+              recommended_format: opportunity.format || 'blog_post',
+            },
+            existing_content: content,
             feedback,
-            knowledgeChunks: kbChunks,
+            knowledge_chunks: kbChunks.map((text, i) => ({
+              id: `chunk-${i}`,
+              content: text,
+            })),
           },
         },
       );
       if (error) return err(error.message);
-      return ok(data.content as string);
+      if (data?.error) return err(data.error);
+      return ok(data.output);
     },
 
     async qualityReview(
+      opportunity: Opportunity,
       draft: string,
       kbChunks: string[],
-    ): Promise<Result<Record<string, any>>> {
+    ): Promise<Result<any>> {
       const { data, error } = await supabase.functions.invoke(
         'generate-content',
         {
           body: {
-            action: 'quality-review',
-            draft,
-            knowledgeChunks: kbChunks,
+            task: 'quality_review',
+            opportunity: {
+              title: opportunity.title,
+              content_angle: opportunity.content_angle || '',
+              recommended_format: opportunity.format || 'blog_post',
+              persona_match: opportunity.persona_name || 'General',
+            },
+            existing_content: draft,
+            knowledge_chunks: kbChunks.map((text, i) => ({
+              id: `chunk-${i}`,
+              content: text,
+            })),
           },
         },
       );
       if (error) return err(error.message);
-      return ok(data.quality as Record<string, any>);
+      if (data?.error) return err(data.error);
+      return ok(data.output);
     },
   },
 
@@ -402,7 +438,7 @@ export const api = {
         `Status: ${item.status}`,
         '',
         '--- Content ---',
-        (item as any).assets?.body ?? '(no content)',
+        item.body ?? (item as any).assets?.body ?? '(no content)',
       ];
       return ok(lines.join('\n'));
     },
@@ -421,15 +457,6 @@ export const api = {
       return ok(data as Integration[]);
     },
 
-    async test(integrationId: string): Promise<Result<{ ok: boolean }>> {
-      const { data, error } = await supabase.functions.invoke(
-        'test-integration',
-        { body: { integrationId } },
-      );
-      if (error) return err(error.message);
-      return ok(data as { ok: boolean });
-    },
-
     async configure(
       integrationId: string,
       config: Record<string, any>,
@@ -440,6 +467,85 @@ export const api = {
         .eq('id', integrationId);
       if (error) return err(pgError(error));
       return ok(undefined as void);
+    },
+
+    async updateStatus(
+      integrationId: string,
+      status: string,
+    ): Promise<Result<void>> {
+      const { error } = await supabase
+        .from('integrations')
+        .update({ status })
+        .eq('id', integrationId);
+      if (error) return err(pgError(error));
+      return ok(undefined as void);
+    },
+  },
+
+  // --------------------------------------------------------------------------
+  // Opportunities — save from analysis
+  // --------------------------------------------------------------------------
+  opportunities: {
+    async list(accountId: string): Promise<Result<Opportunity[]>> {
+      const { data, error } = await supabase
+        .from('opportunities')
+        .select('*')
+        .eq('account_id', accountId)
+        .order('created_at', { ascending: false });
+      if (error) return err(pgError(error));
+      return ok(data as Opportunity[]);
+    },
+
+    async updateStatus(
+      id: string,
+      status: Opportunity['status'],
+    ): Promise<Result<void>> {
+      const { error } = await supabase
+        .from('opportunities')
+        .update({ status })
+        .eq('id', id);
+      if (error) return err(pgError(error));
+      return ok(undefined as void);
+    },
+
+    async createFromAnalysis(
+      accountId: string,
+      analysisId: string,
+      opps: Array<{
+        title: string;
+        content_angle: string;
+        format: string;
+        priority?: string;
+        persona_name?: string;
+        persona_relevance_score?: number;
+        recommendation_reason?: string;
+        suggested_cta?: string;
+        source_context?: string;
+        timeliness?: string;
+      }>,
+    ): Promise<Result<Opportunity[]>> {
+      const rows = opps.map((o) => ({
+        account_id: accountId,
+        analysis_id: analysisId,
+        title: o.title,
+        content_angle: o.content_angle,
+        format: o.format,
+        priority: o.priority || 'standard',
+        persona_name: o.persona_name,
+        persona_relevance_score: o.persona_relevance_score,
+        recommendation_reason: o.recommendation_reason,
+        suggested_cta: o.suggested_cta,
+        source_context: o.source_context,
+        timeliness: o.timeliness || 'standard',
+        status: 'open' as const,
+      }));
+
+      const { data, error } = await supabase
+        .from('opportunities')
+        .insert(rows)
+        .select();
+      if (error) return err(pgError(error));
+      return ok(data as Opportunity[]);
     },
   },
 };

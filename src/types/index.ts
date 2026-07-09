@@ -81,16 +81,41 @@ export interface KnowledgeChunk {
 /* ------------------------------------------------------------------ */
 
 export interface AnalysisResult {
-  sourceSummary: any;
-  topics: any[];
-  insights: any[];
-  personaMatches: any[];
-  depthAnalysis: any[];
-  opportunities: any[];
-  knowledgeContext: any;
-  sourceReferences: any[];
-  qualityCheck: any;
-  analysisWarnings: string[];
+  summary: string;
+  topics: string[];
+  insights: Array<{
+    text: string;
+    confidence: string;
+    source_reference: string;
+  }>;
+  persona_matches: Array<{
+    persona_name: string;
+    relevance_score: number;
+    matching_points: string[];
+    suggested_angle: string;
+  }>;
+  depth_analysis: Array<{
+    topic: string;
+    depth: string;
+    key_points: string[];
+    gaps: string[];
+  }>;
+  opportunities: Array<{
+    title: string;
+    content_angle: string;
+    recommended_format: string;
+    priority: string;
+    persona_match: string;
+    suggested_cta: string;
+    source_context: string;
+  }>;
+  quality_check: {
+    source_richness: string;
+    actionability: string;
+    uniqueness: string;
+    completeness: string;
+  };
+  warnings: string[];
 }
 
 export interface Analysis {
@@ -116,6 +141,14 @@ export interface Opportunity {
   content_angle: string | null;
   format: string | null;
   status: "open" | "in_studio" | "dropped";
+  priority: string | null;
+  persona_name: string | null;
+  persona_relevance_score: number | null;
+  recommendation_reason: string | null;
+  timeliness: string | null;
+  suggested_cta: string | null;
+  source_context: string | null;
+  metadata: Record<string, any>;
   created_at: string;
 }
 
@@ -141,6 +174,8 @@ export interface CalendarItem {
   format: string | null;
   scheduled_for: string | null;
   status: "scheduled" | "published" | "cancelled";
+  body: string | null;
+  quality?: Record<string, any>;
   created_at: string;
 }
 

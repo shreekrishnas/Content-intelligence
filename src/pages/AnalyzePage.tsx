@@ -23,6 +23,7 @@ const ACTIVITY_LABELS = [
   'Assessing Depth',
   'Generating Opportunities',
   'Quality Check',
+  'Saving Results',
   'Complete',
 ];
 
@@ -32,15 +33,6 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, background: color }} />
       <div style={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>{label}</div>
       <div style={{ fontSize: '1.5rem', fontWeight: 800, fontFamily: 'Fraunces, Georgia, serif' }}>{String(value)}</div>
-    </div>
-  );
-}
-
-function KV({ k, v }: { k: string; v: string }) {
-  return (
-    <div style={{ display: 'flex', fontSize: '0.8rem', marginBottom: '0.3rem' }}>
-      <span style={{ width: 130, flexShrink: 0, color: 'var(--text-muted)', fontWeight: 600 }}>{k}</span>
-      <span>{v}</span>
     </div>
   );
 }
@@ -80,8 +72,8 @@ export default function AnalyzePage() {
     let step = 0;
     const stepTimer = setInterval(() => {
       step++;
-      if (step < ACTIVITY_LABELS.length) setActivityStep(step);
-    }, 600);
+      if (step < ACTIVITY_LABELS.length - 1) setActivityStep(step);
+    }, 800);
     timerRef.current = stepTimer;
 
     const content = inputMode === 'url' ? `[Source URL: ${sourceUrl}]\n\n${sourceContent}` : sourceContent;
@@ -107,6 +99,10 @@ export default function AnalyzePage() {
         accountId,
         sourceText: content,
         sourceType,
+        sourceTitle: sourceTitle || 'Untitled Source',
+        sourceOwner,
+        sourceUrl: inputMode === 'url' ? sourceUrl : undefined,
+        marketingNotes: marketingNotes || undefined,
         knowledgeChunks: kbChunks,
       });
 
@@ -115,8 +111,29 @@ export default function AnalyzePage() {
 
       if (apiErr) throw new Error(apiErr);
 
-      const analysisResult = (data as any)?.result ?? data;
-      setResult(analysisResult);
+      const analysis = (data as any)?.analysis ?? data;
+      setResult(analysis);
+
+      // Save opportunities to DB
+      if (analysis?.opportunities?.length > 0 && accountId) {
+        setActivityStep(ACTIVITY_LABELS.length - 2); // "Saving Results"
+
+        const analysisId = (data as any)?.id;
+        await api.opportunities.createFromAnalysis(
+          accountId,
+          analysisId || '',
+          analysis.opportunities.map((o: any) => ({
+            title: o.title,
+            content_angle: o.content_angle,
+            format: o.recommended_format,
+            priority: o.priority,
+            persona_name: o.persona_match,
+            suggested_cta: o.suggested_cta,
+            source_context: o.source_context,
+          })),
+        );
+      }
+
       setActivityStep(ACTIVITY_LABELS.length);
 
       await auditLog({
@@ -134,7 +151,7 @@ export default function AnalyzePage() {
     } finally {
       setIsRunning(false);
     }
-  }, [accountId, sourceType, sourceTitle, sourceContent, sourceUrl, inputMode, marketingNotes]);
+  }, [accountId, sourceType, sourceTitle, sourceOwner, sourceContent, sourceUrl, inputMode, marketingNotes]);
 
   const typeConfig = SOURCE_TYPES.find((t) => t.id === sourceType) ?? SOURCE_TYPES[0];
   const canRun = (inputMode === 'text' ? sourceContent.trim().length > 0 : sourceUrl.trim().length > 0) && supabaseConfigured;
@@ -248,23 +265,24 @@ export default function AnalyzePage() {
             <StatCard label="Topics" value={result.topics?.length ?? 0} color="var(--accent-primary)" />
             <StatCard label="Insights" value={result.insights?.length ?? 0} color="var(--status-info)" />
             <StatCard label="Opportunities" value={result.opportunities?.length ?? 0} color="var(--status-success)" />
-            <StatCard label="Content Value" value={(result.opportunities?.length ?? 0) > 8 ? 'High' : (result.opportunities?.length ?? 0) > 4 ? 'Medium' : 'Low'} color="var(--status-warning)" />
+            <StatCard
+              label="Source Quality"
+              value={result.quality_check?.source_richness ?? 'N/A'}
+              color="var(--status-warning)"
+            />
           </div>
 
-          {result.analysisWarnings?.length > 0 && (
+          {result.warnings?.length > 0 && (
             <div className="glass-card-static" style={{ padding: '0.8rem 1rem', marginBottom: '1rem', borderLeft: '3px solid var(--status-warning)' }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--status-warning)', marginBottom: '0.4rem' }}>Warnings</div>
-              {result.analysisWarnings.map((w: string, i: number) => <div key={i} style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>{w}</div>)}
+              {result.warnings.map((w: string, i: number) => <div key={i} style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>{w}</div>)}
             </div>
           )}
 
-          {result.sourceSummary && (
+          {result.summary && (
             <div className="glass-card-static" style={{ padding: '1rem 1.2rem', marginBottom: '1rem' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>Source Summary</div>
-              <KV k="Type" v={result.sourceSummary.type} />
-              <KV k="Title" v={result.sourceSummary.title} />
-              <KV k="Owner" v={result.sourceSummary.owner} />
-              {result.sourceSummary.wordCount && <KV k="Word Count" v={String(result.sourceSummary.wordCount)} />}
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>Summary</div>
+              <p style={{ fontSize: '0.85rem', lineHeight: 1.6 }}>{result.summary}</p>
             </div>
           )}
 
@@ -272,20 +290,29 @@ export default function AnalyzePage() {
             <div className="glass-card-static" style={{ padding: '1rem 1.2rem', marginBottom: '1rem' }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>Topics & Depth</div>
               <div className="grid grid-2" style={{ gap: '0.8rem' }}>
-                {result.topics.map((topic: any, i: number) => {
-                  const depth = result.depthAnalysis?.find((d: any) => d.topicId === topic.id);
-                  const depthColor = depth?.depth === 'Deep' ? 'var(--status-success)' : depth?.depth === 'Moderate' ? 'var(--status-warning)' : 'var(--status-danger)';
+                {(result.depth_analysis || []).map((da: any, i: number) => {
+                  const depthColor = da.depth === 'deep' ? 'var(--status-success)' : da.depth === 'moderate' ? 'var(--status-warning)' : 'var(--status-danger)';
                   return (
                     <div key={i} className="glass-card-static" style={{ padding: '0.8rem', position: 'relative', overflow: 'hidden' }}>
                       <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: depthColor }} />
-                      <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: '0.3rem' }}>{topic.title}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.4rem' }}>{topic.summary}</div>
-                      <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                        {topic.keywords?.map((kw: string, ki: number) => <span key={ki} className="badge" style={{ fontSize: '0.65rem' }}>{kw}</span>)}
-                      </div>
+                      <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: '0.3rem' }}>{da.topic}</div>
+                      <span className="badge" style={{ fontSize: '0.6rem', marginBottom: '0.4rem', display: 'inline-block' }}>{da.depth}</span>
+                      {da.key_points?.map((kp: string, ki: number) => (
+                        <div key={ki} style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>{kp}</div>
+                      ))}
+                      {da.gaps?.length > 0 && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--status-warning)', marginTop: '0.4rem' }}>
+                          Gaps: {da.gaps.join('; ')}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
+                {(!result.depth_analysis || result.depth_analysis.length === 0) && result.topics.map((topic: string, i: number) => (
+                  <div key={i} className="glass-card-static" style={{ padding: '0.8rem' }}>
+                    <span className="badge">{topic}</span>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -295,25 +322,36 @@ export default function AnalyzePage() {
               <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>Key Insights</div>
               {result.insights.map((ins: any, i: number) => (
                 <div key={i} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'flex-start' }}>
-                  <span className="badge" style={{ fontSize: '0.6rem', flexShrink: 0, background: ins.type === 'data-point' ? 'var(--status-info)' : 'var(--accent-primary)', color: '#fff', borderColor: 'transparent' }}>
-                    {ins.type === 'data-point' ? 'DATA' : 'INSIGHT'}
+                  <span className="badge" style={{
+                    fontSize: '0.6rem', flexShrink: 0,
+                    background: ins.confidence === 'high' ? 'var(--status-success)' : ins.confidence === 'medium' ? 'var(--status-warning)' : 'var(--status-danger)',
+                    color: '#fff', borderColor: 'transparent',
+                  }}>
+                    {ins.confidence?.toUpperCase() || 'INSIGHT'}
                   </span>
-                  <span style={{ fontSize: '0.8rem' }}>{ins.text}</span>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: '0.8rem' }}>{ins.text}</span>
+                    {ins.source_reference && (
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{ins.source_reference}</div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           )}
 
-          {result.personaMatches?.length > 0 && (
+          {result.persona_matches?.length > 0 && (
             <div className="glass-card-static" style={{ padding: '1rem 1.2rem', marginBottom: '1rem' }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>Persona Matches</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                {result.personaMatches.map((pm: any, i: number) => (
+                {result.persona_matches.map((pm: any, i: number) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent-primary), #a855f7)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: '0.75rem', flexShrink: 0 }}>{pm.relevanceScore}</div>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, var(--accent-primary), #a855f7)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: '0.75rem', flexShrink: 0 }}>
+                      {typeof pm.relevance_score === 'number' ? pm.relevance_score.toFixed(1) : pm.relevance_score}
+                    </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{pm.personaName}</div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{pm.question}</div>
+                      <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{pm.persona_name}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{pm.suggested_angle}</div>
                     </div>
                   </div>
                 ))}
@@ -321,8 +359,46 @@ export default function AnalyzePage() {
             </div>
           )}
 
+          {result.quality_check && (
+            <div className="glass-card-static" style={{ padding: '1rem 1.2rem', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>Quality Assessment</div>
+              <div className="grid grid-4" style={{ gap: '0.5rem' }}>
+                {Object.entries(result.quality_check).map(([key, value]) => {
+                  const color = value === 'high' ? '#10B981' : value === 'medium' ? '#F59E0B' : '#DC2626';
+                  return (
+                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                      <span style={{ fontSize: '0.75rem' }}>{key.replace(/_/g, ' ')}: {String(value)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {result.opportunities?.length > 0 && (
+            <div className="glass-card-static" style={{ padding: '1rem 1.2rem', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>Content Opportunities</div>
+              <div className="grid grid-2" style={{ gap: '0.8rem' }}>
+                {result.opportunities.map((opp: any, i: number) => (
+                  <div key={i} className="glass-card-static" style={{ padding: '0.8rem' }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                      <span className="badge" style={{ fontSize: '0.6rem', background: opp.priority === 'high' ? '#DC262618' : '#0EA5E918', color: opp.priority === 'high' ? '#DC2626' : '#0EA5E9' }}>{opp.priority}</span>
+                      <span className="badge" style={{ fontSize: '0.6rem' }}>{opp.recommended_format}</span>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: '0.3rem' }}>{opp.title}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{opp.content_angle}</div>
+                    {opp.persona_match && opp.persona_match !== 'general' && (
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Persona: {opp.persona_match}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="glass-card-static" style={{ padding: '1rem 1.2rem', textAlign: 'center' }}>
-            <div style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>{result.opportunities?.length ?? 0}</strong> content opportunities identified</div>
+            <div style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}><strong>{result.opportunities?.length ?? 0}</strong> content opportunities saved</div>
             <button className="btn btn-primary btn-sm" onClick={() => setActiveTab('opportunities')}>View in Opportunities Tab</button>
           </div>
         </div>
