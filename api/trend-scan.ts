@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
 
 // ---- Inline shared utilities (Vercel strips _shared/ from bundles) ----------
 
@@ -338,6 +337,8 @@ async function handleCron(req: VercelRequest, res: VercelResponse) {
     });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { createClient } = require('@supabase/supabase-js');
   const admin = createClient(url, serviceKey);
   const { data: accounts, error } = await admin.from('accounts').select('id, name, profile');
   if (error) return res.status(500).json({ error: error.message });
