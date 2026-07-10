@@ -294,11 +294,13 @@ export default function StudioPage() {
       return;
     }
     setWorking(true);
+    setStudioError(null);
     setWorkingMsg('Regenerating with feedback...');
     try {
       const currentContent = contentRef.current?.innerText || (stage === 'outline' ? asset.outline : asset.draft);
-      const { chunks: kbChunks, fileContext } = await getKbContext();
-      setSourcesUsed(fileContext);
+      let kbChunks: string[] = [];
+      let fileContext: KBFileContext[] = [];
+      try { const ctx = await getKbContext(); kbChunks = ctx.chunks; fileContext = ctx.fileContext; setSourcesUsed(fileContext); } catch { /* proceed without KB */ }
       const res = await api.studio.regenerate(accountId!, activeOpp!, currentContent, feedback, kbChunks, fileContext);
       if (res.error) throw new Error(res.error);
 
@@ -326,10 +328,12 @@ export default function StudioPage() {
   async function handleApproveOutline() {
     const outlineText = contentRef.current?.innerText || asset.outline;
     setWorking(true);
+    setStudioError(null);
     setWorkingMsg('Generating draft from outline...');
     try {
-      const { chunks: kbChunks, fileContext } = await getKbContext();
-      setSourcesUsed(fileContext);
+      let kbChunks: string[] = [];
+      let fileContext: KBFileContext[] = [];
+      try { const ctx = await getKbContext(); kbChunks = ctx.chunks; fileContext = ctx.fileContext; setSourcesUsed(fileContext); } catch { /* proceed without KB */ }
       const res = await api.studio.generateDraft(accountId!, activeOpp!, outlineText, kbChunks, fileContext);
       if (res.error) throw new Error(res.error);
 
@@ -359,10 +363,12 @@ export default function StudioPage() {
   async function handleApproveDraft() {
     const draftText = contentRef.current?.innerText || asset.draft;
     setWorking(true);
+    setStudioError(null);
     setWorkingMsg('Running quality review...');
     try {
-      const { chunks: kbChunks, fileContext } = await getKbContext();
-      setSourcesUsed(fileContext);
+      let kbChunks: string[] = [];
+      let fileContext: KBFileContext[] = [];
+      try { const ctx = await getKbContext(); kbChunks = ctx.chunks; fileContext = ctx.fileContext; setSourcesUsed(fileContext); } catch { /* proceed without KB */ }
       const res = await api.studio.qualityReview(accountId!, activeOpp!, draftText, kbChunks, fileContext);
       if (res.error) throw new Error(res.error);
 
