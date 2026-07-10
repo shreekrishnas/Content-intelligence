@@ -5,15 +5,7 @@ import { api } from '@/lib/api';
 import { auditLog } from '@/lib/audit';
 import { retrieve } from '@/lib/retrieval';
 import { supabaseConfigured } from '@/lib/supabase';
-
-const SOURCE_TYPES = [
-  { id: 'et_video', label: 'ET Video', formats: ['Blog', 'Voice Page', 'Single Image', 'Carousel'] },
-  { id: 'author_blog', label: 'Author / Wealth Manager Blog', formats: ['LinkedIn Amplification', 'Carousel', 'Single Image'] },
-  { id: 'weekly_anil_rachana', label: 'Weekly Anil / Rachana Content', formats: ['Voice Page', 'Single Image', 'Carousel'] },
-  { id: 'webinar', label: 'Webinar', formats: ['Blog', 'Short / Reel', 'B-roll Video', 'Q&A', 'Single Image', 'Carousel'] },
-  { id: 'event_workshop', label: 'Event / Workshop', formats: ['Blog', 'Conversational Blog', 'Guide / E-book', 'Lead Magnet', 'Carousel'] },
-  { id: 'trending_topic', label: 'Trending Topic', formats: ['Single Image', 'Carousel', 'Educational Carousel', 'Blog Pipeline'] },
-];
+import type { SourceType } from '@/types';
 
 const ACTIVITY_LABELS = [
   'Reading Source',
@@ -37,11 +29,57 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
   );
 }
 
+function AddSourceTypeModal({ onClose, onSave }: { onClose: () => void; onSave: (name: string, description: string, formats: string[]) => void }) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [formatsText, setFormatsText] = useState('');
+
+  const handleSave = () => {
+    if (!name.trim() || !description.trim()) return;
+    const formats = formatsText
+      .split(',')
+      .map((f) => f.trim())
+      .filter(Boolean);
+    onSave(name.trim(), description.trim(), formats.length > 0 ? formats : ['Blog', 'Single Image', 'Carousel']);
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} onClick={onClose} />
+      <div className="glass-card-static" style={{ position: 'relative', width: '100%', maxWidth: 480, padding: '1.5rem', zIndex: 1 }}>
+        <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '1rem' }}>Add Source Type</div>
+        <div className="field" style={{ marginBottom: '0.8rem' }}>
+          <label className="field-label">Name</label>
+          <input className="glass-input" type="text" placeholder="e.g. Podcast Episode" value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div className="field" style={{ marginBottom: '0.8rem' }}>
+          <label className="field-label">Description</label>
+          <textarea className="glass-textarea" rows={3} placeholder="Describe what this source type is so the AI can understand it. e.g. 'Audio podcast episodes discussing industry trends and expert interviews.'" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>The AI uses this description to understand the source type and tailor its analysis.</div>
+        </div>
+        <div className="field" style={{ marginBottom: '1rem' }}>
+          <label className="field-label">Output Formats (comma-separated)</label>
+          <input className="glass-input" type="text" placeholder="Blog, Carousel, Single Image" value={formatsText} onChange={(e) => setFormatsText(e.target.value)} />
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Leave empty for defaults: Blog, Single Image, Carousel</div>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+          <button className="btn btn-sm" onClick={onClose} style={{ opacity: 0.7 }}>Cancel</button>
+          <button className="btn btn-primary btn-sm" disabled={!name.trim() || !description.trim()} onClick={handleSave} style={{ opacity: !name.trim() || !description.trim() ? 0.5 : 1 }}>Add Source Type</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AnalyzePage() {
   const { accountId } = useAccount();
   const setActiveTab = useAppStore((s) => s.setActiveTab);
 
-  const [sourceType, setSourceType] = useState('et_video');
+  const [sourceTypes, setSourceTypes] = useState<SourceType[]>([]);
+  const [loadingTypes, setLoadingTypes] = useState(false);
+  const [sourceType, setSourceType] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+
   const [inputMode, setInputMode] = useState<'text' | 'url'>('text');
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceOwner, setSourceOwner] = useState('');
@@ -63,7 +101,43 @@ export default function AnalyzePage() {
     setResult(null);
     setError(null);
     setActivityStep(-1);
+    setSourceType('');
+    if (!accountId || !supabaseConfigured) { setSourceTypes([]); return; }
+    let cancelled = false;
+    setLoadingTypes(true);
+    api.sourceTypes.list(accountId).then(({ data }) => {
+      if (cancelled) return;
+      const types = data ?? [];
+      setSourceTypes(types);
+      if (types.length > 0) setSourceType(types[0].slug);
+      setLoadingTypes(false);
+    });
+    return () => { cancelled = true; };
   }, [accountId]);
+
+  const handleAddSourceType = useCallback(async (name: string, description: string, formats: string[]) => {
+    if (!accountId) return;
+    setShowAddModal(false);
+    const { data, error: apiErr } = await api.sourceTypes.create(accountId, name, description, formats);
+    if (apiErr || !data) return;
+    setSourceTypes((prev) => [...prev, data]);
+    setSourceType(data.slug);
+  }, [accountId]);
+
+  const handleDeleteSourceType = useCallback(async (id: string) => {
+    if (!accountId) return;
+    const { error: apiErr } = await api.sourceTypes.delete(accountId, id);
+    if (apiErr) return;
+    setSourceTypes((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      if (next.length > 0 && !next.find((t) => t.slug === sourceType)) {
+        setSourceType(next[0].slug);
+      } else if (next.length === 0) {
+        setSourceType('');
+      }
+      return next;
+    });
+  }, [accountId, sourceType]);
 
   const handleRunAnalysis = useCallback(async () => {
     if (!accountId) return;
@@ -83,6 +157,8 @@ export default function AnalyzePage() {
     timerRef.current = stepTimer;
 
     const content = inputMode === 'url' ? `[Source URL: ${sourceUrl}]\n\n${sourceContent}` : sourceContent;
+    const activeType = sourceTypes.find((t) => t.slug === sourceType);
+    const sourceTypeLabel = activeType?.name ?? sourceType;
 
     try {
       const retrieval = await retrieve(accountId, content, sourceType);
@@ -104,7 +180,7 @@ export default function AnalyzePage() {
       const { data, error: apiErr } = await api.analysis.run({
         accountId,
         sourceText: content,
-        sourceType,
+        sourceType: sourceTypeLabel,
         sourceTitle: sourceTitle || 'Untitled Source',
         sourceOwner,
         sourceUrl: inputMode === 'url' ? sourceUrl : undefined,
@@ -120,9 +196,8 @@ export default function AnalyzePage() {
       const analysis = (data as any)?.analysis ?? data;
       setResult(analysis);
 
-      // Save opportunities to DB
       if (analysis?.opportunities?.length > 0 && accountId) {
-        setActivityStep(ACTIVITY_LABELS.length - 2); // "Saving Results"
+        setActivityStep(ACTIVITY_LABELS.length - 2);
 
         const analysisId = (data as any)?.id;
         await api.opportunities.createFromAnalysis(
@@ -157,10 +232,11 @@ export default function AnalyzePage() {
     } finally {
       setIsRunning(false);
     }
-  }, [accountId, sourceType, sourceTitle, sourceOwner, sourceContent, sourceUrl, inputMode, marketingNotes]);
+  }, [accountId, sourceType, sourceTypes, sourceTitle, sourceOwner, sourceContent, sourceUrl, inputMode, marketingNotes]);
 
-  const typeConfig = SOURCE_TYPES.find((t) => t.id === sourceType) ?? SOURCE_TYPES[0];
-  const canRun = (inputMode === 'text' ? sourceContent.trim().length > 0 : sourceUrl.trim().length > 0) && supabaseConfigured;
+  const activeType = sourceTypes.find((t) => t.slug === sourceType);
+  const activeFormats: string[] = activeType ? (activeType.formats as unknown as string[]) : [];
+  const canRun = (inputMode === 'text' ? sourceContent.trim().length > 0 : sourceUrl.trim().length > 0) && supabaseConfigured && sourceType !== '';
 
   return (
     <div>
@@ -178,15 +254,41 @@ export default function AnalyzePage() {
 
       <div style={{ marginBottom: '1.2rem' }}>
         <div className="field-label" style={{ marginBottom: '0.5rem' }}>Source Type</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-          {SOURCE_TYPES.map((st) => (
-            <span key={st.id} className="badge" onClick={() => setSourceType(st.id)} style={{ cursor: 'pointer', background: sourceType === st.id ? 'var(--accent-primary)' : undefined, color: sourceType === st.id ? '#fff' : undefined }}>
-              {st.label}
+        {loadingTypes ? (
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.5rem 0' }}>Loading source types...</div>
+        ) : (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
+            {sourceTypes.map((st) => (
+              <span key={st.id} className="badge" onClick={() => setSourceType(st.slug)} style={{ cursor: 'pointer', background: sourceType === st.slug ? 'var(--accent-primary)' : undefined, color: sourceType === st.slug ? '#fff' : undefined, position: 'relative' }}>
+                {st.name}
+                <span
+                  onClick={(e) => { e.stopPropagation(); handleDeleteSourceType(st.id); }}
+                  style={{ marginLeft: 6, fontSize: '0.65rem', opacity: 0.6, cursor: 'pointer' }}
+                  title="Remove source type"
+                >x</span>
+              </span>
+            ))}
+            <span
+              className="badge"
+              onClick={() => setShowAddModal(true)}
+              style={{ cursor: 'pointer', border: '1px dashed var(--border-default)', background: 'transparent', display: 'flex', alignItems: 'center', gap: 4 }}
+              title="Add a new source type"
+            >
+              + Add
             </span>
-          ))}
-        </div>
-        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>Available formats: {typeConfig.formats.join(', ')}</div>
+          </div>
+        )}
+        {activeFormats.length > 0 && (
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>Available formats: {activeFormats.join(', ')}</div>
+        )}
+        {sourceTypes.length === 0 && !loadingTypes && supabaseConfigured && (
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+            No source types configured for this account. Click "+ Add" to create one.
+          </div>
+        )}
       </div>
+
+      {showAddModal && <AddSourceTypeModal onClose={() => setShowAddModal(false)} onSave={handleAddSourceType} />}
 
       <div className="grid grid-2" style={{ gap: '1.5rem', alignItems: 'start' }}>
         <div>

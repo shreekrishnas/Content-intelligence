@@ -193,6 +193,16 @@ export interface Integration {
   config: Record<string, any>;
 }
 
+export interface SourceType {
+  id: string;
+  account_id: string;
+  name: string;
+  slug: string;
+  description: string;
+  formats: string[];
+  created_at: string;
+}
+
 export interface AuditLogEntry {
   id: string;
   account_id: string;

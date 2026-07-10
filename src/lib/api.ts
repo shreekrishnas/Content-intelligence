@@ -8,6 +8,7 @@ import type {
   Opportunity,
   CalendarItem,
   Integration,
+  SourceType,
 } from '@/types';
 
 type Result<T> = { data: T | null; error: string | null };
@@ -566,6 +567,74 @@ export const api = {
         .select();
       if (error) return err(pgError(error));
       return ok(data as Opportunity[]);
+    },
+  },
+
+  // --------------------------------------------------------------------------
+  // Source Types — per-account source type management
+  // --------------------------------------------------------------------------
+  sourceTypes: {
+    async list(accountId: string): Promise<Result<SourceType[]>> {
+      const { data, error } = await supabase
+        .from('source_types')
+        .select('*')
+        .eq('account_id', accountId)
+        .order('created_at', { ascending: true });
+      if (error) return err(pgError(error));
+      return ok(data as SourceType[]);
+    },
+
+    async create(
+      accountId: string,
+      name: string,
+      description: string,
+      formats: string[],
+    ): Promise<Result<SourceType>> {
+      const slug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_|_$/g, '');
+
+      const { data, error } = await supabase
+        .from('source_types')
+        .insert({
+          account_id: accountId,
+          name,
+          slug,
+          description,
+          formats,
+        })
+        .select()
+        .single();
+      if (error) return err(pgError(error));
+      return ok(data as SourceType);
+    },
+
+    async delete(accountId: string, id: string): Promise<Result<void>> {
+      const { error } = await supabase
+        .from('source_types')
+        .delete()
+        .eq('id', id)
+        .eq('account_id', accountId);
+      if (error) return err(pgError(error));
+      return ok(undefined as void);
+    },
+  },
+
+  // --------------------------------------------------------------------------
+  // Accounts — profile updates (domain URL, etc.)
+  // --------------------------------------------------------------------------
+  accounts: {
+    async updateProfile(
+      accountId: string,
+      profile: Record<string, any>,
+    ): Promise<Result<void>> {
+      const { error } = await supabase
+        .from('accounts')
+        .update({ profile })
+        .eq('id', accountId);
+      if (error) return err(pgError(error));
+      return ok(undefined as void);
     },
   },
 };
