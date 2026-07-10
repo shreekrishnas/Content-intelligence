@@ -328,89 +328,98 @@ export default function AnalyzePage() {
         </div>
       )}
 
-      <div className="grid grid-2" style={{ gap: '1.5rem', alignItems: 'start' }}>
-        <div>
-          <div className="underline-tabs" style={{ marginBottom: '1rem' }}>
-            <button className={`u-tab${inputMode === 'text' ? ' active' : ''}`} onClick={() => setInputMode('text')}>Paste Text / Transcript</button>
-            <button className={`u-tab${inputMode === 'url' ? ' active' : ''}`} onClick={() => setInputMode('url')}>Paste Source Link</button>
+      {/* ── INPUT FORM — hidden once results arrive ── */}
+      {!result && (
+        <div className="grid grid-2" style={{ gap: '1.5rem', alignItems: 'start' }}>
+          <div>
+            <div className="underline-tabs" style={{ marginBottom: '1rem' }}>
+              <button className={`u-tab${inputMode === 'text' ? ' active' : ''}`} onClick={() => setInputMode('text')}>Paste Text / Transcript</button>
+              <button className={`u-tab${inputMode === 'url' ? ' active' : ''}`} onClick={() => setInputMode('url')}>Paste Source Link</button>
+            </div>
+
+            <div className="glass-card-static" style={{ padding: '1.2rem' }}>
+              <div className="field" style={{ marginBottom: '0.8rem' }}>
+                <label className="field-label">Source Title</label>
+                <input className="glass-input" type="text" placeholder="e.g. Market Outlook Q3 2025" value={sourceTitle} onChange={(e) => setSourceTitle(e.target.value)} />
+              </div>
+              <div className="field" style={{ marginBottom: '0.8rem' }}>
+                <label className="field-label">Source Owner / Speaker</label>
+                <input className="glass-input" type="text" placeholder="e.g. Anil Kumar" value={sourceOwner} onChange={(e) => setSourceOwner(e.target.value)} />
+              </div>
+              {inputMode === 'url' && (
+                <div className="field" style={{ marginBottom: '0.8rem' }}>
+                  <label className="field-label">Source URL</label>
+                  <input className="glass-input" type="url" placeholder="https://..." value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} />
+                  <div style={{ fontSize: '0.7rem', color: 'var(--status-warning)', marginTop: '0.3rem' }}>
+                    Paste the article text below as well for best results.
+                  </div>
+                </div>
+              )}
+              <div className="field" style={{ marginBottom: '0.8rem' }}>
+                <label className="field-label">{inputMode === 'text' ? 'Source Content / Transcript' : 'Paste Article Text'}</label>
+                <textarea className="glass-textarea" rows={8} placeholder={inputMode === 'text' ? 'Paste the full transcript, article text, or raw content here...' : 'Paste the article text here...'} value={sourceContent} onChange={(e) => setSourceContent(e.target.value)} />
+              </div>
+              <div className="field" style={{ marginBottom: '1rem' }}>
+                <label className="field-label">Marketing Notes (optional)</label>
+                <textarea className="glass-textarea" rows={3} placeholder="Any specific goals, campaigns, or context..." value={marketingNotes} onChange={(e) => setMarketingNotes(e.target.value)} />
+              </div>
+              <button className="btn btn-brand" disabled={!canRun || isRunning} onClick={handleRunAnalysis} style={{ width: '100%', background: canRun && !isRunning ? 'linear-gradient(135deg, var(--accent-primary), #a855f7)' : undefined, opacity: !canRun || isRunning ? 0.5 : 1, cursor: !canRun || isRunning ? 'not-allowed' : 'pointer' }}>
+                {isRunning ? 'Analyzing...' : 'Run Analysis'}
+              </button>
+            </div>
           </div>
 
-          <div className="glass-card-static" style={{ padding: '1.2rem' }}>
-            <div className="field" style={{ marginBottom: '0.8rem' }}>
-              <label className="field-label">Source Title</label>
-              <input className="glass-input" type="text" placeholder="e.g. Market Outlook Q3 2025" value={sourceTitle} onChange={(e) => setSourceTitle(e.target.value)} />
-            </div>
-            <div className="field" style={{ marginBottom: '0.8rem' }}>
-              <label className="field-label">Source Owner / Speaker</label>
-              <input className="glass-input" type="text" placeholder="e.g. Anil Kumar" value={sourceOwner} onChange={(e) => setSourceOwner(e.target.value)} />
-            </div>
-            {inputMode === 'url' && (
-              <div className="field" style={{ marginBottom: '0.8rem' }}>
-                <label className="field-label">Source URL</label>
-                <input className="glass-input" type="url" placeholder="https://..." value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} />
-                <div style={{ fontSize: '0.7rem', color: 'var(--status-warning)', marginTop: '0.3rem' }}>
-                  Paste the article text below as well for best results.
-                </div>
+          <div>
+            <div className="glass-card-static" style={{ padding: '1.2rem' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.8rem' }}>
+                Agent Activity
               </div>
-            )}
-            <div className="field" style={{ marginBottom: '0.8rem' }}>
-              <label className="field-label">{inputMode === 'text' ? 'Source Content / Transcript' : 'Paste Article Text'}</label>
-              <textarea className="glass-textarea" rows={8} placeholder={inputMode === 'text' ? 'Paste the full transcript, article text, or raw content here...' : 'Paste the article text here...'} value={sourceContent} onChange={(e) => setSourceContent(e.target.value)} />
+
+              {error && (
+                <div style={{ padding: '0.8rem', background: '#DC262610', borderRadius: '0.5rem', marginBottom: '0.8rem' }}>
+                  <p style={{ fontSize: '0.8rem', color: '#DC2626' }}>{error}</p>
+                </div>
+              )}
+
+              {activityStep < 0 && !error ? (
+                <div className="empty-state" style={{ padding: '2rem 1rem' }}>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Click "Run Analysis" to start the intelligence engine.</p>
+                </div>
+              ) : activityStep >= 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+                  {ACTIVITY_LABELS.map((label, idx) => {
+                    const isDone = idx < activityStep || activityStep >= ACTIVITY_LABELS.length;
+                    const isActive = idx === activityStep && activityStep < ACTIVITY_LABELS.length;
+                    const isPending = idx > activityStep;
+                    return (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        {isDone && <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--status-success)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: '#fff', flexShrink: 0 }}>&#10003;</div>}
+                        {isActive && <div className="spin-dot" style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--accent-primary)', flexShrink: 0 }} />}
+                        {isPending && <div style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border-default)', flexShrink: 0 }} />}
+                        <span style={{ fontSize: '0.8rem', fontWeight: isActive ? 600 : 400, color: isPending ? 'var(--text-muted)' : 'var(--text-primary)' }}>{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <div className="field" style={{ marginBottom: '1rem' }}>
-              <label className="field-label">Marketing Notes (optional)</label>
-              <textarea className="glass-textarea" rows={3} placeholder="Any specific goals, campaigns, or context..." value={marketingNotes} onChange={(e) => setMarketingNotes(e.target.value)} />
+          </div>
+        </div>
+      )}
+
+      {/* ── RESULTS — shown full-width immediately after run ── */}
+      {result && (
+        <div>
+          {/* header row with New Analysis button */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.2rem' }}>
+            <div>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>Analysis Complete</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>{sourceTitle || 'Untitled Source'}</div>
             </div>
-            <button className="btn btn-brand" disabled={!canRun || isRunning} onClick={handleRunAnalysis} style={{ width: '100%', background: canRun && !isRunning ? 'linear-gradient(135deg, var(--accent-primary), #a855f7)' : undefined, opacity: !canRun || isRunning ? 0.5 : 1, cursor: !canRun || isRunning ? 'not-allowed' : 'pointer' }}>
-              {isRunning ? 'Analyzing...' : 'Run Analysis'}
+            <button className="btn btn-sm" onClick={() => { setResult(null); setSourcesUsed([]); setActivityStep(-1); setError(null); }} style={{ flexShrink: 0 }}>
+              &#8592; New Analysis
             </button>
           </div>
-        </div>
-
-        <div>
-          <div className="glass-card-static" style={{ padding: '1.2rem' }}>
-            <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.8rem' }}>
-              Agent Activity
-            </div>
-
-            {error && (
-              <div style={{ padding: '0.8rem', background: '#DC262610', borderRadius: '0.5rem', marginBottom: '0.8rem' }}>
-                <p style={{ fontSize: '0.8rem', color: '#DC2626' }}>{error}</p>
-              </div>
-            )}
-
-            {activityStep < 0 && !error ? (
-              <div className="empty-state" style={{ padding: '2rem 1rem' }}>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Click "Run Analysis" to start the intelligence engine.</p>
-              </div>
-            ) : activityStep >= 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                {ACTIVITY_LABELS.map((label, idx) => {
-                  const isDone = idx < activityStep || activityStep >= ACTIVITY_LABELS.length;
-                  const isActive = idx === activityStep && activityStep < ACTIVITY_LABELS.length;
-                  const isPending = idx > activityStep;
-                  return (
-                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                      {isDone && <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--status-success)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: '#fff', flexShrink: 0 }}>&#10003;</div>}
-                      {isActive && <div className="spin-dot" style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--accent-primary)', flexShrink: 0 }} />}
-                      {isPending && <div style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border-default)', flexShrink: 0 }} />}
-                      <span style={{ fontSize: '0.8rem', fontWeight: isActive ? 600 : 400, color: isPending ? 'var(--text-muted)' : 'var(--text-primary)' }}>{label}</span>
-                    </div>
-                  );
-                })}
-                {activityStep >= ACTIVITY_LABELS.length && (
-                  <div style={{ marginTop: '0.6rem', padding: '0.6rem 0.8rem', background: 'var(--status-success)18', borderRadius: '0.4rem', borderLeft: '3px solid var(--status-success)' }}>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--status-success)', fontWeight: 600 }}>&#8595; Results ready — scroll down</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {result && (
-        <div ref={resultsRef} style={{ marginTop: '2rem' }}>
           <div className="hairline" style={{ marginBottom: '1.5rem' }} />
           <div className="grid grid-4" style={{ gap: '0.8rem', marginBottom: '1.5rem' }}>
             <StatCard label="Topics" value={result.topics?.length ?? 0} color="var(--accent-primary)" />
