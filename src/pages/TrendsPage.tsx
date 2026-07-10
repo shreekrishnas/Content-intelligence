@@ -1,0 +1,353 @@
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useAppStore } from '@/store';
+import { useAccount } from '@/contexts/AccountContext';
+import { api } from '@/lib/api';
+import { auditLog } from '@/lib/audit';
+import { supabaseConfigured } from '@/lib/supabase';
+import type { TrendProfile, TrendRecord } from '@/types';
+
+function showToast(msg: string, kind: 'success' | 'error' | 'warn' = 'success') {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  const color = kind === 'error' ? '#DC2626' : kind === 'warn' ? '#F59E0B' : '#10B981';
+  el.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>${msg}`;
+  const root = document.getElementById('toastRoot');
+  if (root) root.appendChild(el);
+  setTimeout(() => { el.style.transition = 'opacity .3s ease'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3200);
+}
+
+const CLASS_META: Record<string, { label: string; color: string }> = {
+  domain_trend: { label: 'Domain Trend', color: '#10B981' },
+  supertrend_exception: { label: 'Supertrend', color: '#8B5CF6' },
+  monitor: { label: 'Monitor', color: '#F59E0B' },
+  reject: { label: 'Rejected', color: '#9CA3AF' },
+};
+
+const PRIORITY_COLOR: Record<string, string> = {
+  critical: '#DC2626', high: '#F59E0B', medium: '#0EA5E9', low: '#9CA3AF', experimental: '#8B5CF6',
+};
+
+function ScorePill({ label, value, invert }: { label: string; value: number; invert?: boolean }) {
+  const good = invert ? value <= 40 : value >= 60;
+  const mid = value >= 40 && value < 60;
+  const color = good ? '#10B981' : mid ? '#F59E0B' : (invert ? '#10B981' : '#DC2626');
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', width: 30 }}>{label}</span>
+      <div style={{ flex: 1, height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden', minWidth: 30 }}>
+        <div style={{ width: `${value}%`, height: '100%', background: color }} />
+      </div>
+      <span style={{ fontSize: '0.62rem', width: 22, textAlign: 'right' }}>{value}</span>
+    </div>
+  );
+}
+
+const EMPTY_PROFILE: TrendProfile = { enabled: false, max_recommendations: 8 };
+
+export default function TrendsPage() {
+  const { accountId, account } = useAccount();
+  const setActiveTab = useAppStore((s) => s.setActiveTab);
+  const setIdeasSeed = useAppStore((s) => s.setIdeasSeed);
+
+  const [profile, setProfile] = useState<TrendProfile>(EMPTY_PROFILE);
+  const [showProfile, setShowProfile] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [records, setRecords] = useState<TrendRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [filter, setFilter] = useState<string>('all');
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
+
+  const load = useCallback(async () => {
+    if (!accountId || !supabaseConfigured) { setLoading(false); return; }
+    setLoading(true);
+    const [prof, recs] = await Promise.all([api.trends.getProfile(accountId), api.trends.list(accountId)]);
+    if (prof.data) setProfile({ ...EMPTY_PROFILE, ...prof.data, business_name: prof.data.business_name || account?.name });
+    else setProfile({ ...EMPTY_PROFILE, business_name: account?.name });
+    setRecords(recs.data || []);
+    setLoading(false);
+  }, [accountId, account?.name]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function saveProfile() {
+    if (!accountId) return;
+    setSavingProfile(true);
+    const { error: e } = await api.trends.saveProfile(accountId, profile);
+    setSavingProfile(false);
+    if (e) { showToast(e, 'error'); return; }
+    showToast('Domain profile saved');
+    setShowProfile(false);
+  }
+
+  async function persistAndReload(source: string, topics: any[]) {
+    if (!accountId) return;
+    const { error: e } = await api.trends.saveScan(accountId, source, topics);
+    if (e) { setError(`Scanned but could not save results: ${e}. Check that migration 00007_trends.sql has been applied.`); return; }
+    auditLog({ accountId, action: 'trend_scan', targetType: 'trend', detail: { source, count: topics.length } }).catch(() => {});
+    await load();
+  }
+
+  async function runScan(mode: 'live' | 'suggest') {
+    if (!accountId) return;
+    setScanning(true); setError(null); setNote(null);
+    try {
+      const res = await api.trends.runScan({ accountLabel: account?.name, profile, mode });
+      if (res.error) { setError(res.error); return; }
+      if (res.data?.note) setNote(res.data.note);
+      const topics = res.data?.topics || [];
+      if (!topics.length) { setNote(res.data?.note || 'No trends qualified from this scan.'); return; }
+      await persistAndReload(res.data?.source || mode, topics);
+      showToast(`Scan complete — ${topics.length} topics reviewed`);
+    } finally { setScanning(false); }
+  }
+
+  async function supervisePasted() {
+    if (!accountId) return;
+    const signals = pasteText.split('\n').map((l) => l.trim()).filter(Boolean).map((topic) => ({ topic }));
+    if (!signals.length) { showToast('Enter at least one topic', 'warn'); return; }
+    setScanning(true); setError(null); setNote(null);
+    try {
+      const res = await api.trends.superviseManual({ accountLabel: account?.name, profile, signals });
+      if (res.error) { setError(res.error); return; }
+      const topics = res.data?.topics || [];
+      if (!topics.length) { setNote('No trends qualified.'); return; }
+      await persistAndReload('manual', topics);
+      setPasteText(''); setPasteOpen(false);
+      showToast(`Reviewed ${signals.length} pasted topics`);
+    } finally { setScanning(false); }
+  }
+
+  function routeToIdeas(t: TrendRecord) {
+    setIdeasSeed({
+      topic: t.topic,
+      audience: profile.target_audience,
+      context: [t.summary, t.suggested_connection && `Connection: ${t.suggested_connection}`, t.reason && `Why: ${t.reason}`].filter(Boolean).join('\n'),
+    });
+    setActiveTab('ideas');
+  }
+
+  async function createOpportunity(t: TrendRecord) {
+    if (!accountId) return;
+    const { error: e } = await api.opportunities.createFromAnalysis(accountId, null as any, [{
+      title: t.topic,
+      content_angle: t.suggested_connection || t.summary,
+      format: (t.recommended_formats?.[0] as string) || 'blog_post',
+      priority: t.priority,
+      source_context: t.reason,
+    }]);
+    if (e) { showToast(e, 'error'); return; }
+    await api.trends.updateStatus(accountId, t.id, 'actioned');
+    showToast('Opportunity created');
+    load();
+  }
+
+  async function addToCalendar(t: TrendRecord) {
+    if (!accountId) return;
+    const body = [t.summary, t.suggested_connection && `Connection: ${t.suggested_connection}`, t.reason && `Rationale: ${t.reason}`, t.related_keywords?.length ? `Keywords: ${t.related_keywords.join(', ')}` : ''].filter(Boolean).join('\n\n');
+    const { error: e } = await api.calendar.add({
+      account_id: accountId, asset_id: null, title: t.topic,
+      format: (t.recommended_formats?.[0] as string) || 'content', scheduled_for: null, status: 'scheduled', body,
+    });
+    if (e) { showToast(e, 'error'); return; }
+    await api.trends.updateStatus(accountId, t.id, 'actioned');
+    showToast('Added to Calendar');
+    load();
+  }
+
+  async function setStatus(t: TrendRecord, status: TrendRecord['status']) {
+    if (!accountId) return;
+    const { error: e } = await api.trends.updateStatus(accountId, t.id, status);
+    if (e) { showToast(e, 'error'); return; }
+    load();
+  }
+
+  async function del(t: TrendRecord) {
+    if (!accountId) return;
+    await api.trends.remove(accountId, t.id);
+    load();
+  }
+
+  const counts = useMemo(() => ({
+    all: records.length,
+    domain_trend: records.filter((r) => r.classification === 'domain_trend').length,
+    supertrend_exception: records.filter((r) => r.classification === 'supertrend_exception').length,
+    monitor: records.filter((r) => r.classification === 'monitor').length,
+    reject: records.filter((r) => r.classification === 'reject').length,
+    actioned: records.filter((r) => r.status === 'actioned').length,
+  }), [records]);
+
+  const filtered = filter === 'all' ? records
+    : filter === 'actioned' ? records.filter((r) => r.status === 'actioned')
+    : records.filter((r) => r.classification === filter);
+
+  function setField<K extends keyof TrendProfile>(k: K, v: TrendProfile[K]) { setProfile((p) => ({ ...p, [k]: v })); }
+
+  if (!supabaseConfigured) {
+    return (
+      <div>
+        <p className="eyebrow">Monitoring</p>
+        <h1 className="page-title">Trends &amp; Alerts</h1>
+        <div className="glass-card-static" style={{ padding: '1.5rem', borderLeft: '3px solid var(--status-warning)' }}>
+          <p style={{ fontSize: '0.85rem', color: 'var(--status-warning)' }}>Database connection required. Configure Supabase to use the Trend Supervisor.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="eyebrow">Monitoring</p>
+      <h1 className="page-title">Trends &amp; Alerts</h1>
+      <p className="page-desc">An AI supervisor scores, classifies, and routes trends — only qualified topics reach your content pipeline.</p>
+
+      {/* action bar */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
+        <button className="btn btn-brand" onClick={() => runScan('live')} disabled={scanning}>{scanning ? 'Scanning…' : '⚡ Run Live Scan'}</button>
+        <button className="btn btn-secondary btn-sm" onClick={() => runScan('suggest')} disabled={scanning}>AI-suggest candidates</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => setPasteOpen((v) => !v)} disabled={scanning}>Paste topics</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => setShowProfile((v) => !v)}>{showProfile ? 'Hide' : 'Domain Profile'}</button>
+        {profile.enabled && <span className="badge" style={{ background: '#10B98118', color: '#10B981' }}>Daily scan on</span>}
+      </div>
+
+      {pasteOpen && (
+        <div className="glass-card-static" style={{ padding: '1rem', marginBottom: 16 }}>
+          <div className="field"><label className="field-label">Candidate topics (one per line)</label>
+            <textarea className="glass-textarea" rows={4} value={pasteText} onChange={(e) => setPasteText(e.target.value)} placeholder={'small-cap correction\nRBI repo rate decision\nDiwali muhurat trading'} />
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={supervisePasted} disabled={scanning} style={{ marginTop: 8 }}>Supervise these</button>
+        </div>
+      )}
+
+      {/* domain profile config */}
+      {showProfile && (
+        <div className="glass-card-static" style={{ padding: '1.2rem', marginBottom: 16 }}>
+          <h4 style={{ fontWeight: 700, marginBottom: 12 }}>Domain Profile</h4>
+          <div className="grid grid-2" style={{ gap: '0.7rem' }}>
+            <Field label="Business Name" v={profile.business_name} on={(v) => setField('business_name', v)} />
+            <Field label="Industry" v={profile.industry} on={(v) => setField('industry', v)} />
+            <Field label="Core Topics (comma/newline)" v={profile.core_topics} on={(v) => setField('core_topics', v)} />
+            <Field label="Target Keywords" v={profile.target_keywords} on={(v) => setField('target_keywords', v)} />
+            <Field label="Target Locations" v={profile.target_locations} on={(v) => setField('target_locations', v)} />
+            <Field label="Target Audience" v={profile.target_audience} on={(v) => setField('target_audience', v)} />
+            <Field label="Competitors" v={profile.competitors} on={(v) => setField('competitors', v)} />
+            <Field label="Restricted Topics" v={profile.restricted_topics} on={(v) => setField('restricted_topics', v)} />
+            <Field label="Brand Tone" v={profile.brand_tone} on={(v) => setField('brand_tone', v)} />
+            <div className="field"><label className="field-label">Max Recommendations</label>
+              <input className="glass-input" type="number" min={1} max={20} value={profile.max_recommendations ?? 8} onChange={(e) => setField('max_recommendations', Number(e.target.value))} />
+            </div>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: '0.82rem', cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!profile.enabled} onChange={(e) => setField('enabled', e.target.checked)} />
+            Enable automated daily scan (needs Tavily + service-role keys on the server)
+          </label>
+          <div style={{ marginTop: 12 }}>
+            <button className="btn btn-primary btn-sm" onClick={saveProfile} disabled={savingProfile}>{savingProfile ? 'Saving…' : 'Save Profile'}</button>
+          </div>
+        </div>
+      )}
+
+      {note && (
+        <div className="glass-card-static" style={{ padding: '0.8rem 1rem', marginBottom: 16, borderLeft: '3px solid var(--status-info)' }}>
+          <p style={{ fontSize: '0.8rem' }}>{note}</p>
+        </div>
+      )}
+      {error && (
+        <div className="glass-card-static" style={{ padding: '0.8rem 1rem', marginBottom: 16, borderLeft: '3px solid #DC2626' }}>
+          <p style={{ fontSize: '0.82rem', color: '#DC2626' }}>{error}</p>
+          {(error.includes('API key') || error.includes('credits') || error.includes('Model not found')) && (
+            <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>Check <strong>OPENROUTER_API_KEY</strong> in Vercel Environment Variables. For live signals, add <strong>TAVILY_API_KEY</strong>.</p>
+          )}
+        </div>
+      )}
+
+      {/* filters */}
+      {records.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+          {[
+            { k: 'all', label: `All (${counts.all})` },
+            { k: 'domain_trend', label: `Domain (${counts.domain_trend})` },
+            { k: 'supertrend_exception', label: `Supertrend (${counts.supertrend_exception})` },
+            { k: 'monitor', label: `Monitor (${counts.monitor})` },
+            { k: 'reject', label: `Rejected (${counts.reject})` },
+            { k: 'actioned', label: `Actioned (${counts.actioned})` },
+          ].map((f) => (
+            <button key={f.k} className="badge" style={{ cursor: 'pointer', background: filter === f.k ? 'var(--accent-primary)' : undefined, color: filter === f.k ? '#fff' : undefined }} onClick={() => setFilter(f.k)}>{f.label}</button>
+          ))}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="empty-state"><p>Loading…</p></div>
+      ) : records.length === 0 ? (
+        <div className="empty-state">
+          <p>No trends yet.</p>
+          <p style={{ marginTop: 8, opacity: 0.7 }}>Set your Domain Profile, then run a scan. The supervisor will only surface qualified, non-duplicate trends.</p>
+        </div>
+      ) : (
+        <div className="grid grid-2" style={{ gap: '0.8rem' }}>
+          {filtered.map((t) => {
+            const cm = CLASS_META[t.classification] || CLASS_META.monitor;
+            const pc = PRIORITY_COLOR[t.priority] || '#9CA3AF';
+            const actionable = t.classification === 'domain_trend' || t.classification === 'supertrend_exception';
+            return (
+              <div key={t.id} className="glass-card-static" style={{ padding: 16, borderLeft: `3px solid ${cm.color}`, opacity: t.status === 'actioned' ? 0.7 : 1 }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8, alignItems: 'center' }}>
+                  <span className="badge" style={{ fontSize: '0.6rem', background: cm.color + '18', color: cm.color }}>{cm.label}</span>
+                  <span className="badge" style={{ fontSize: '0.6rem', background: pc + '18', color: pc }}>{t.priority}</span>
+                  <span className="badge" style={{ fontSize: '0.6rem' }}>{t.trend_stage}</span>
+                  {t.status === 'actioned' && <span className="badge" style={{ fontSize: '0.6rem', background: '#10B98118', color: '#10B981' }}>Actioned</span>}
+                  <span style={{ marginLeft: 'auto', fontSize: '0.62rem', color: 'var(--text-muted)' }}>conf {t.confidence_score}</span>
+                </div>
+
+                <div style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: 4, lineHeight: 1.3 }}>{t.topic}</div>
+                {t.summary && <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 8 }}>{t.summary}</div>}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
+                  <ScorePill label="Rel" value={t.domain_relevance_score} />
+                  <ScorePill label="Imp" value={t.trend_impact_score} />
+                  {t.classification === 'supertrend_exception' && <ScorePill label="Adp" value={t.adaptability_score} />}
+                  <ScorePill label="Risk" value={t.risk_score} invert />
+                </div>
+
+                {t.suggested_connection && (
+                  <div style={{ fontSize: '0.74rem', marginBottom: 6 }}><strong>Connection:</strong> {t.suggested_connection}</div>
+                )}
+                {t.reason && <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 8 }}>{t.reason}</div>}
+                {t.estimated_lifespan && <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginBottom: 8 }}>Lifespan: {t.estimated_lifespan}</div>}
+
+                <div className="hairline" style={{ margin: '8px 0' }} />
+
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {actionable && (
+                    <>
+                      <button className="btn btn-primary btn-sm" style={{ fontSize: '0.68rem' }} onClick={() => routeToIdeas(t)}>Ideas Lab →</button>
+                      <button className="btn btn-secondary btn-sm" style={{ fontSize: '0.68rem' }} onClick={() => createOpportunity(t)}>+ Opportunity</button>
+                      <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.68rem' }} onClick={() => addToCalendar(t)}>+ Calendar</button>
+                    </>
+                  )}
+                  {t.classification === 'monitor' && (
+                    <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.68rem' }} onClick={() => setStatus(t, 'accepted')}>Promote</button>
+                  )}
+                  <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.68rem', marginLeft: 'auto', color: 'var(--text-muted)' }} onClick={() => del(t)}>Dismiss</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, v, on }: { label: string; v?: string; on: (v: string) => void }) {
+  return (
+    <div className="field">
+      <label className="field-label">{label}</label>
+      <input className="glass-input" value={v ?? ''} onChange={(e) => on(e.target.value)} />
+    </div>
+  );
+}

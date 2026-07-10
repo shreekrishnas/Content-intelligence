@@ -24,6 +24,10 @@ interface AppState {
   studioAsset: StudioAsset | null;
   setStudioAsset: (asset: StudioAsset | null) => void;
 
+  // Seed the Ideas Lab brief when routing an accepted trend into it
+  ideasSeed: { topic?: string; audience?: string; context?: string } | null;
+  setIdeasSeed: (seed: { topic?: string; audience?: string; context?: string } | null) => void;
+
   resetAccountState: () => void;
 }
 
@@ -55,5 +59,8 @@ export const useAppStore = create<AppState>((set) => ({
   studioAsset: null,
   setStudioAsset: (asset) => set({ studioAsset: asset }),
 
-  resetAccountState: () => set({ activeStudioOpp: null, studioAsset: null }),
+  ideasSeed: null,
+  setIdeasSeed: (seed) => set({ ideasSeed: seed }),
+
+  resetAccountState: () => set({ activeStudioOpp: null, studioAsset: null, ideasSeed: null }),
 }));

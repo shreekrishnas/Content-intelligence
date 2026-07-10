@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useAppStore } from '@/store';
 import { useAccount } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
 import { auditLog } from '@/lib/audit';
@@ -297,7 +298,21 @@ export default function IdeasLabPage() {
   const [webinarText, setWebinarText] = useState('');
   const [seoText, setSeoText] = useState('');
 
+  const ideasSeed = useAppStore((s) => s.ideasSeed);
+  const setIdeasSeed = useAppStore((s) => s.setIdeasSeed);
+
   const lsKey = accountId ? `idea_lab_saved_${accountId}` : 'idea_lab_saved';
+
+  // When a trend is routed here from the Trend Supervisor, prefill the brief.
+  useEffect(() => {
+    if (!ideasSeed) return;
+    setSubTab('generate');
+    if (ideasSeed.topic) setTopic(ideasSeed.topic);
+    if (ideasSeed.audience) setAudience(ideasSeed.audience);
+    if (ideasSeed.context) setContext(ideasSeed.context);
+    setIdeasSeed(null);
+    showToast('Brief prefilled from trend — review and generate');
+  }, [ideasSeed, setIdeasSeed]);
 
   useEffect(() => {
     try {

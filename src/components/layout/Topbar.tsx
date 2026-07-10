@@ -29,6 +29,10 @@ const tabMeta: Record<string, { title: string; subtitle: string }> = {
     title: 'Ideas Lab',
     subtitle: 'Generate, repurpose, and plan content ideas — grounded in your Knowledge Base.',
   },
+  trends: {
+    title: 'Trends & Alerts',
+    subtitle: 'AI supervisor scans live signals, scores relevance, and routes actionable trends to your pipeline.',
+  },
   calendar: {
     title: 'Calendar',
     subtitle: 'Approved content, ready to schedule or export.',

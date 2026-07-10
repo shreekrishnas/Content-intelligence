@@ -203,6 +203,55 @@ export interface SourceType {
   created_at: string;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Trend Supervisor                                                   */
+/* ------------------------------------------------------------------ */
+
+export interface TrendProfile {
+  enabled?: boolean;
+  business_name?: string;
+  industry?: string;
+  products?: string;
+  services?: string;
+  core_topics?: string;
+  target_keywords?: string;
+  target_locations?: string;
+  target_audience?: string;
+  business_goals?: string;
+  content_categories?: string;
+  brand_tone?: string;
+  restricted_topics?: string;
+  competitors?: string;
+  allowed_formats?: string;
+  max_recommendations?: number;
+  risk_tolerance?: string;
+}
+
+export interface TrendRecord {
+  id: string;
+  account_id: string;
+  scan_id: string | null;
+  topic: string;
+  summary: string;
+  classification: "domain_trend" | "supertrend_exception" | "monitor" | "reject";
+  domain_relevance_score: number;
+  trend_impact_score: number;
+  adaptability_score: number;
+  risk_score: number;
+  confidence_score: number;
+  priority: string;
+  trend_stage: string;
+  estimated_lifespan: string;
+  recommended_route: string;
+  reason: string;
+  suggested_connection: string;
+  recommended_formats: string[];
+  related_keywords: string[];
+  source_signals: Array<{ title?: string; url?: string; source?: string }>;
+  status: "new" | "accepted" | "monitoring" | "rejected" | "actioned";
+  created_at: string;
+}
+
 export interface AuditLogEntry {
   id: string;
   account_id: string;

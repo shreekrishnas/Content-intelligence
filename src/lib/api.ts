@@ -9,6 +9,8 @@ import type {
   CalendarItem,
   Integration,
   SourceType,
+  TrendProfile,
+  TrendRecord,
 } from '@/types';
 import type { KBFileContext } from '@/lib/retrieval';
 
@@ -491,6 +493,157 @@ export const api = {
       const res = await this._call({ task: 'expand', idea, output_type: outputType, knowledge_chunks: knowledgeChunks });
       if (res.error) return err(res.error);
       return ok(res.data?.output);
+    },
+  },
+
+  // --------------------------------------------------------------------------
+  // Trend Supervisor
+  // --------------------------------------------------------------------------
+  trends: {
+    // Domain profile lives in accounts.profile.trend_profile
+    async getProfile(accountId: string): Promise<Result<TrendProfile>> {
+      const { data, error } = await supabase
+        .from('accounts')
+        .select('profile')
+        .eq('id', accountId)
+        .single();
+      if (error) return err(pgError(error));
+      return ok(((data as any)?.profile?.trend_profile ?? {}) as TrendProfile);
+    },
+
+    async saveProfile(accountId: string, profile: TrendProfile): Promise<Result<void>> {
+      const { data: row } = await supabase.from('accounts').select('profile').eq('id', accountId).single();
+      const nextProfile = { ...((row as any)?.profile ?? {}), trend_profile: profile };
+      const { error } = await supabase.from('accounts').update({ profile: nextProfile }).eq('id', accountId);
+      if (error) return err(pgError(error));
+      return ok(undefined as void);
+    },
+
+    // Run a live scan on the server (collect signals + supervise). Returns the
+    // supervised topics; the caller persists them via saveScan().
+    async runScan(params: { accountLabel?: string; profile: TrendProfile; mode?: 'live' | 'suggest' }): Promise<Result<{ topics: any[]; summary: any; source: string; note?: string; signals_reviewed?: number }>> {
+      try {
+        const response = await fetch('/api/trend-scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_label: params.accountLabel, profile: params.profile, mode: params.mode ?? 'live' }),
+        });
+        const rawText = await response.text();
+        let data: any;
+        try { data = JSON.parse(rawText); } catch {
+          return err(`Server error (${response.status}): ${rawText.slice(0, 300) || 'Unexpected response format'}`);
+        }
+        if (!response.ok || data.error) return err(data.error || 'Scan failed');
+        return ok(data);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : 'Network error during scan');
+      }
+    },
+
+    // Supervise a list of manually-pasted candidate topics.
+    async superviseManual(params: { accountLabel?: string; profile: TrendProfile; signals: Array<{ topic: string; summary?: string; source?: string; url?: string }> }): Promise<Result<{ topics: any[]; summary: any }>> {
+      try {
+        const response = await fetch('/api/trend-supervisor', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_label: params.accountLabel, domain_profile: params.profile, signals: params.signals }),
+        });
+        const rawText = await response.text();
+        let data: any;
+        try { data = JSON.parse(rawText); } catch {
+          return err(`Server error (${response.status}): ${rawText.slice(0, 300) || 'Unexpected response format'}`);
+        }
+        if (!response.ok || data.error) return err(data.error || 'Supervisor failed');
+        return ok(data);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : 'Network error during supervision');
+      }
+    },
+
+    // Persist a scan + its topics under the signed-in user's session (RLS).
+    async saveScan(accountId: string, source: string, topics: any[]): Promise<Result<TrendRecord[]>> {
+      const counts = { domain: 0, superts: 0, mon: 0, rej: 0 };
+      topics.forEach((t) => {
+        if (t.classification === 'domain_trend') counts.domain++;
+        else if (t.classification === 'supertrend_exception') counts.superts++;
+        else if (t.classification === 'reject') counts.rej++;
+        else counts.mon++;
+      });
+
+      const { data: scan, error: scanErr } = await supabase
+        .from('trend_scans')
+        .insert({
+          account_id: accountId,
+          source,
+          total_reviewed: topics.length,
+          domain_sent: counts.domain,
+          supertrends_sent: counts.superts,
+          monitored: counts.mon,
+          rejected: counts.rej,
+        })
+        .select('id')
+        .single();
+      if (scanErr) return err(pgError(scanErr));
+
+      const num = (v: unknown) => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
+      const rows = topics.map((t) => {
+        const classification = String(t.classification || 'monitor');
+        const status = classification === 'domain_trend' || classification === 'supertrend_exception'
+          ? 'accepted' : classification === 'reject' ? 'rejected' : 'monitoring';
+        return {
+          account_id: accountId,
+          scan_id: (scan as any)?.id ?? null,
+          topic: String(t.topic || 'Untitled'),
+          summary: String(t.summary || ''),
+          classification,
+          domain_relevance_score: num(t.domain_relevance_score),
+          trend_impact_score: num(t.trend_impact_score),
+          adaptability_score: num(t.adaptability_score),
+          risk_score: num(t.risk_score),
+          confidence_score: num(t.confidence_score),
+          priority: String(t.priority || 'low'),
+          trend_stage: String(t.trend_stage || 'emerging'),
+          estimated_lifespan: String(t.estimated_lifespan || ''),
+          recommended_route: String(t.recommended_route || 'monitor'),
+          reason: String(t.reason || ''),
+          suggested_connection: String(t.suggested_connection || ''),
+          recommended_formats: Array.isArray(t.recommended_formats) ? t.recommended_formats : [],
+          related_keywords: Array.isArray(t.related_keywords) ? t.related_keywords : [],
+          source_signals: Array.isArray(t.source_signals) ? t.source_signals : [],
+          status,
+        };
+      });
+
+      const { data, error } = await supabase.from('trend_records').insert(rows).select();
+      if (error) return err(pgError(error));
+      return ok(data as TrendRecord[]);
+    },
+
+    async list(accountId: string): Promise<Result<TrendRecord[]>> {
+      const { data, error } = await supabase
+        .from('trend_records')
+        .select('*')
+        .eq('account_id', accountId)
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (error) return err(pgError(error));
+      return ok(data as TrendRecord[]);
+    },
+
+    async updateStatus(accountId: string, id: string, status: TrendRecord['status']): Promise<Result<void>> {
+      const { error } = await supabase
+        .from('trend_records')
+        .update({ status })
+        .eq('id', id)
+        .eq('account_id', accountId);
+      if (error) return err(pgError(error));
+      return ok(undefined as void);
+    },
+
+    async remove(accountId: string, id: string): Promise<Result<void>> {
+      const { error } = await supabase.from('trend_records').delete().eq('id', id).eq('account_id', accountId);
+      if (error) return err(pgError(error));
+      return ok(undefined as void);
     },
   },
 

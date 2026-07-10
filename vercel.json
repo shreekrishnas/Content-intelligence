@@ -6,8 +6,13 @@
     "api/analyze-content.ts": { "maxDuration": 120 },
     "api/generate-content.ts": { "maxDuration": 120 },
     "api/ideas-lab.ts": { "maxDuration": 120 },
+    "api/trend-supervisor.ts": { "maxDuration": 120 },
+    "api/trend-scan.ts": { "maxDuration": 300 },
     "api/extract-knowledge.ts": { "maxDuration": 60 }
   },
+  "crons": [
+    { "path": "/api/trend-scan", "schedule": "0 6 * * *" }
+  ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
