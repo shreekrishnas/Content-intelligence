@@ -256,7 +256,7 @@ export const api = {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            source_text: params.sourceText,
+            source_text: params.sourceText.slice(0, 15000),
             source_type: params.sourceType,
             source_title: params.sourceTitle || 'Untitled Source',
             source_owner: params.sourceOwner,

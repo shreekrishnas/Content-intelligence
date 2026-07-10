@@ -168,8 +168,8 @@ SOURCE METADATA:
 - URL: ${body.source_url ?? 'N/A'}
 ${marketingSection}${fileContextSection}${knowledgeSection}${personaSection}
 
-SOURCE CONTENT:
-${body.source_text}
+SOURCE CONTENT (truncated to first 12000 chars):
+${String(body.source_text).slice(0, 12000)}
 
 Return a JSON object with this exact structure (no markdown code fences, just raw JSON):
 {
@@ -221,7 +221,7 @@ Return a JSON object with this exact structure (no markdown code fences, just ra
 Remember: every claim must cite [Source: ${body.source_title}] or [KB: chunk_id]. Do not invent or assume anything not in the provided content.`;
 
     const result = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
-      maxTokens: 8192,
+      maxTokens: 4096,
       temperature: 0.2,
     });
 
