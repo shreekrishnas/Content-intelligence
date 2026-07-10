@@ -4,14 +4,18 @@ const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MAX_RETRIES = 2;
 const INITIAL_BACKOFF_MS = 1000;
 
-const GROUNDING_SYSTEM_PROMPT = `You are a content generation engine. CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Your entire response must be parseable by JSON.parse().
+const GROUNDING_SYSTEM_PROMPT = `You are a senior content creator for a financial services brand in India. You write high-quality, publication-ready content that marketing teams can use immediately.
 
-GROUNDING CONTRACT:
-1. Every claim, statistic, or factual statement MUST be traceable to the provided source references or knowledge base chunks.
-2. Do NOT use world knowledge, assumptions, or information not present in the provided inputs.
-3. Cite sources using [Source: <title>] or [KB: <chunk_reference>].
-4. If a statement cannot be grounded in provided sources, omit it or flag it explicitly.
-5. Do NOT hallucinate statistics, quotes, case studies, or facts.`;
+CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Your entire response must be parseable by JSON.parse().
+
+YOUR APPROACH:
+- Write content that is specific, concrete, and actionable — not generic or template-like
+- Use the opportunity's title, angle, and source context as your primary creative brief
+- Where knowledge base material is provided, use it to add brand voice, compliance guardrails, and supporting detail
+- Where knowledge base material is absent, draw on the opportunity data itself and your expertise in Indian financial services content
+- Every section heading and key point should be a specific claim or insight, not a placeholder
+- Write in a tone that suits the target persona — not corporate jargon, not overly casual
+- Cite sources where available using [Source: <title>] or [KB: <chunk_id>], but do not block content creation on having citations`;
 
 function extractJSON(text: string): unknown {
   const stripped = text
@@ -134,8 +138,6 @@ async function callLLM(
   throw lastError ?? new Error('Failed to call LLM after retries');
 }
 
-const MISSING_KNOWLEDGE_MSG = 'Relevant information is not available in the Knowledge Hub. Please upload a suitable file or add more information before generating this content. You may need brand guidelines, product documents, or relevant research files.';
-
 function buildSourceContext(body: GenerateRequest): string {
   const parts: string[] = [];
 
@@ -186,113 +188,111 @@ function buildSourceContext(body: GenerateRequest): string {
 }
 
 function buildOutlinePrompt(body: GenerateRequest, context: string): string {
-  return `Generate a structured content outline for the following opportunity.
+  return `Create a detailed content outline for this specific content opportunity. The outline must be publication-ready — specific section headings, concrete talking points, and a clear narrative arc.
 
-OPPORTUNITY:
+CONTENT BRIEF:
 - Title: ${body.opportunity.title}
-- Content Angle: ${body.opportunity.content_angle}
+- Unique Angle: ${body.opportunity.content_angle}
 - Format: ${body.opportunity.recommended_format}
-- Target Persona: ${body.opportunity.persona_match ?? 'General'}
-- Source Context: ${body.opportunity.source_context ?? 'N/A'}
+- Target Persona: ${body.opportunity.persona_match ?? 'General audience'}
+- Source Insight: ${body.opportunity.source_context ?? 'N/A'}
+- CTA: ${body.opportunity.suggested_cta ?? 'N/A'}
 
-${context}
+${context || 'No knowledge base files provided — use the content brief and your financial services expertise.'}
 
-Return a JSON object with this structure (no markdown code fences):
+Requirements:
+- Each section heading must be a specific, descriptive claim — NOT a generic label like "Introduction" or "Benefits"
+- Key points must be concrete talking points a writer can expand, not vague topics
+- The outline must flow logically and build a persuasive case for the target persona
+- Aim for the right length for the format (blog: 4-6 sections; social: 3-4 beats; email: 3 sections)
+
+Return ONLY a JSON object (no markdown fences) with this structure:
 {
-  "title": "Working title for the content piece",
+  "title": "Specific, compelling working title",
   "format": "${body.opportunity.recommended_format}",
   "estimated_word_count": 0,
   "target_persona": "${body.opportunity.persona_match ?? 'General'}",
   "sections": [
     {
-      "heading": "Section heading",
-      "purpose": "What this section achieves",
-      "key_points": ["Point grounded in source [Source: title]"],
-      "source_references": ["Which sources support this section"],
+      "heading": "Specific section heading — a claim or question, not a label",
+      "purpose": "What this section achieves for the reader",
+      "key_points": ["Specific talking point with concrete detail", "Another concrete point"],
       "estimated_words": 0
     }
   ],
-  "suggested_cta": "${body.opportunity.suggested_cta ?? 'N/A'}",
-  "key_messages": ["Message grounded in source material [Source: title]"],
-  "seo_keywords": ["keyword1", "keyword2"],
-  "internal_links_suggested": ["Topic areas that could link to other content"]
-}
-
-Ground every key point and message in the provided sources. Do not invent claims.`;
+  "suggested_cta": "Specific call-to-action text",
+  "key_messages": ["Core message 1 in one crisp sentence", "Core message 2"],
+  "seo_keywords": ["keyword1", "keyword2", "keyword3"]
+}`;
 }
 
 function buildDraftPrompt(body: GenerateRequest, context: string): string {
-  return `Generate publication-ready content based on the following opportunity and outline.
+  return `Write a complete, publication-ready draft based on the outline below. This must be content a marketing team can publish with minimal editing — not a template, not placeholder text.
 
-OPPORTUNITY:
+CONTENT BRIEF:
 - Title: ${body.opportunity.title}
-- Content Angle: ${body.opportunity.content_angle}
+- Unique Angle: ${body.opportunity.content_angle}
 - Format: ${body.opportunity.recommended_format}
-- Target Persona: ${body.opportunity.persona_match ?? 'General'}
-- Suggested CTA: ${body.opportunity.suggested_cta ?? 'N/A'}
+- Target Persona: ${body.opportunity.persona_match ?? 'General audience'}
+- CTA: ${body.opportunity.suggested_cta ?? 'N/A'}
 
-${body.existing_content ? `OUTLINE / EXISTING CONTENT:\n${body.existing_content}\n\n` : ''}${context}
+${body.existing_content ? `OUTLINE TO EXPAND:\n${body.existing_content}\n` : ''}
+${context || 'No knowledge base files provided — write from the brief and your financial services expertise.'}
 
-Return a JSON object with this structure (no markdown code fences):
+Writing standards:
+- Open with a hook that speaks directly to the persona's pain point or aspiration
+- Use specific numbers, examples, and scenarios where relevant — avoid vague generalities
+- Write in active voice, short paragraphs (2-3 sentences), and accessible language
+- Format appropriately for the content type (use headers/bullets for blog; tight copy for email/social)
+- End with a clear, specific call-to-action that matches the persona's next likely step
+- Cite sources where available as [Source: title] or [KB: chunk_id]
+
+Return ONLY a JSON object (no markdown fences) with this structure:
 {
-  "title": "Final title",
-  "content": "The full content in markdown format, with citations [Source: title] or [KB: id] inline",
-  "meta_description": "SEO meta description (under 160 chars)",
-  "excerpt": "Short excerpt for previews (under 300 chars)",
+  "title": "Final published title",
+  "content": "Full content in markdown — complete, ready to publish",
+  "meta_description": "SEO meta description under 160 chars",
+  "excerpt": "Preview text under 300 chars",
   "estimated_read_time_minutes": 0,
-  "citations": [
-    {
-      "reference": "[Source: title] or [KB: id]",
-      "context": "What claim this citation supports"
-    }
-  ],
   "cta": {
-    "text": "Call to action text",
-    "context": "Why this CTA fits, grounded in source"
-  }
-}
-
-Write in the brand voice and persona tone specified. Every factual claim must cite its source. Do not invent statistics, quotes, or case studies.`;
+    "text": "Specific CTA button or link text",
+    "context": "Where this CTA leads and why it fits"
+  },
+  "citations": []
+}`;
 }
 
 function buildRegeneratePrompt(body: GenerateRequest, context: string): string {
-  return `Revise the following content based on the feedback provided. Maintain grounding in source material.
+  return `Revise the content below based on the feedback. Make targeted, substantive improvements — do not just rephrase.
 
-OPPORTUNITY:
+CONTENT BRIEF:
 - Title: ${body.opportunity.title}
 - Format: ${body.opportunity.recommended_format}
 
 EXISTING CONTENT:
 ${body.existing_content ?? 'No existing content provided'}
 
-FEEDBACK:
-${body.feedback ?? 'No specific feedback provided'}
+FEEDBACK TO ADDRESS:
+${body.feedback ?? 'Improve overall quality, specificity, and engagement'}
 
-${context}
+${context || 'No additional knowledge base files.'}
 
-Return a JSON object with this structure (no markdown code fences):
+Apply the feedback precisely. If the feedback is to make content more specific, add concrete details. If to change tone, rewrite the relevant sections. If to shorten, cut ruthlessly. Return ONLY a JSON object (no markdown fences):
 {
-  "title": "Revised title",
-  "content": "The revised content in markdown format, with citations [Source: title] or [KB: id] inline",
-  "meta_description": "Updated SEO meta description (under 160 chars)",
-  "excerpt": "Updated short excerpt (under 300 chars)",
+  "title": "Revised title if changed",
+  "content": "Full revised content in markdown",
+  "meta_description": "Updated SEO meta description under 160 chars",
+  "excerpt": "Updated preview text under 300 chars",
   "estimated_read_time_minutes": 0,
   "changes_made": [
     {
-      "section": "Which part was changed",
-      "change": "What was changed and why",
-      "feedback_addressed": "Which feedback point this addresses"
+      "section": "Which part changed",
+      "change": "What specifically changed",
+      "feedback_addressed": "Which feedback point this resolves"
     }
   ],
-  "citations": [
-    {
-      "reference": "[Source: title] or [KB: id]",
-      "context": "What claim this citation supports"
-    }
-  ]
-}
-
-Preserve all source grounding. If feedback asks for claims you cannot support with sources, flag them instead of inventing facts.`;
+  "citations": []
+}`;
 }
 
 function buildQualityReviewPrompt(body: GenerateRequest, context: string): string {
@@ -370,12 +370,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if ((body.task === 'regenerate' || body.task === 'quality_review') && !body.existing_content) {
       return res.status(400).json({ error: `Task '${body.task}' requires existing_content to be provided.` });
-    }
-
-    // Enforce KB requirement: generation must have knowledge to draw from
-    const hasKnowledge = (body.knowledge_chunks?.length ?? 0) > 0 || (body.file_context?.length ?? 0) > 0;
-    if (!hasKnowledge) {
-      return res.status(422).json({ error: MISSING_KNOWLEDGE_MSG });
     }
 
     const context = buildSourceContext(body);

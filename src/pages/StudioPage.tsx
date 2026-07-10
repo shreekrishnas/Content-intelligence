@@ -195,8 +195,16 @@ export default function StudioPage() {
       setStudioError(null);
       setWorkingMsg('Generating outline...');
       try {
-        const { chunks: kbChunks, fileContext } = await getKbContext();
-        setSourcesUsed(fileContext);
+        let kbChunks: string[] = [];
+        let fileContext: KBFileContext[] = [];
+        try {
+          const ctx = await getKbContext();
+          kbChunks = ctx.chunks;
+          fileContext = ctx.fileContext;
+          setSourcesUsed(fileContext);
+        } catch {
+          // KB is missing — proceed without it; generate-content will use opportunity data
+        }
         const res = await api.studio.generateOutline(accountId!, activeOpp!, kbChunks, fileContext);
         if (res.error) throw new Error(res.error);
 
@@ -245,6 +253,30 @@ export default function StudioPage() {
             {activeOpp.priority && <ContextRow label="Priority" value={activeOpp.priority} />}
           </div>
         </div>
+
+        {studioError && (
+          <div className="glass-card-static" style={{ padding: '1rem 1.2rem', marginBottom: 16, borderLeft: '3px solid #DC2626' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#DC2626', marginBottom: '0.4rem' }}>Error</div>
+                <p style={{ fontSize: '0.82rem', lineHeight: 1.5 }}>{studioError}</p>
+                {(studioError.includes('API key') || studioError.includes('credits') || studioError.includes('Model not found')) && (
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+                    Check your Vercel Environment Variables: <strong>OPENROUTER_API_KEY</strong> and optionally <strong>LLM_MODEL</strong>.
+                  </p>
+                )}
+              </div>
+              <button onClick={() => setStudioError(null)} style={{ fontSize: 18, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', flexShrink: 0 }}>&times;</button>
+            </div>
+          </div>
+        )}
+
+        {working && (
+          <div className="glass-card-static" style={{ padding: 16, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="spin-dot" style={{ width: 16, height: 16, borderRadius: '50%', background: 'var(--accent-primary)', flexShrink: 0 }} />
+            <span style={{ fontSize: 13 }}>{workingMsg}</span>
+          </div>
+        )}
 
         <button className="btn btn-brand" onClick={handleGenerate} disabled={working}>
           {working ? workingMsg : 'Generate Outline'}
