@@ -77,6 +77,19 @@ export default function OpportunitiesPage() {
     loadOpps();
   }
 
+  async function handleReopen(opp: Opportunity) {
+    const { error } = await api.opportunities.updateStatus(accountId!, opp.id, 'open');
+    if (error) { showToast(error, 'error'); return; }
+    showToast('Opportunity reopened');
+    loadOpps();
+  }
+
+  function handleOpenInStudio(opp: Opportunity) {
+    setActiveStudioOpp(opp.id);
+    setStudioAsset(null);
+    setActiveTab('studio');
+  }
+
   if (loading) {
     return (
       <div>
@@ -163,6 +176,16 @@ export default function OpportunitiesPage() {
                         Drop
                       </button>
                     </>
+                  )}
+                  {opp.status === 'in_studio' && (
+                    <button className="btn btn-secondary btn-sm" onClick={() => handleOpenInStudio(opp)}>
+                      Open in Studio &rarr;
+                    </button>
+                  )}
+                  {opp.status === 'dropped' && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => handleReopen(opp)}>
+                      Reopen
+                    </button>
                   )}
                 </div>
               </div>

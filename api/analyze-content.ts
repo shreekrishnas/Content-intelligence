@@ -196,7 +196,7 @@ Output ONLY the raw JSON object, no fences, no extra text.`;
 
     const result = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
       maxTokens: 8192,
-      temperature: 0.2,
+      temperature: 0.35,
     });
 
     let analysis;

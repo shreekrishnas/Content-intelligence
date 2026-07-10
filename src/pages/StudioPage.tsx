@@ -6,6 +6,7 @@ import { auditLog } from '@/lib/audit';
 import { retrieve } from '@/lib/retrieval';
 import type { KBFileContext } from '@/lib/retrieval';
 import { supabaseConfigured } from '@/lib/supabase';
+import { renderMarkdown } from '@/lib/markdown';
 import type { Opportunity } from '@/types';
 
 function showToast(msg: string, kind: 'success' | 'error' | 'warn' = 'success') {
@@ -390,6 +391,26 @@ export default function StudioPage() {
     }
   }
 
+  async function handleCopyDraft() {
+    try {
+      await navigator.clipboard.writeText(asset.draft || '');
+      showToast('Draft copied to clipboard');
+    } catch {
+      showToast('Could not copy — select the text manually', 'warn');
+    }
+  }
+
+  function handleDownloadDraft() {
+    const blob = new Blob([asset.draft || ''], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(activeOpp!.title || 'content').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 60)}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Draft downloaded');
+  }
+
   async function handleSendToCalendar() {
     if (!accountId) return;
     const { error } = await api.calendar.add({
@@ -467,8 +488,15 @@ export default function StudioPage() {
       {stage === 'approved' ? (
         <>
           <div className="glass-card-static" style={{ padding: 20, marginBottom: 16 }}>
-            <h4 style={{ fontWeight: 700, marginBottom: 8 }}>Approved Draft</h4>
-            <pre style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.6 }}>{asset.draft}</pre>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              <h4 style={{ fontWeight: 700 }}>Approved Draft</h4>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button className="btn btn-ghost btn-sm" onClick={handleCopyDraft}>Copy</button>
+                <button className="btn btn-ghost btn-sm" onClick={handleDownloadDraft}>Download</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setStudioAsset({ ...asset, stage: 'draft' })}>Edit Draft</button>
+              </div>
+            </div>
+            <div className="md-body" dangerouslySetInnerHTML={{ __html: renderMarkdown(asset.draft) }} />
           </div>
 
           <QualityPanel quality={asset.quality} />

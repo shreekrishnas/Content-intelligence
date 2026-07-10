@@ -344,9 +344,9 @@ Score descriptions:
 - persona_tone: Alignment with target persona preferences (1.0 = perfect match)
 - sales_pressure: Inverse scale - 1.0 means no pushy sales language, 0.0 means overly salesy
 - jargon_level: Inverse scale - 1.0 means accessible language, 0.0 means heavy jargon
-- source_support: How well claims are grounded in sources (1.0 = every claim cited)
+- source_support: If knowledge base sources were provided, how well claims are grounded in them (1.0 = well supported). If NO sources were provided, score this 1.0 and do not penalize — the content was written from the brief.
 
-Flag any claims that lack source citations. Flag any compliance rule violations.`;
+Only flag missing citations when knowledge base sources were actually provided above. Flag any compliance rule violations. Focus your issues on specificity, clarity, persona fit, and engagement.`;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -387,7 +387,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const result = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
       maxTokens,
-      temperature: body.task === 'quality_review' ? 0.1 : 0.3,
+      temperature: body.task === 'quality_review' ? 0.1 : 0.45,
     });
 
     let output;

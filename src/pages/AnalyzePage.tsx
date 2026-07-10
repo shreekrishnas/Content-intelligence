@@ -198,12 +198,17 @@ export default function AnalyzePage() {
         ...retrieval.chunks.map((c) => c.chunk_text),
       ];
 
-      const personas = (personaFilesResult.data || []).map((f: any) => ({
-        name: f.file_name,
-        description: (f.structured as any)?.summary || f.file_name,
-        pain_points: (f.structured as any)?.key_messages?.slice(0, 4) || [],
-        goals: (f.structured as any)?.main_topics?.slice(0, 4) || [],
-      }));
+      const personas = (personaFilesResult.data || []).map((f: any) => {
+        const s = (f.structured as any) || {};
+        const cleanName = f.file_name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+        const descParts = [s.summary, s.audience ? `Audience: ${s.audience}` : null].filter(Boolean);
+        return {
+          name: cleanName || f.file_name,
+          description: descParts.join(' — ') || cleanName,
+          pain_points: (s.important_facts || s.key_messages || []).slice(0, 5),
+          goals: (s.main_topics || []).slice(0, 5),
+        };
+      });
 
       const { data, error: apiErr } = await api.analysis.run({
         accountId,
