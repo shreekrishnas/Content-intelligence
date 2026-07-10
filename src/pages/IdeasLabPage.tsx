@@ -121,6 +121,145 @@ function IdeaCard({ idea, onOpen, onSave, saved }: { idea: Idea; onOpen: () => v
   );
 }
 
+// ── Expand output: render each type as readable content, not raw JSON ──
+function OutBlock({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: '0.64rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function Para({ text }: { text?: string }) {
+  if (!text) return null;
+  return <div style={{ fontSize: '0.82rem', lineHeight: 1.55 }}>{text}</div>;
+}
+
+function Bullets({ items }: { items?: any[] }) {
+  if (!items?.length) return null;
+  return (
+    <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.82rem', lineHeight: 1.6 }}>
+      {items.map((it, i) => <li key={i}>{typeof it === 'string' ? it : JSON.stringify(it)}</li>)}
+    </ul>
+  );
+}
+
+function ExpandOutput({ type, data }: { type: ExpandType; data: any }) {
+  if (!data || typeof data !== 'object') return <Para text={String(data ?? '')} />;
+
+  if (type === 'brief') {
+    return (
+      <div>
+        <OutBlock label="Overview"><Para text={data.overview} /></OutBlock>
+        <OutBlock label="Target Audience"><Para text={data.target_audience} /></OutBlock>
+        <OutBlock label="Key Messages"><Bullets items={data.key_messages} /></OutBlock>
+        <OutBlock label="Content Structure"><Bullets items={data.content_structure} /></OutBlock>
+        <OutBlock label="Visual Mood"><Para text={data.visual_mood} /></OutBlock>
+        <OutBlock label="Distribution Plan"><Para text={data.distribution_plan} /></OutBlock>
+        <OutBlock label="Success Metrics"><Bullets items={data.success_metrics} /></OutBlock>
+        <OutBlock label="SEO Notes"><Para text={data.seo_notes} /></OutBlock>
+      </div>
+    );
+  }
+
+  if (type === 'carousel') {
+    return (
+      <div>
+        {data.slides?.length > 0 && (
+          <OutBlock label={`Slides (${data.slides.length})`}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {data.slides.map((s: any, i: number) => (
+                <div key={i} className="glass-card-static" style={{ padding: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span className="badge" style={{ fontSize: '0.58rem' }}>Slide {i + 1}</span>
+                    <span style={{ fontWeight: 700, fontSize: '0.82rem' }}>{s.headline}</span>
+                  </div>
+                  {s.body && <div style={{ fontSize: '0.8rem', lineHeight: 1.5 }}>{s.body}</div>}
+                  {s.visual_note && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 3 }}>🎨 {s.visual_note}</div>}
+                  {s.speaker_note && <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>🎙 {s.speaker_note}</div>}
+                </div>
+              ))}
+            </div>
+          </OutBlock>
+        )}
+        <OutBlock label="Caption"><Para text={data.caption} /></OutBlock>
+        <OutBlock label="Design System"><Para text={data.design_system} /></OutBlock>
+      </div>
+    );
+  }
+
+  if (type === 'blog') {
+    return (
+      <div>
+        <OutBlock label="Meta Title"><Para text={data.meta_title} /></OutBlock>
+        <OutBlock label="Meta Description"><Para text={data.meta_description} /></OutBlock>
+        {data.outline?.length > 0 && (
+          <OutBlock label="Outline">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {data.outline.map((sec: any, i: number) => (
+                <div key={i}>
+                  <div style={{ fontWeight: 700, fontSize: '0.82rem' }}>{sec.heading}</div>
+                  <Bullets items={sec.subpoints} />
+                </div>
+              ))}
+            </div>
+          </OutBlock>
+        )}
+        {data.faq_schema?.length > 0 && (
+          <OutBlock label="FAQ">
+            {data.faq_schema.map((f: any, i: number) => (
+              <div key={i} style={{ marginBottom: 6 }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Q: {f.question}</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>A: {f.answer}</div>
+              </div>
+            ))}
+          </OutBlock>
+        )}
+        <OutBlock label="Internal Links"><Bullets items={data.internal_links} /></OutBlock>
+        <OutBlock label="Featured Snippet Target"><Para text={data.featured_snippet_target} /></OutBlock>
+      </div>
+    );
+  }
+
+  // caption
+  return (
+    <div>
+      <OutBlock label="LinkedIn"><Para text={data.linkedin} /></OutBlock>
+      <OutBlock label="Instagram"><Para text={data.instagram} /></OutBlock>
+      <OutBlock label="Twitter / X"><Para text={data.twitter} /></OutBlock>
+      <OutBlock label="Email Subject Lines"><Bullets items={data.email_subject_lines} /></OutBlock>
+    </div>
+  );
+}
+
+// Flatten an expand output into readable plain text for copy/calendar.
+function expandToText(type: ExpandType, d: any): string {
+  if (!d || typeof d !== 'object') return String(d ?? '');
+  const L: string[] = [];
+  const push = (label: string, val?: any) => {
+    if (val === undefined || val === null || val === '') return;
+    if (Array.isArray(val)) { if (val.length) { L.push(label + ':'); val.forEach((v) => L.push(`- ${typeof v === 'string' ? v : JSON.stringify(v)}`)); L.push(''); } }
+    else { L.push(`${label}: ${val}`); L.push(''); }
+  };
+  if (type === 'carousel') {
+    (d.slides || []).forEach((s: any, i: number) => { L.push(`Slide ${i + 1}: ${s.headline || ''}`); if (s.body) L.push(s.body); if (s.visual_note) L.push(`Visual: ${s.visual_note}`); L.push(''); });
+    push('Caption', d.caption); push('Design System', d.design_system);
+  } else if (type === 'blog') {
+    push('Meta Title', d.meta_title); push('Meta Description', d.meta_description);
+    (d.outline || []).forEach((sec: any) => { L.push(`## ${sec.heading || ''}`); (sec.subpoints || []).forEach((p: string) => L.push(`- ${p}`)); L.push(''); });
+    (d.faq_schema || []).forEach((f: any) => { L.push(`Q: ${f.question}`); L.push(`A: ${f.answer}`); L.push(''); });
+    push('Internal Links', d.internal_links); push('Featured Snippet', d.featured_snippet_target);
+  } else if (type === 'caption') {
+    push('LinkedIn', d.linkedin); push('Instagram', d.instagram); push('Twitter/X', d.twitter); push('Email Subjects', d.email_subject_lines);
+  } else {
+    push('Overview', d.overview); push('Target Audience', d.target_audience); push('Key Messages', d.key_messages);
+    push('Content Structure', d.content_structure); push('Visual Mood', d.visual_mood); push('Distribution Plan', d.distribution_plan);
+    push('Success Metrics', d.success_metrics); push('SEO Notes', d.seo_notes);
+  }
+  return L.join('\n').trim();
+}
+
 function Row({ label, value }: { label: string; value?: string | number }) {
   if (value === undefined || value === '' || value === null) return null;
   return (
@@ -281,6 +420,22 @@ export default function IdeasLabPage() {
     if (e) { showToast(e, 'error'); return; }
     auditLog({ accountId, action: 'ideas_to_calendar', targetType: 'calendar_item', detail: { title: idea.title } }).catch(() => {});
     showToast('Added to Calendar');
+  }
+
+  async function sendExpandedToCalendar() {
+    if (!accountId || !selected || !expandOut) return;
+    const { error: e } = await api.calendar.add({
+      account_id: accountId,
+      asset_id: null,
+      title: selected.title || 'Untitled idea',
+      format: expandOut.type === 'carousel' ? 'Carousel' : expandOut.type === 'blog' ? 'Blog post' : selected.format || 'content',
+      scheduled_for: null,
+      status: 'scheduled',
+      body: expandToText(expandOut.type, expandOut.data) || (selected.title ?? ''),
+    });
+    if (e) { showToast(e, 'error'); return; }
+    auditLog({ accountId, action: 'ideas_expand_to_calendar', targetType: 'calendar_item', detail: { title: selected.title, type: expandOut.type } }).catch(() => {});
+    showToast('Expanded asset added to Calendar');
   }
 
   function copyIdea(idea: Idea) {
@@ -499,11 +654,16 @@ export default function IdeasLabPage() {
 
             {expandOut && (
               <div className="glass-card-static" style={{ padding: 14, marginTop: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
                   <div style={{ fontWeight: 700, fontSize: '0.85rem', textTransform: 'capitalize' }}>{expandOut.type} output</div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard.writeText(JSON.stringify(expandOut.data, null, 2)).then(() => showToast('Copied')); }}>Copy JSON</button>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { navigator.clipboard.writeText(expandToText(expandOut.type, expandOut.data)).then(() => showToast('Copied')).catch(() => showToast('Could not copy', 'warn')); }}>Copy</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => sendExpandedToCalendar()}>Send to Calendar</button>
+                  </div>
                 </div>
-                <pre style={{ whiteSpace: 'pre-wrap', fontSize: '0.75rem', lineHeight: 1.5, maxHeight: 360, overflow: 'auto', background: 'var(--surface-card)', padding: 10, borderRadius: 8 }}>{JSON.stringify(expandOut.data, null, 2)}</pre>
+                <div style={{ maxHeight: 420, overflow: 'auto' }}>
+                  <ExpandOutput type={expandOut.type} data={expandOut.data} />
+                </div>
               </div>
             )}
           </aside>
