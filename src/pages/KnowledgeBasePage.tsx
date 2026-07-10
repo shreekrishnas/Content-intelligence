@@ -116,7 +116,7 @@ export default function KnowledgeBasePage() {
   }
 
   async function handleToggleActive(file: KnowledgeFile) {
-    const { error } = await api.kb.toggleActive(file.id, !file.active);
+    const { error } = await api.kb.toggleActive(accountId!, file.id, !file.active);
     if (error) { showToast(error, 'error'); return; }
     await auditLog({
       accountId: accountId!,
@@ -128,7 +128,7 @@ export default function KnowledgeBasePage() {
   }
 
   async function handleDelete(file: KnowledgeFile) {
-    const { error } = await api.kb.delete(file.id);
+    const { error } = await api.kb.delete(accountId!, file.id);
     if (error) { showToast(error, 'error'); return; }
     await auditLog({
       accountId: accountId!,

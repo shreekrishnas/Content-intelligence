@@ -59,6 +59,12 @@ export default function AnalyzePage() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
 
+  useEffect(() => {
+    setResult(null);
+    setError(null);
+    setActivityStep(-1);
+  }, [accountId]);
+
   const handleRunAnalysis = useCallback(async () => {
     if (!accountId) return;
     if (!sourceContent.trim() && inputMode === 'text') return;

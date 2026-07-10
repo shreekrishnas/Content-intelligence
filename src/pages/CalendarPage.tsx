@@ -56,7 +56,7 @@ export default function CalendarPage() {
 
   async function handleSchedule(id: string) {
     if (!scheduleDate) { showToast('Pick a date first', 'warn'); return; }
-    const { error } = await api.calendar.schedule(id, scheduleDate);
+    const { error } = await api.calendar.schedule(accountId!, id, scheduleDate);
     if (error) { showToast(error, 'error'); return; }
 
     await auditLog({
@@ -74,7 +74,7 @@ export default function CalendarPage() {
   }
 
   async function handleExport(item: CalendarItem) {
-    const { data, error } = await api.calendar.export(item.id);
+    const { data, error } = await api.calendar.export(accountId!, item.id);
     if (error) { showToast(error, 'error'); return; }
 
     const blob = new Blob([data!], { type: 'text/plain' });

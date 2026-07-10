@@ -185,7 +185,7 @@ export default function StudioPage() {
       setWorkingMsg('Generating outline...');
       try {
         const kbChunks = await getKbChunks();
-        const res = await api.studio.generateOutline(activeOpp!, kbChunks);
+        const res = await api.studio.generateOutline(accountId!, activeOpp!, kbChunks);
         if (res.error) throw new Error(res.error);
 
         const output = res.data;
@@ -254,7 +254,7 @@ export default function StudioPage() {
     try {
       const currentContent = contentRef.current?.innerText || (stage === 'outline' ? asset.outline : asset.draft);
       const kbChunks = await getKbChunks();
-      const res = await api.studio.regenerate(activeOpp!, currentContent, feedback, kbChunks);
+      const res = await api.studio.regenerate(accountId!, activeOpp!, currentContent, feedback, kbChunks);
       if (res.error) throw new Error(res.error);
 
       const output = res.data;
@@ -284,7 +284,7 @@ export default function StudioPage() {
     setWorkingMsg('Generating draft from outline...');
     try {
       const kbChunks = await getKbChunks();
-      const res = await api.studio.generateDraft(activeOpp!, outlineText, kbChunks);
+      const res = await api.studio.generateDraft(accountId!, activeOpp!, outlineText, kbChunks);
       if (res.error) throw new Error(res.error);
 
       const output = res.data;
@@ -316,7 +316,7 @@ export default function StudioPage() {
     setWorkingMsg('Running quality review...');
     try {
       const kbChunks = await getKbChunks();
-      const res = await api.studio.qualityReview(activeOpp!, draftText, kbChunks);
+      const res = await api.studio.qualityReview(accountId!, activeOpp!, draftText, kbChunks);
       if (res.error) throw new Error(res.error);
 
       setStudioAsset({ ...asset, stage: 'approved', draft: draftText, quality: res.data });

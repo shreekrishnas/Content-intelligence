@@ -23,6 +23,8 @@ interface AppState {
   setActiveStudioOpp: (id: string | null) => void;
   studioAsset: StudioAsset | null;
   setStudioAsset: (asset: StudioAsset | null) => void;
+
+  resetAccountState: () => void;
 }
 
 function getInitialTheme(): 'light' | 'dark' {
@@ -52,4 +54,6 @@ export const useAppStore = create<AppState>((set) => ({
   setActiveStudioOpp: (id) => set({ activeStudioOpp: id }),
   studioAsset: null,
   setStudioAsset: (asset) => set({ studioAsset: asset }),
+
+  resetAccountState: () => set({ activeStudioOpp: null, studioAsset: null }),
 }));

@@ -159,22 +159,25 @@ export const api = {
     },
 
     async toggleActive(
+      accountId: string,
       fileId: string,
       active: boolean,
     ): Promise<Result<void>> {
       const { error } = await supabase
         .from('knowledge_files')
         .update({ active })
-        .eq('id', fileId);
+        .eq('id', fileId)
+        .eq('account_id', accountId);
       if (error) return err(pgError(error));
       return ok(undefined as void);
     },
 
-    async delete(fileId: string): Promise<Result<void>> {
+    async delete(accountId: string, fileId: string): Promise<Result<void>> {
       const { data: file } = await supabase
         .from('knowledge_files')
         .select('storage_url')
         .eq('id', fileId)
+        .eq('account_id', accountId)
         .single();
 
       if (file?.storage_url) {
@@ -263,6 +266,7 @@ export const api = {
   // --------------------------------------------------------------------------
   studio: {
     async generateOutline(
+      accountId: string,
       opportunity: Opportunity,
       kbChunks: string[],
     ): Promise<Result<any>> {
@@ -271,6 +275,7 @@ export const api = {
         {
           body: {
             task: 'outline',
+            account_id: accountId,
             opportunity: {
               title: opportunity.title,
               content_angle: opportunity.content_angle || '',
@@ -293,6 +298,7 @@ export const api = {
     },
 
     async generateDraft(
+      accountId: string,
       opportunity: Opportunity,
       outline: string,
       kbChunks: string[],
@@ -302,6 +308,7 @@ export const api = {
         {
           body: {
             task: 'draft',
+            account_id: accountId,
             opportunity: {
               title: opportunity.title,
               content_angle: opportunity.content_angle || '',
@@ -325,6 +332,7 @@ export const api = {
     },
 
     async regenerate(
+      accountId: string,
       opportunity: Opportunity,
       content: string,
       feedback: string,
@@ -335,6 +343,7 @@ export const api = {
         {
           body: {
             task: 'regenerate',
+            account_id: accountId,
             opportunity: {
               title: opportunity.title,
               content_angle: opportunity.content_angle || '',
@@ -355,6 +364,7 @@ export const api = {
     },
 
     async qualityReview(
+      accountId: string,
       opportunity: Opportunity,
       draft: string,
       kbChunks: string[],
@@ -364,6 +374,7 @@ export const api = {
         {
           body: {
             task: 'quality_review',
+            account_id: accountId,
             opportunity: {
               title: opportunity.title,
               content_angle: opportunity.content_angle || '',
@@ -411,22 +422,25 @@ export const api = {
     },
 
     async schedule(
+      accountId: string,
       id: string,
       scheduledDate: string,
     ): Promise<Result<void>> {
       const { error } = await supabase
         .from('calendar_items')
         .update({ scheduled_for: scheduledDate, status: 'scheduled' })
-        .eq('id', id);
+        .eq('id', id)
+        .eq('account_id', accountId);
       if (error) return err(pgError(error));
       return ok(undefined as void);
     },
 
-    async export(id: string): Promise<Result<string>> {
+    async export(accountId: string, id: string): Promise<Result<string>> {
       const { data, error } = await supabase
         .from('calendar_items')
         .select('*, assets(*)')
         .eq('id', id)
+        .eq('account_id', accountId)
         .single();
       if (error) return err(pgError(error));
 
@@ -458,25 +472,29 @@ export const api = {
     },
 
     async configure(
+      accountId: string,
       integrationId: string,
       config: Record<string, any>,
     ): Promise<Result<void>> {
       const { error } = await supabase
         .from('integrations')
         .update({ config })
-        .eq('id', integrationId);
+        .eq('id', integrationId)
+        .eq('account_id', accountId);
       if (error) return err(pgError(error));
       return ok(undefined as void);
     },
 
     async updateStatus(
+      accountId: string,
       integrationId: string,
       status: string,
     ): Promise<Result<void>> {
       const { error } = await supabase
         .from('integrations')
         .update({ status })
-        .eq('id', integrationId);
+        .eq('id', integrationId)
+        .eq('account_id', accountId);
       if (error) return err(pgError(error));
       return ok(undefined as void);
     },
@@ -497,13 +515,15 @@ export const api = {
     },
 
     async updateStatus(
+      accountId: string,
       id: string,
       status: Opportunity['status'],
     ): Promise<Result<void>> {
       const { error } = await supabase
         .from('opportunities')
         .update({ status })
-        .eq('id', id);
+        .eq('id', id)
+        .eq('account_id', accountId);
       if (error) return err(pgError(error));
       return ok(undefined as void);
     },

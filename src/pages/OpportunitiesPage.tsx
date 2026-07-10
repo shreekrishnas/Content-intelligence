@@ -54,7 +54,7 @@ export default function OpportunitiesPage() {
   });
 
   async function handleSendToStudio(opp: Opportunity) {
-    const { error } = await api.opportunities.updateStatus(opp.id, 'in_studio');
+    const { error } = await api.opportunities.updateStatus(accountId!, opp.id, 'in_studio');
     if (error) { showToast(error, 'error'); return; }
 
     await auditLog({
@@ -71,7 +71,7 @@ export default function OpportunitiesPage() {
   }
 
   async function handleDrop(opp: Opportunity) {
-    const { error } = await api.opportunities.updateStatus(opp.id, 'dropped');
+    const { error } = await api.opportunities.updateStatus(accountId!, opp.id, 'dropped');
     if (error) { showToast(error, 'error'); return; }
     showToast('Opportunity dropped');
     loadOpps();

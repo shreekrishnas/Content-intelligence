@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
+import { useAppStore } from '@/store';
 import type { Account } from '@/types';
 
 export const ACCOUNTS = [
@@ -81,6 +82,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
   const switchAccount = useCallback((id: string) => {
     localStorage.setItem('ci_account_id', id);
+    useAppStore.getState().resetAccountState();
     fetchAccount(id);
   }, [fetchAccount]);
 

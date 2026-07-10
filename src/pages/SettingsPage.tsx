@@ -50,7 +50,7 @@ export default function SettingsPage() {
 
   async function saveConfig() {
     if (!configModal) return;
-    const { error } = await api.integrations.configure(configModal.id, configValues);
+    const { error } = await api.integrations.configure(accountId!, configModal.id, configValues);
     if (error) { showToast(error, 'error'); return; }
     setConfigModal(null);
     showToast('Configuration saved');
@@ -62,7 +62,7 @@ export default function SettingsPage() {
     try {
       const hasConfig = intg.config && Object.keys(intg.config).length > 0;
       const newStatus = hasConfig ? 'connected' : 'configuration_required';
-      const { error } = await api.integrations.updateStatus(intg.id, newStatus);
+      const { error } = await api.integrations.updateStatus(accountId!, intg.id, newStatus);
       if (error) { showToast(error, 'error'); return; }
       showToast(hasConfig ? `${intg.type} connected` : `${intg.type} needs configuration`, hasConfig ? 'success' : 'warn');
     } catch {
