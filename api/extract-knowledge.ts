@@ -46,7 +46,7 @@ Return JSON with this exact structure:
         'X-Title': 'Content Intelligence Platform',
       },
       body: JSON.stringify({
-        model: process.env.LLM_MODEL ?? 'anthropic/claude-3.5-sonnet',
+        model: process.env.LLM_MODEL ?? 'anthropic/claude-3.5-sonnet-20241022',
         max_tokens: 1024,
         temperature: 0.1,
         messages: [

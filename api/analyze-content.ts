@@ -58,7 +58,7 @@ async function callLLM(
     throw new Error('OPENROUTER_API_KEY is not configured. Add it in Vercel Environment Variables.');
   }
 
-  const model = process.env.LLM_MODEL ?? 'anthropic/claude-3.5-sonnet';
+  const model = process.env.LLM_MODEL ?? 'anthropic/claude-3.5-sonnet-20241022';
   const maxTokens = options.maxTokens ?? 4096;
   const temperature = options.temperature ?? 0.3;
 
