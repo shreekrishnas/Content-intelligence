@@ -16,6 +16,13 @@ GROUNDING CONTRACT:
 
 You analyze source content and return structured JSON. Your output must be valid JSON with no markdown wrapping.`;
 
+interface FileContext {
+  file_id: string;
+  file_name: string;
+  category: string;
+  structured?: Record<string, unknown>;
+}
+
 interface AnalyzeRequest {
   source_text: string;
   source_type: string;
@@ -24,8 +31,21 @@ interface AnalyzeRequest {
   source_url?: string;
   marketing_notes?: string;
   knowledge_chunks?: Array<{ id: string; content: string; metadata?: Record<string, unknown> }>;
+  file_context?: FileContext[];
   personas?: Array<{ name: string; description: string; pain_points?: string[]; goals?: string[] }>;
   account_id: string;
+}
+
+function buildFileContextSection(files: FileContext[]): string {
+  if (!files?.length) return '';
+  const lines = files.map((f, i) => {
+    const s = f.structured as any;
+    const summary = s?.summary ? `\n   Summary: ${s.summary}` : '';
+    const topics = s?.main_topics?.length ? `\n   Topics: ${s.main_topics.join(', ')}` : '';
+    const messages = s?.key_messages?.length ? `\n   Key messages: ${s.key_messages.slice(0, 3).join(' | ')}` : '';
+    return `[KB-File-${i + 1}] "${f.file_name}" (${f.category})${summary}${topics}${messages}`;
+  });
+  return `\n\nKNOWLEDGE BASE FILES:\n${lines.join('\n')}`;
 }
 
 async function callLLM(
@@ -116,6 +136,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    const fileContextSection = body.file_context?.length ? buildFileContextSection(body.file_context) : '';
     const knowledgeSection = body.knowledge_chunks?.length
       ? `\n\nKNOWLEDGE BASE CHUNKS:\n${body.knowledge_chunks.map((chunk, i) => `[KB-${i + 1}: ${chunk.id}]\n${chunk.content}`).join('\n\n')}`
       : '';
@@ -135,7 +156,7 @@ SOURCE METADATA:
 - Type: ${body.source_type}
 - Owner: ${body.source_owner ?? 'Unknown'}
 - URL: ${body.source_url ?? 'N/A'}
-${marketingSection}${knowledgeSection}${personaSection}
+${marketingSection}${fileContextSection}${knowledgeSection}${personaSection}
 
 SOURCE CONTENT:
 ${body.source_text}

@@ -92,6 +92,7 @@ export default function AnalyzePage() {
   const [isRunning, setIsRunning] = useState(false);
   const [activityStep, setActivityStep] = useState(-1);
   const [result, setResult] = useState<any | null>(null);
+  const [sourcesUsed, setSourcesUsed] = useState<Array<{ file_name: string; category: string }>>([]);
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -149,6 +150,7 @@ export default function AnalyzePage() {
 
     setIsRunning(true);
     setResult(null);
+    setSourcesUsed([]);
     setError(null);
     setActivityStep(0);
 
@@ -194,6 +196,7 @@ export default function AnalyzePage() {
         sourceUrl: inputMode === 'url' ? sourceUrl : undefined,
         marketingNotes: marketingNotes || undefined,
         knowledgeChunks: kbChunks,
+        fileContext: retrieval.sourcesUsed,
       });
 
       clearInterval(stepTimer);
@@ -206,6 +209,7 @@ export default function AnalyzePage() {
         analysis.warnings = [...(analysis.warnings || []), kbWarning];
       }
       setResult(analysis);
+      setSourcesUsed(retrieval.sourcesUsed);
 
       if (analysis?.opportunities?.length > 0 && accountId) {
         setActivityStep(ACTIVITY_LABELS.length - 2);
@@ -530,6 +534,19 @@ export default function AnalyzePage() {
                       <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Persona: {opp.persona_match}</div>
                     )}
                   </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {sourcesUsed.length > 0 && (
+            <div className="glass-card-static" style={{ padding: '1rem 1.2rem', marginBottom: '1rem', borderLeft: '3px solid var(--accent-primary)' }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>Sources Used from Knowledge Hub</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                {sourcesUsed.map((s, i) => (
+                  <span key={i} className="badge" style={{ fontSize: '0.72rem' }}>
+                    <span style={{ opacity: 0.6, marginRight: 4 }}>{s.category}</span>{s.file_name}
+                  </span>
                 ))}
               </div>
             </div>

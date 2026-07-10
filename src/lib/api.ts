@@ -10,6 +10,7 @@ import type {
   Integration,
   SourceType,
 } from '@/types';
+import type { KBFileContext } from '@/lib/retrieval';
 
 type Result<T> = { data: T | null; error: string | null };
 
@@ -128,7 +129,7 @@ export const api = {
       const fileRow = row as KnowledgeFile;
 
       parseFile(file)
-        .then((text) => {
+        .then(async (text) => {
           const chunks = chunkText(text);
           if (chunks.length === 0) return;
 
@@ -141,14 +142,35 @@ export const api = {
             position: c.index,
           }));
 
-          return supabase.from('knowledge_chunks').insert(rows);
-        })
-        .then(() =>
-          supabase
+          await supabase.from('knowledge_chunks').insert(rows);
+          await supabase
             .from('knowledge_files')
             .update({ ingest_status: 'ready' })
-            .eq('id', fileRow.id),
-        )
+            .eq('id', fileRow.id);
+
+          // Non-blocking: extract structured metadata from first chunk
+          const sampleText = chunks.slice(0, 3).map(c => c.content).join('\n\n');
+          fetch('/api/extract-knowledge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              file_name: file.name,
+              category: metadata.category,
+              sample_text: sampleText,
+            }),
+          })
+            .then(r => r.json())
+            .then(({ structured }) => {
+              if (structured) {
+                supabase
+                  .from('knowledge_files')
+                  .update({ structured })
+                  .eq('id', fileRow.id)
+                  .then(() => {});
+              }
+            })
+            .catch(() => {});
+        })
         .catch(() =>
           supabase
             .from('knowledge_files')
@@ -227,6 +249,7 @@ export const api = {
       sourceUrl?: string;
       marketingNotes?: string;
       knowledgeChunks?: string[];
+      fileContext?: KBFileContext[];
     }): Promise<Result<Analysis>> {
       try {
         const response = await fetch('/api/analyze-content', {
@@ -243,6 +266,7 @@ export const api = {
               id: `chunk-${i}`,
               content: text,
             })),
+            file_context: params.fileContext,
             account_id: params.accountId,
           }),
         });
@@ -273,6 +297,7 @@ export const api = {
       _accountId: string,
       opportunity: Opportunity,
       kbChunks: string[],
+      fileContext?: KBFileContext[],
     ): Promise<Result<any>> {
       return this._callGenerate({
         task: 'outline',
@@ -286,6 +311,7 @@ export const api = {
           source_context: opportunity.source_context,
         },
         knowledge_chunks: kbChunks.map((text, i) => ({ id: `chunk-${i}`, content: text })),
+        file_context: fileContext,
       });
     },
 
@@ -294,6 +320,7 @@ export const api = {
       opportunity: Opportunity,
       outline: string,
       kbChunks: string[],
+      fileContext?: KBFileContext[],
     ): Promise<Result<any>> {
       return this._callGenerate({
         task: 'draft',
@@ -308,6 +335,7 @@ export const api = {
         },
         existing_content: outline,
         knowledge_chunks: kbChunks.map((text, i) => ({ id: `chunk-${i}`, content: text })),
+        file_context: fileContext,
       });
     },
 
@@ -317,6 +345,7 @@ export const api = {
       content: string,
       feedback: string,
       kbChunks: string[],
+      fileContext?: KBFileContext[],
     ): Promise<Result<any>> {
       return this._callGenerate({
         task: 'regenerate',
@@ -328,6 +357,7 @@ export const api = {
         existing_content: content,
         feedback,
         knowledge_chunks: kbChunks.map((text, i) => ({ id: `chunk-${i}`, content: text })),
+        file_context: fileContext,
       });
     },
 
@@ -336,6 +366,7 @@ export const api = {
       opportunity: Opportunity,
       draft: string,
       kbChunks: string[],
+      fileContext?: KBFileContext[],
     ): Promise<Result<any>> {
       return this._callGenerate({
         task: 'quality_review',
@@ -347,6 +378,7 @@ export const api = {
         },
         existing_content: draft,
         knowledge_chunks: kbChunks.map((text, i) => ({ id: `chunk-${i}`, content: text })),
+        file_context: fileContext,
       });
     },
 

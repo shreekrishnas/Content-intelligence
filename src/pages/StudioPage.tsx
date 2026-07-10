@@ -4,6 +4,7 @@ import { useAccount } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
 import { auditLog } from '@/lib/audit';
 import { retrieve } from '@/lib/retrieval';
+import type { KBFileContext } from '@/lib/retrieval';
 import { supabaseConfigured } from '@/lib/supabase';
 import type { Opportunity } from '@/types';
 
@@ -95,6 +96,7 @@ export default function StudioPage() {
   const [feedback, setFeedback] = useState('');
   const [working, setWorking] = useState(false);
   const [workingMsg, setWorkingMsg] = useState('');
+  const [sourcesUsed, setSourcesUsed] = useState<Array<{ file_name: string; category: string }>>([]);
   const contentRef = useRef<HTMLDivElement>(null);
 
   const loadOpps = useCallback(async () => {
@@ -110,14 +112,21 @@ export default function StudioPage() {
   const studioOpps = opportunities.filter((o) => o.status === 'in_studio');
   const activeOpp = activeStudioOpp ? opportunities.find((o) => o.id === activeStudioOpp) : null;
 
-  async function getKbChunks(): Promise<string[]> {
-    if (!accountId) return [];
+  async function getKbContext(): Promise<{ chunks: string[]; fileContext: KBFileContext[] }> {
+    if (!accountId) throw new Error('Relevant information is not available in the Knowledge Hub. Please upload a suitable file or add more information before generating this content.');
     const result = await retrieve(accountId, activeOpp?.title || '', 'generation');
-    if (result.refused) return [];
-    return [
-      ...result.constraintChunks.map((c) => c.chunk_text),
-      ...result.chunks.map((c) => c.chunk_text),
+    if (result.refused) throw new Error(result.reason || 'Knowledge base not ready.');
+    const allChunks = [
+      ...result.constraintChunks,
+      ...result.chunks,
     ];
+    if (allChunks.length === 0) {
+      throw new Error('Relevant information is not available in the Knowledge Hub. Please upload a suitable file or add more information before generating this content. You may need brand guidelines, product documents, or relevant research files.');
+    }
+    return {
+      chunks: allChunks.map((c) => c.chunk_text),
+      fileContext: result.sourcesUsed,
+    };
   }
 
   if (loading) {
@@ -184,8 +193,9 @@ export default function StudioPage() {
       setWorking(true);
       setWorkingMsg('Generating outline...');
       try {
-        const kbChunks = await getKbChunks();
-        const res = await api.studio.generateOutline(accountId!, activeOpp!, kbChunks);
+        const { chunks: kbChunks, fileContext } = await getKbContext();
+        setSourcesUsed(fileContext);
+        const res = await api.studio.generateOutline(accountId!, activeOpp!, kbChunks, fileContext);
         if (res.error) throw new Error(res.error);
 
         const output = res.data;
@@ -253,8 +263,9 @@ export default function StudioPage() {
     setWorkingMsg('Regenerating with feedback...');
     try {
       const currentContent = contentRef.current?.innerText || (stage === 'outline' ? asset.outline : asset.draft);
-      const kbChunks = await getKbChunks();
-      const res = await api.studio.regenerate(accountId!, activeOpp!, currentContent, feedback, kbChunks);
+      const { chunks: kbChunks, fileContext } = await getKbContext();
+      setSourcesUsed(fileContext);
+      const res = await api.studio.regenerate(accountId!, activeOpp!, currentContent, feedback, kbChunks, fileContext);
       if (res.error) throw new Error(res.error);
 
       const output = res.data;
@@ -283,8 +294,9 @@ export default function StudioPage() {
     setWorking(true);
     setWorkingMsg('Generating draft from outline...');
     try {
-      const kbChunks = await getKbChunks();
-      const res = await api.studio.generateDraft(accountId!, activeOpp!, outlineText, kbChunks);
+      const { chunks: kbChunks, fileContext } = await getKbContext();
+      setSourcesUsed(fileContext);
+      const res = await api.studio.generateDraft(accountId!, activeOpp!, outlineText, kbChunks, fileContext);
       if (res.error) throw new Error(res.error);
 
       const output = res.data;
@@ -315,8 +327,9 @@ export default function StudioPage() {
     setWorking(true);
     setWorkingMsg('Running quality review...');
     try {
-      const kbChunks = await getKbChunks();
-      const res = await api.studio.qualityReview(accountId!, activeOpp!, draftText, kbChunks);
+      const { chunks: kbChunks, fileContext } = await getKbContext();
+      setSourcesUsed(fileContext);
+      const res = await api.studio.qualityReview(accountId!, activeOpp!, draftText, kbChunks, fileContext);
       if (res.error) throw new Error(res.error);
 
       setStudioAsset({ ...asset, stage: 'approved', draft: draftText, quality: res.data });
@@ -368,6 +381,19 @@ export default function StudioPage() {
       <p className="page-desc" style={{ marginBottom: 16 }}>
         Stage: <span className="badge" style={{ marginLeft: 4 }}>{stage}</span>
       </p>
+
+      {sourcesUsed.length > 0 && (
+        <div className="glass-card-static" style={{ padding: '0.7rem 1rem', marginBottom: 12, borderLeft: '3px solid var(--accent-primary)', display: 'flex', alignItems: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.7rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', flexShrink: 0, paddingTop: 2 }}>KB Sources</span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+            {sourcesUsed.map((s, i) => (
+              <span key={i} className="badge" style={{ fontSize: '0.68rem' }}>
+                <span style={{ opacity: 0.6, marginRight: 3 }}>{s.category}</span>{s.file_name}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {working && (
         <div className="glass-card-static" style={{ padding: 16, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12 }}>

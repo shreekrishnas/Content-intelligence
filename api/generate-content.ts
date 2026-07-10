@@ -16,8 +16,16 @@ GROUNDING CONTRACT:
 
 You return structured JSON. Your output must be valid JSON with no markdown wrapping.`;
 
+interface FileContext {
+  file_id: string;
+  file_name: string;
+  category: string;
+  structured?: Record<string, unknown>;
+}
+
 interface GenerateRequest {
   task: 'outline' | 'draft' | 'regenerate' | 'quality_review';
+  file_context?: FileContext[];
   opportunity: {
     title: string;
     content_angle: string;
@@ -105,8 +113,21 @@ async function callLLM(
   throw lastError ?? new Error('Failed to call LLM after retries');
 }
 
+const MISSING_KNOWLEDGE_MSG = 'Relevant information is not available in the Knowledge Hub. Please upload a suitable file or add more information before generating this content. You may need brand guidelines, product documents, or relevant research files.';
+
 function buildSourceContext(body: GenerateRequest): string {
   const parts: string[] = [];
+
+  if (body.file_context?.length) {
+    const lines = body.file_context.map((f, i) => {
+      const s = f.structured as any;
+      const summary = s?.summary ? `\n   Summary: ${s.summary}` : '';
+      const topics = s?.main_topics?.length ? `\n   Topics: ${s.main_topics.join(', ')}` : '';
+      const msgs = s?.key_messages?.length ? `\n   Key messages: ${s.key_messages.slice(0, 3).join(' | ')}` : '';
+      return `[KB-File-${i + 1}] "${f.file_name}" (${f.category})${summary}${topics}${msgs}`;
+    });
+    parts.push(`KNOWLEDGE BASE FILES:\n${lines.join('\n')}`);
+  }
 
   if (body.source_refs?.length) {
     parts.push(
@@ -328,6 +349,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if ((body.task === 'regenerate' || body.task === 'quality_review') && !body.existing_content) {
       return res.status(400).json({ error: `Task '${body.task}' requires existing_content to be provided.` });
+    }
+
+    // Enforce KB requirement: generation must have knowledge to draw from
+    const hasKnowledge = (body.knowledge_chunks?.length ?? 0) > 0 || (body.file_context?.length ?? 0) > 0;
+    if (!hasKnowledge) {
+      return res.status(422).json({ error: MISSING_KNOWLEDGE_MSG });
     }
 
     const context = buildSourceContext(body);
