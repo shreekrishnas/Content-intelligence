@@ -228,10 +228,11 @@ export const api = {
       marketingNotes?: string;
       knowledgeChunks?: string[];
     }): Promise<Result<Analysis>> {
-      const { data, error } = await supabase.functions.invoke(
-        'analyze-content',
-        {
-          body: {
+      try {
+        const response = await fetch('/api/analyze-content', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             source_text: params.sourceText,
             source_type: params.sourceType,
             source_title: params.sourceTitle || 'Untitled Source',
@@ -243,12 +244,14 @@ export const api = {
               content: text,
             })),
             account_id: params.accountId,
-          },
-        },
-      );
-      if (error) return err(error.message);
-      if (data?.error) return err(data.error);
-      return ok(data as Analysis);
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok || data.error) return err(data.error || 'Analysis failed');
+        return ok(data as Analysis);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : 'Network error during analysis');
+      }
     },
 
     async list(accountId: string): Promise<Result<Analysis[]>> {
@@ -267,132 +270,99 @@ export const api = {
   // --------------------------------------------------------------------------
   studio: {
     async generateOutline(
-      accountId: string,
+      _accountId: string,
       opportunity: Opportunity,
       kbChunks: string[],
     ): Promise<Result<any>> {
-      const { data, error } = await supabase.functions.invoke(
-        'generate-content',
-        {
-          body: {
-            task: 'outline',
-            account_id: accountId,
-            opportunity: {
-              title: opportunity.title,
-              content_angle: opportunity.content_angle || '',
-              recommended_format: opportunity.format || 'blog_post',
-              priority: opportunity.priority,
-              persona_match: opportunity.persona_name || 'General',
-              suggested_cta: opportunity.suggested_cta,
-              source_context: opportunity.source_context,
-            },
-            knowledge_chunks: kbChunks.map((text, i) => ({
-              id: `chunk-${i}`,
-              content: text,
-            })),
-          },
+      return this._callGenerate({
+        task: 'outline',
+        opportunity: {
+          title: opportunity.title,
+          content_angle: opportunity.content_angle || '',
+          recommended_format: opportunity.format || 'blog_post',
+          priority: opportunity.priority,
+          persona_match: opportunity.persona_name || 'General',
+          suggested_cta: opportunity.suggested_cta,
+          source_context: opportunity.source_context,
         },
-      );
-      if (error) return err(error.message);
-      if (data?.error) return err(data.error);
-      return ok(data.output);
+        knowledge_chunks: kbChunks.map((text, i) => ({ id: `chunk-${i}`, content: text })),
+      });
     },
 
     async generateDraft(
-      accountId: string,
+      _accountId: string,
       opportunity: Opportunity,
       outline: string,
       kbChunks: string[],
     ): Promise<Result<any>> {
-      const { data, error } = await supabase.functions.invoke(
-        'generate-content',
-        {
-          body: {
-            task: 'draft',
-            account_id: accountId,
-            opportunity: {
-              title: opportunity.title,
-              content_angle: opportunity.content_angle || '',
-              recommended_format: opportunity.format || 'blog_post',
-              priority: opportunity.priority,
-              persona_match: opportunity.persona_name || 'General',
-              suggested_cta: opportunity.suggested_cta,
-              source_context: opportunity.source_context,
-            },
-            existing_content: outline,
-            knowledge_chunks: kbChunks.map((text, i) => ({
-              id: `chunk-${i}`,
-              content: text,
-            })),
-          },
+      return this._callGenerate({
+        task: 'draft',
+        opportunity: {
+          title: opportunity.title,
+          content_angle: opportunity.content_angle || '',
+          recommended_format: opportunity.format || 'blog_post',
+          priority: opportunity.priority,
+          persona_match: opportunity.persona_name || 'General',
+          suggested_cta: opportunity.suggested_cta,
+          source_context: opportunity.source_context,
         },
-      );
-      if (error) return err(error.message);
-      if (data?.error) return err(data.error);
-      return ok(data.output);
+        existing_content: outline,
+        knowledge_chunks: kbChunks.map((text, i) => ({ id: `chunk-${i}`, content: text })),
+      });
     },
 
     async regenerate(
-      accountId: string,
+      _accountId: string,
       opportunity: Opportunity,
       content: string,
       feedback: string,
       kbChunks: string[],
     ): Promise<Result<any>> {
-      const { data, error } = await supabase.functions.invoke(
-        'generate-content',
-        {
-          body: {
-            task: 'regenerate',
-            account_id: accountId,
-            opportunity: {
-              title: opportunity.title,
-              content_angle: opportunity.content_angle || '',
-              recommended_format: opportunity.format || 'blog_post',
-            },
-            existing_content: content,
-            feedback,
-            knowledge_chunks: kbChunks.map((text, i) => ({
-              id: `chunk-${i}`,
-              content: text,
-            })),
-          },
+      return this._callGenerate({
+        task: 'regenerate',
+        opportunity: {
+          title: opportunity.title,
+          content_angle: opportunity.content_angle || '',
+          recommended_format: opportunity.format || 'blog_post',
         },
-      );
-      if (error) return err(error.message);
-      if (data?.error) return err(data.error);
-      return ok(data.output);
+        existing_content: content,
+        feedback,
+        knowledge_chunks: kbChunks.map((text, i) => ({ id: `chunk-${i}`, content: text })),
+      });
     },
 
     async qualityReview(
-      accountId: string,
+      _accountId: string,
       opportunity: Opportunity,
       draft: string,
       kbChunks: string[],
     ): Promise<Result<any>> {
-      const { data, error } = await supabase.functions.invoke(
-        'generate-content',
-        {
-          body: {
-            task: 'quality_review',
-            account_id: accountId,
-            opportunity: {
-              title: opportunity.title,
-              content_angle: opportunity.content_angle || '',
-              recommended_format: opportunity.format || 'blog_post',
-              persona_match: opportunity.persona_name || 'General',
-            },
-            existing_content: draft,
-            knowledge_chunks: kbChunks.map((text, i) => ({
-              id: `chunk-${i}`,
-              content: text,
-            })),
-          },
+      return this._callGenerate({
+        task: 'quality_review',
+        opportunity: {
+          title: opportunity.title,
+          content_angle: opportunity.content_angle || '',
+          recommended_format: opportunity.format || 'blog_post',
+          persona_match: opportunity.persona_name || 'General',
         },
-      );
-      if (error) return err(error.message);
-      if (data?.error) return err(data.error);
-      return ok(data.output);
+        existing_content: draft,
+        knowledge_chunks: kbChunks.map((text, i) => ({ id: `chunk-${i}`, content: text })),
+      });
+    },
+
+    async _callGenerate(body: Record<string, any>): Promise<Result<any>> {
+      try {
+        const response = await fetch('/api/generate-content', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+        if (!response.ok || data.error) return err(data.error || 'Generation failed');
+        return ok(data.output);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : 'Network error during generation');
+      }
     },
   },
 
