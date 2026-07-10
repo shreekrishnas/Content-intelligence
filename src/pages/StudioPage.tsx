@@ -96,6 +96,7 @@ export default function StudioPage() {
   const [feedback, setFeedback] = useState('');
   const [working, setWorking] = useState(false);
   const [workingMsg, setWorkingMsg] = useState('');
+  const [studioError, setStudioError] = useState<string | null>(null);
   const [sourcesUsed, setSourcesUsed] = useState<Array<{ file_name: string; category: string }>>([]);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -191,6 +192,7 @@ export default function StudioPage() {
   if (!studioAsset) {
     async function handleGenerate() {
       setWorking(true);
+      setStudioError(null);
       setWorkingMsg('Generating outline...');
       try {
         const { chunks: kbChunks, fileContext } = await getKbContext();
@@ -222,7 +224,7 @@ export default function StudioPage() {
 
         showToast('Outline generated');
       } catch (e: any) {
-        showToast(e.message || 'Outline generation failed', 'error');
+        setStudioError(e.message || 'Outline generation failed. Please try again.');
       } finally {
         setWorking(false);
         setWorkingMsg('');
@@ -282,7 +284,7 @@ export default function StudioPage() {
       setFeedback('');
       showToast('Content regenerated');
     } catch (e: any) {
-      showToast(e.message || 'Regeneration failed', 'error');
+      setStudioError(e.message || 'Regeneration failed. Please try again.');
     } finally {
       setWorking(false);
       setWorkingMsg('');
@@ -315,7 +317,7 @@ export default function StudioPage() {
 
       showToast('Outline approved. Draft generated.');
     } catch (e: any) {
-      showToast(e.message || 'Draft generation failed', 'error');
+      setStudioError(e.message || 'Draft generation failed. Please try again.');
     } finally {
       setWorking(false);
       setWorkingMsg('');
@@ -343,7 +345,7 @@ export default function StudioPage() {
 
       showToast('Draft approved. Quality review complete.');
     } catch (e: any) {
-      showToast(e.message || 'Quality review failed', 'error');
+      setStudioError(e.message || 'Quality review failed. Please try again.');
     } finally {
       setWorking(false);
       setWorkingMsg('');
@@ -391,6 +393,28 @@ export default function StudioPage() {
                 <span style={{ opacity: 0.6, marginRight: 3 }}>{s.category}</span>{s.file_name}
               </span>
             ))}
+          </div>
+        </div>
+      )}
+
+      {studioError && (
+        <div className="glass-card-static" style={{ padding: '1rem 1.2rem', marginBottom: 16, borderLeft: '3px solid #DC2626' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#DC2626', marginBottom: '0.4rem' }}>Error</div>
+              <p style={{ fontSize: '0.82rem', lineHeight: 1.5 }}>{studioError}</p>
+              {studioError.includes('Knowledge Hub') && (
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+                  Go to the <strong>Knowledge Hub</strong> tab and upload brand guidelines, product documents, or relevant research files before generating content.
+                </p>
+              )}
+              {(studioError.includes('API key') || studioError.includes('credits') || studioError.includes('Model not found')) && (
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
+                  Check your Vercel Environment Variables: <strong>OPENROUTER_API_KEY</strong> and optionally <strong>LLM_MODEL</strong>.
+                </p>
+              )}
+            </div>
+            <button onClick={() => setStudioError(null)} style={{ fontSize: 18, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', flexShrink: 0 }}>&times;</button>
           </div>
         </div>
       )}

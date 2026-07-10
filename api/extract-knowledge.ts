@@ -57,8 +57,18 @@ Return JSON with this exact structure:
     });
 
     if (!response.ok) {
-      const body = await response.text();
-      return res.status(502).json({ error: `LLM error: ${body}` });
+      let msg: string;
+      try {
+        const body = await response.json();
+        const detail = body?.error?.message || 'Unknown error';
+        if (response.status === 401) msg = 'Invalid API key. Check OPENROUTER_API_KEY.';
+        else if (response.status === 402) msg = 'OpenRouter account has insufficient credits.';
+        else if (response.status === 404) msg = `Model not found: ${detail}`;
+        else msg = `LLM error (${response.status}): ${detail}`;
+      } catch {
+        msg = `LLM error (${response.status}). Please try again.`;
+      }
+      return res.status(502).json({ error: msg });
     }
 
     const data = await response.json();

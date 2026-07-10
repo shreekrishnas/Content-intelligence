@@ -91,12 +91,22 @@ async function callLLM(
       });
 
       if (response.status === 429) {
-        lastError = new Error(`Rate limited (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+        lastError = new Error('Rate limit reached. Please wait a moment and try again.');
         continue;
       }
       if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(`OpenRouter API error (${response.status}): ${errorBody}`);
+        let msg: string;
+        try {
+          const body = await response.json();
+          const detail = body?.error?.message || 'Unknown error';
+          if (response.status === 401) msg = 'Invalid API key. Check your OPENROUTER_API_KEY in Vercel Environment Variables.';
+          else if (response.status === 402) msg = 'OpenRouter account has insufficient credits. Add credits at openrouter.ai.';
+          else if (response.status === 404) msg = `Model not found on OpenRouter. Set a valid LLM_MODEL in Vercel Environment Variables. Detail: ${detail}`;
+          else msg = `LLM service error (${response.status}): ${detail}`;
+        } catch {
+          msg = `LLM service error (${response.status}). Please try again.`;
+        }
+        throw new Error(msg);
       }
 
       const data = await response.json();

@@ -100,17 +100,43 @@ export async function retrieve(
     };
   }
 
-  const readiness = await checkReadiness(accountId);
+  let readiness: Awaited<ReturnType<typeof checkReadiness>>;
+  try {
+    readiness = await checkReadiness(accountId);
+  } catch {
+    return {
+      refused: true,
+      reason: 'Could not connect to the knowledge base. Check your database configuration.',
+      missing: [],
+      chunks: [],
+      constraintChunks: [],
+      sourcesUsed: [],
+      readiness: { ready: false, categories: {}, missingRequired: REQUIRED_CATEGORIES },
+    };
+  }
+
   const queryWords = getQueryWords(queryText);
 
   // Always fetch all constraint chunks (brand, compliance, guidelines)
-  const { data: constraintFiles } = await supabase
+  const { data: constraintFiles, error: constraintFilesErr } = await supabase
     .from('knowledge_files')
     .select('id')
     .eq('account_id', accountId)
     .eq('active', true)
     .eq('ingest_status', 'ready')
     .in('category', CONSTRAINT_CATEGORIES);
+
+  if (constraintFilesErr) {
+    return {
+      refused: true,
+      reason: 'Failed to load knowledge base files. Please try again.',
+      missing: [],
+      chunks: [],
+      constraintChunks: [],
+      sourcesUsed: [],
+      readiness,
+    };
+  }
 
   const constraintIds = (constraintFiles || []).map((f: any) => f.id);
 
