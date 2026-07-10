@@ -270,7 +270,11 @@ export const api = {
             account_id: params.accountId,
           }),
         });
-        const data = await response.json();
+        const rawText = await response.text();
+        let data: any;
+        try { data = JSON.parse(rawText); } catch {
+          return err(`Server error (${response.status}): ${rawText.slice(0, 300) || 'Unexpected response format'}`);
+        }
         if (!response.ok || data.error) return err(data.error || 'Analysis failed');
         return ok(data as Analysis);
       } catch (e) {
@@ -389,7 +393,11 @@ export const api = {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        const data = await response.json();
+        const rawText = await response.text();
+        let data: any;
+        try { data = JSON.parse(rawText); } catch {
+          return err(`Server error (${response.status}): ${rawText.slice(0, 300) || 'Unexpected response format'}`);
+        }
         if (!response.ok || data.error) return err(data.error || 'Generation failed');
         return ok(data.output);
       } catch (e) {
