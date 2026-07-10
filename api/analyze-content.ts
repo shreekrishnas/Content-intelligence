@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MAX_RETRIES = 2;
 const INITIAL_BACKOFF_MS = 1000;
 
@@ -28,17 +28,17 @@ interface AnalyzeRequest {
   account_id: string;
 }
 
-async function callClaude(
+async function callLLM(
   systemPrompt: string,
   userPrompt: string,
   options: { maxTokens?: number; temperature?: number } = {},
 ): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY is not configured.');
+    throw new Error('OPENROUTER_API_KEY is not configured. Add it in Vercel Environment Variables.');
   }
 
-  const model = process.env.LLM_MODEL ?? 'claude-sonnet-4-5-20250514';
+  const model = process.env.LLM_MODEL ?? 'anthropic/claude-sonnet-4-5-20250514';
   const maxTokens = options.maxTokens ?? 4096;
   const temperature = options.temperature ?? 0.3;
 
@@ -51,19 +51,22 @@ async function callClaude(
     }
 
     try {
-      const response = await fetch(ANTHROPIC_API_URL, {
+      const response = await fetch(OPENROUTER_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': process.env.SITE_URL ?? 'https://content-intelligence-ebon.vercel.app',
+          'X-Title': 'Content Intelligence Platform',
         },
         body: JSON.stringify({
           model,
           max_tokens: maxTokens,
           temperature,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userPrompt }],
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
         }),
       });
 
@@ -71,21 +74,17 @@ async function callClaude(
         lastError = new Error(`Rate limited (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
         continue;
       }
-      if (response.status === 529) {
-        lastError = new Error(`API overloaded (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
-        continue;
-      }
       if (!response.ok) {
         const errorBody = await response.text();
-        throw new Error(`Anthropic API error (${response.status}): ${errorBody}`);
+        throw new Error(`OpenRouter API error (${response.status}): ${errorBody}`);
       }
 
       const data = await response.json();
-      const textBlock = data.content?.find((block: { type: string }) => block.type === 'text');
-      if (!textBlock) throw new Error('No text content in Claude response');
-      return textBlock.text;
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) throw new Error('No content in LLM response');
+      return content;
     } catch (error) {
-      if (error instanceof Error && (error.message.includes('Rate limited') || error.message.includes('overloaded'))) {
+      if (error instanceof Error && error.message.includes('Rate limited')) {
         lastError = error;
         continue;
       }
@@ -93,7 +92,7 @@ async function callClaude(
     }
   }
 
-  throw lastError ?? new Error('Failed to call Claude API after retries');
+  throw lastError ?? new Error('Failed to call LLM after retries');
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -190,7 +189,7 @@ Return a JSON object with this exact structure (no markdown code fences, just ra
 
 Remember: every claim must cite [Source: ${body.source_title}] or [KB: chunk_id]. Do not invent or assume anything not in the provided content.`;
 
-    const result = await callClaude(GROUNDING_SYSTEM_PROMPT, userPrompt, {
+    const result = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
       maxTokens: 8192,
       temperature: 0.2,
     });
