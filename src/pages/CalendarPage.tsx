@@ -3,16 +3,8 @@ import { useAccount } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
 import { auditLog } from '@/lib/audit';
 import type { CalendarItem } from '@/types';
+import { showToast } from '@/lib/toast';
 
-function showToast(msg: string, kind: 'success' | 'error' | 'warn' = 'success') {
-  const el = document.createElement('div');
-  el.className = 'toast';
-  const color = kind === 'error' ? '#DC2626' : kind === 'warn' ? '#F59E0B' : '#10B981';
-  el.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>${msg}`;
-  const root = document.getElementById('toastRoot');
-  if (root) root.appendChild(el);
-  setTimeout(() => { el.style.transition = 'opacity .3s ease'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3200);
-}
 
 type StatusFilter = 'all' | 'scheduled' | 'published' | 'cancelled';
 
@@ -145,12 +137,29 @@ export default function CalendarPage() {
 
                   <button className="btn btn-secondary btn-sm" onClick={() => handleExport(item)}>Export</button>
 
-                  {item.status === 'scheduled' && !item.scheduled_for && (
+                  {item.status === 'scheduled' && (
                     <button
                       className="btn btn-primary btn-sm"
-                      onClick={() => { setScheduleId(scheduleId === item.id ? null : item.id); setScheduleDate(''); }}
+                      onClick={() => {
+                        setScheduleId(scheduleId === item.id ? null : item.id);
+                        setScheduleDate(item.scheduled_for ? new Date(item.scheduled_for).toISOString().slice(0, 16) : '');
+                      }}
                     >
-                      Set Date
+                      {item.scheduled_for ? 'Reschedule' : 'Set Date'}
+                    </button>
+                  )}
+                  {item.status === 'scheduled' && item.scheduled_for && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={async () => {
+                        if (!accountId) return;
+                        const { error } = await api.calendar.updateStatus(accountId, item.id, 'cancelled');
+                        if (error) { showToast(error, 'error'); return; }
+                        showToast('Scheduling cancelled');
+                        loadItems();
+                      }}
+                    >
+                      Cancel
                     </button>
                   )}
                 </div>

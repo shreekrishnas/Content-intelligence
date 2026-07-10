@@ -4,16 +4,8 @@ import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
 import { supabaseConfigured } from '@/lib/supabase';
 import type { Integration } from '@/types';
+import { showToast } from '@/lib/toast';
 
-function showToast(msg: string, kind: 'success' | 'error' | 'warn' = 'success') {
-  const el = document.createElement('div');
-  el.className = 'toast';
-  const color = kind === 'error' ? '#DC2626' : kind === 'warn' ? '#F59E0B' : '#10B981';
-  el.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>${msg}`;
-  const root = document.getElementById('toastRoot');
-  if (root) root.appendChild(el);
-  setTimeout(() => { el.style.transition = 'opacity .3s ease'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3200);
-}
 
 const STATUS_COLORS: Record<string, string> = {
   connected: '#10B981',
@@ -152,28 +144,33 @@ export default function SettingsPage() {
             {Object.entries(configModal.config || {}).length > 0 ? (
               Object.keys(configModal.config).map((key) => (
                 <div className="field" key={key} style={{ marginBottom: '0.8rem' }}>
-                  <label className="field-label">{key}</label>
+                  <label className="field-label">{key.replace(/_/g, ' ')}</label>
                   <input
                     className="glass-input"
-                    type="text"
+                    type={/key|secret|token|password/i.test(key) ? 'password' : 'text'}
                     value={configValues[key] || ''}
                     onChange={(e) => setConfigValues({ ...configValues, [key]: e.target.value })}
                   />
                 </div>
               ))
             ) : (
-              <div className="field" style={{ marginBottom: '0.8rem' }}>
-                <label className="field-label">Configuration (JSON)</label>
-                <textarea
-                  className="glass-textarea"
-                  rows={4}
-                  placeholder='{"key": "value"}'
-                  value={JSON.stringify(configValues, null, 2)}
-                  onChange={(e) => {
-                    try { setConfigValues(JSON.parse(e.target.value)); } catch { /* ignore parse errors while typing */ }
-                  }}
-                />
-              </div>
+              <>
+                <p style={{ fontSize: '0.8rem', opacity: 0.7, marginBottom: 12 }}>
+                  This integration has no predefined fields. Enter key/value pairs as JSON.
+                </p>
+                <div className="field" style={{ marginBottom: '0.8rem' }}>
+                  <label className="field-label">Configuration (JSON)</label>
+                  <textarea
+                    className="glass-textarea"
+                    rows={4}
+                    placeholder='{"api_key": "your-key"}'
+                    value={JSON.stringify(configValues, null, 2)}
+                    onChange={(e) => {
+                      try { setConfigValues(JSON.parse(e.target.value)); } catch { /* ignore parse errors while typing */ }
+                    }}
+                  />
+                </div>
+              </>
             )}
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>

@@ -8,16 +8,8 @@ import type { KBFileContext } from '@/lib/retrieval';
 import { supabaseConfigured } from '@/lib/supabase';
 import { renderMarkdown } from '@/lib/markdown';
 import type { Opportunity } from '@/types';
+import { showToast } from '@/lib/toast';
 
-function showToast(msg: string, kind: 'success' | 'error' | 'warn' = 'success') {
-  const el = document.createElement('div');
-  el.className = 'toast';
-  const color = kind === 'error' ? '#DC2626' : kind === 'warn' ? '#F59E0B' : '#10B981';
-  el.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>${msg}`;
-  const root = document.getElementById('toastRoot');
-  if (root) root.appendChild(el);
-  setTimeout(() => { el.style.transition = 'opacity .3s ease'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3200);
-}
 
 function QualityPanel({ quality }: { quality: any }) {
   if (!quality) return null;

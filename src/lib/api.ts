@@ -708,6 +708,20 @@ export const api = {
       ];
       return ok(lines.join('\n'));
     },
+
+    async updateStatus(
+      accountId: string,
+      id: string,
+      status: CalendarItem['status'],
+    ): Promise<Result<void>> {
+      const { error } = await supabase
+        .from('calendar_items')
+        .update({ status })
+        .eq('id', id)
+        .eq('account_id', accountId);
+      if (error) return err(pgError(error));
+      return ok(undefined as void);
+    },
   },
 
   // --------------------------------------------------------------------------

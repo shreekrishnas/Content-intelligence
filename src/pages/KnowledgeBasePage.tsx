@@ -3,16 +3,8 @@ import { useAccount } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
 import { auditLog } from '@/lib/audit';
 import type { KnowledgeFile, KnowledgeCategory, Priority } from '@/types';
+import { showToast } from '@/lib/toast';
 
-function showToast(msg: string, kind: 'success' | 'error' | 'warn' = 'success') {
-  const el = document.createElement('div');
-  el.className = 'toast';
-  const color = kind === 'error' ? '#DC2626' : kind === 'warn' ? '#F59E0B' : '#10B981';
-  el.innerHTML = `<span style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>${msg}`;
-  const root = document.getElementById('toastRoot');
-  if (root) root.appendChild(el);
-  setTimeout(() => { el.style.transition = 'opacity .3s ease'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3200);
-}
 
 const KB_CATEGORIES: { id: KnowledgeCategory; label: string; desc: string }[] = [
   { id: 'persona', label: 'Persona / ICP Files', desc: 'Customer ICP docs, segmentation, interview insights' },
