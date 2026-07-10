@@ -22,7 +22,7 @@ export async function callClaude(
     throw new Error('ANTHROPIC_API_KEY is not configured. Set it in your Supabase Edge Function secrets.');
   }
 
-  const model = options.model ?? Deno.env.get('LLM_MODEL') ?? 'claude-sonnet-4-20250514';
+  const model = options.model ?? Deno.env.get('LLM_MODEL') ?? 'claude-sonnet-4-5-20250514';
   const maxTokens = options.maxTokens ?? 4096;
   const temperature = options.temperature ?? 0.3;
 
