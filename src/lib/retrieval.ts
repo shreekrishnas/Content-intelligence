@@ -123,20 +123,14 @@ export async function retrieve(
     chunks = (data || []).map(mapChunk);
   }
 
-  // THE REFUSAL GATE: if readiness is not met OR no chunks at all, refuse
-  if (!readiness.ready || (chunks.length === 0 && constraintChunks.length === 0)) {
-    return {
-      refused: true,
-      reason:
-        readiness.missingRequired.length > 0
-          ? `Missing required knowledge categories: ${readiness.missingRequired.join(', ')}`
-          : 'No relevant knowledge found. Add knowledge files to get started.',
-      missing: readiness.missingRequired,
-      chunks: [],
-      constraintChunks,
-      readiness,
-    };
-  }
-
-  return { refused: false, chunks, constraintChunks, readiness };
+  return {
+    refused: false,
+    reason: readiness.missingRequired.length > 0
+      ? `Note: Missing knowledge categories (${readiness.missingRequired.join(', ')}). Analysis will proceed but results may be less grounded. Upload files in these categories for better output.`
+      : undefined,
+    missing: readiness.missingRequired,
+    chunks,
+    constraintChunks,
+    readiness,
+  };
 }

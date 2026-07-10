@@ -175,6 +175,11 @@ export default function AnalyzePage() {
         return;
       }
 
+      let kbWarning: string | undefined;
+      if (retrieval.reason) {
+        kbWarning = retrieval.reason;
+      }
+
       const kbChunks = [
         ...retrieval.constraintChunks.map((c) => c.chunk_text),
         ...retrieval.chunks.map((c) => c.chunk_text),
@@ -197,6 +202,9 @@ export default function AnalyzePage() {
       if (apiErr) throw new Error(apiErr);
 
       const analysis = (data as any)?.analysis ?? data;
+      if (kbWarning && analysis) {
+        analysis.warnings = [...(analysis.warnings || []), kbWarning];
+      }
       setResult(analysis);
 
       if (analysis?.opportunities?.length > 0 && accountId) {
