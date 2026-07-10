@@ -1,23 +1,296 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import {
-  collectTavilySignals,
-  suggestCandidateSignals,
-  supervise,
-  topicToRecord,
-  type DomainProfile,
-  type TrendSignal,
-} from './_shared/trend-core';
 
-// ============================================================
-// Trend scan:
-//  - POST (browser, signed-in user): collect signals + supervise,
-//    return results. The client persists them under its own session
-//    (RLS). No DB access here.
-//  - GET  (Vercel Cron): service-role. Iterates accounts that have
-//    trend monitoring enabled, collects + supervises + persists.
-//    Gated behind SUPABASE_SERVICE_ROLE_KEY + SUPABASE_URL.
-// ============================================================
+// ---- Inline shared utilities (Vercel strips _shared/ from bundles) ----------
+
+const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const TAVILY_API_URL = 'https://api.tavily.com/search';
+const MAX_RETRIES = 2;
+const INITIAL_BACKOFF_MS = 1000;
+
+const SUPERVISOR_SYSTEM_PROMPT = `You are an AI Trend Supervisor. You sit between raw trend signals and a content Action Layer. You do NOT forward every topic — you classify, score, filter, prioritise, and route.
+
+CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after. Your entire response must be parseable by JSON.parse().
+
+YOUR JOB:
+- Deduplicate and cluster signals that describe the same underlying topic into ONE record.
+- Score each topic on four independent 0-100 scales: domain_relevance, trend_impact, adaptability (for non-domain topics), and risk (higher = more dangerous).
+- Classify each into exactly one of: domain_trend, supertrend_exception, monitor, reject.
+- Assign priority (critical/high/medium/low/experimental), trend_stage (emerging/growing/peak/declining/seasonal/evergreen), estimated_lifespan, and a confidence_score (0-100).
+- Write a clear, specific reason for every decision.
+
+ROUTING RULES (defaults — respect any overrides in the profile thresholds):
+- domain_trend: domain_relevance >= 60 AND trend_impact >= 40 AND risk <= 60.
+- supertrend_exception: domain_relevance < 60 AND trend_impact >= 90 AND adaptability >= 65 AND risk <= 40. Only when the brand connection is natural — never just because it is popular. Include a suggested_connection.
+- monitor: relevant-but-weak, emerging, or incomplete evidence.
+- reject: low impact AND low relevance, or too risky/outdated/forced/duplicate.
+
+GUARDRAILS: never invent trend data, never treat popularity as relevance, never force a brand connection, never exceed the max_recommendations, prefer a few high-quality trends over many weak ones. If a topic touches politics, health, finance, law, tragedy, or controversy, raise its risk and set needs_human_review = true.`;
+
+interface DomainProfile {
+  business_name?: string;
+  industry?: string;
+  products?: string;
+  services?: string;
+  core_topics?: string;
+  target_keywords?: string;
+  target_locations?: string;
+  target_audience?: string;
+  business_goals?: string;
+  content_categories?: string;
+  brand_tone?: string;
+  restricted_topics?: string;
+  competitors?: string;
+  allowed_formats?: string;
+  max_recommendations?: number;
+  min_action_score?: number;
+  risk_tolerance?: string;
+  enabled?: boolean;
+}
+
+interface TrendSignal {
+  topic?: string;
+  title?: string;
+  summary?: string;
+  source?: string;
+  url?: string;
+  published_at?: string;
+  content?: string;
+  score?: number;
+}
+
+function extractJSON(text: string): unknown {
+  const stripped = text
+    .replace(/^```(?:json|javascript|js)?\s*\n?/gim, '')
+    .replace(/\n?```\s*$/gim, '')
+    .trim();
+  try { return JSON.parse(stripped); } catch { /* try bounds */ }
+  const candidates: Array<[number, number]> = [];
+  const ob = stripped.indexOf('{'); const cb = stripped.lastIndexOf('}');
+  if (ob !== -1 && cb > ob) candidates.push([ob, cb]);
+  const oa = stripped.indexOf('['); const ca = stripped.lastIndexOf(']');
+  if (oa !== -1 && ca > oa) candidates.push([oa, ca]);
+  for (const [s, e] of candidates) {
+    try { return JSON.parse(stripped.slice(s, e + 1)); } catch { /* next */ }
+  }
+  throw new Error('The model returned a response that could not be parsed as JSON. Please try again.');
+}
+
+async function callLLM(systemPrompt: string, userPrompt: string, options: { maxTokens?: number; temperature?: number } = {}): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured. Add it in Vercel Environment Variables.');
+
+  const model = process.env.LLM_MODEL ?? 'anthropic/claude-sonnet-4-5';
+  const maxTokens = options.maxTokens ?? 8000;
+  const temperature = options.temperature ?? 0.3;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1)));
+    try {
+      const response = await fetch(OPENROUTER_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': process.env.SITE_URL ?? 'https://content-intelligence-ebon.vercel.app',
+          'X-Title': 'Content Intelligence Platform',
+        },
+        body: JSON.stringify({
+          model, max_tokens: maxTokens, temperature,
+          messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+        }),
+      });
+
+      if (response.status === 429) { lastError = new Error('Rate limit reached. Please wait a moment and try again.'); continue; }
+      if (!response.ok) {
+        let msg: string;
+        try {
+          const b = await response.json();
+          const detail = b?.error?.message || 'Unknown error';
+          if (response.status === 401) msg = 'Invalid API key. Check your OPENROUTER_API_KEY in Vercel Environment Variables.';
+          else if (response.status === 402) msg = 'OpenRouter account has insufficient credits. Add credits at openrouter.ai.';
+          else if (response.status === 404) msg = `Model not found on OpenRouter. Set a valid LLM_MODEL. Detail: ${detail}`;
+          else msg = `LLM service error (${response.status}): ${detail}`;
+        } catch { msg = `LLM service error (${response.status}). Please try again.`; }
+        throw new Error(msg);
+      }
+
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) throw new Error('No content in LLM response');
+      return content;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Rate limit')) { lastError = error; continue; }
+      throw error;
+    }
+  }
+  throw lastError ?? new Error('Failed to call LLM after retries');
+}
+
+function profileBlock(p: DomainProfile = {}): string {
+  const rows: Array<[string, unknown]> = [
+    ['Business', p.business_name], ['Industry', p.industry], ['Products', p.products], ['Services', p.services],
+    ['Core topics', p.core_topics], ['Target keywords', p.target_keywords], ['Locations', p.target_locations],
+    ['Audience', p.target_audience], ['Business goals', p.business_goals], ['Content categories', p.content_categories],
+    ['Brand tone', p.brand_tone], ['Restricted topics', p.restricted_topics], ['Competitors', p.competitors],
+    ['Allowed formats', p.allowed_formats], ['Risk tolerance', p.risk_tolerance],
+  ];
+  return rows.filter(([, v]) => v).map(([k, v]) => `- ${k}: ${v}`).join('\n') || '- (no domain profile provided — infer conservatively and lean toward monitor/reject)';
+}
+
+function signalsBlock(signals: TrendSignal[] = []): string {
+  if (!signals.length) return '(no signals provided)';
+  return signals.slice(0, 60).map((s, i) => {
+    const parts = [
+      `[${i + 1}] ${s.topic || s.title || 'Untitled'}`,
+      s.source ? `source: ${s.source}` : '',
+      s.published_at ? `date: ${s.published_at}` : '',
+      s.summary || s.content ? `note: ${String(s.summary || s.content).slice(0, 300)}` : '',
+      s.url ? `url: ${s.url}` : '',
+    ].filter(Boolean);
+    return parts.join('\n   ');
+  }).join('\n');
+}
+
+function buildSupervisorPrompt(body: { domain_profile?: DomainProfile; signals?: TrendSignal[]; account_label?: string }): string {
+  const max = body.domain_profile?.max_recommendations ?? 8;
+  return `TODAY: ${new Date().toISOString().slice(0, 10)}
+ACCOUNT: ${body.account_label || body.domain_profile?.business_name || 'General'}
+
+DOMAIN PROFILE:
+${profileBlock(body.domain_profile)}
+
+RAW TREND SIGNALS (cluster duplicates before scoring):
+${signalsBlock(body.signals)}
+
+Supervise these signals. Deduplicate into distinct topics, score and classify each, and route. Send at most ${max} topics to action (domain_trend + supertrend_exception combined) — prefer quality over quantity.
+
+Return ONLY this JSON:
+{
+  "analysis_date": "YYYY-MM-DD",
+  "summary": { "total_topics_reviewed": 0, "domain_trends_sent": 0, "supertrends_sent": 0, "topics_monitored": 0, "topics_rejected": 0 },
+  "topics": [
+    {
+      "topic": "The clustered topic name",
+      "summary": "1-2 sentence description of the trend",
+      "classification": "domain_trend | supertrend_exception | monitor | reject",
+      "domain_relevance_score": 0,
+      "trend_impact_score": 0,
+      "adaptability_score": 0,
+      "risk_score": 0,
+      "confidence_score": 0,
+      "priority": "critical | high | medium | low | experimental",
+      "trend_stage": "emerging | growing | peak | declining | seasonal | evergreen",
+      "estimated_lifespan": "e.g. '2-3 weeks'",
+      "recommended_route": "domain_action_layer | supertrend_action_layer | monitor | reject",
+      "recommended_formats": ["format1", "format2"],
+      "suggested_connection": "For supertrends only: the natural, non-forced brand connection (empty otherwise)",
+      "related_keywords": ["kw1", "kw2"],
+      "needs_human_review": false,
+      "reason": "Specific explanation for this decision"
+    }
+  ]
+}`;
+}
+
+async function supervise(body: { domain_profile?: DomainProfile; signals?: TrendSignal[]; account_label?: string }): Promise<{ topics: any[]; summary: any; analysis_date?: string }> {
+  const raw = await callLLM(SUPERVISOR_SYSTEM_PROMPT, buildSupervisorPrompt(body), { maxTokens: 8000, temperature: 0.3 });
+  const parsed: any = extractJSON(raw);
+  const topics = Array.isArray(parsed) ? parsed : (parsed.topics || []);
+  return { topics, summary: parsed?.summary ?? null, analysis_date: parsed?.analysis_date };
+}
+
+function buildQueries(p: DomainProfile): string[] {
+  const q: string[] = [];
+  const loc = p.target_locations ? ` ${p.target_locations}` : '';
+  const splitList = (s?: string) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+
+  splitList(p.core_topics).slice(0, 4).forEach((t) => q.push(`${t}${loc} latest news trends`));
+  splitList(p.target_keywords).slice(0, 3).forEach((k) => q.push(`${k}${loc} 2026 trend`));
+  if (p.industry) q.push(`${p.industry}${loc} industry trends this week`);
+  if (p.competitors) splitList(p.competitors).slice(0, 2).forEach((c) => q.push(`${c} news announcement`));
+  if (!q.length && p.business_name) q.push(`${p.business_name}${loc} news`);
+  return [...new Set(q)].slice(0, 6);
+}
+
+async function collectTavilySignals(profile: DomainProfile): Promise<TrendSignal[]> {
+  const key = process.env.TAVILY_API_KEY;
+  if (!key) return [];
+  const queries = buildQueries(profile);
+  const seen = new Set<string>();
+  const signals: TrendSignal[] = [];
+
+  await Promise.all(queries.map(async (query) => {
+    try {
+      const resp = await fetch(TAVILY_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: key, query, topic: 'news', search_depth: 'basic', max_results: 5, days: 14 }),
+      });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      for (const r of (data.results || [])) {
+        const url: string = r.url || '';
+        const dedupeKey = url || r.title;
+        if (!dedupeKey || seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        signals.push({
+          title: r.title, content: r.content, url,
+          source: (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'web'; } })(),
+          published_at: r.published_date, score: r.score,
+        });
+      }
+    } catch { /* skip failed query */ }
+  }));
+
+  return signals;
+}
+
+async function suggestCandidateSignals(profile: DomainProfile, accountLabel?: string): Promise<TrendSignal[]> {
+  const sys = `You propose candidate topics for a trend supervisor to investigate. These are HYPOTHESES to evaluate, not confirmed trends. Output ONLY raw JSON.`;
+  const user = `Business: ${accountLabel || profile.business_name || 'General'}
+Industry: ${profile.industry || 'unknown'}
+Core topics: ${profile.core_topics || ''}
+Target keywords: ${profile.target_keywords || ''}
+Audience: ${profile.target_audience || ''}
+Locations: ${profile.target_locations || ''}
+
+Propose 12 candidate topics that MIGHT be trending or timely for this business right now (${new Date().toISOString().slice(0, 10)}). Mix clearly on-domain topics with 2-3 broader cultural/seasonal "supertrend" candidates.
+Return ONLY: {"candidates":[{"topic":"","summary":"why it might matter now"}]}`;
+  const raw = await callLLM(sys, user, { maxTokens: 2000, temperature: 0.8 });
+  const parsed: any = extractJSON(raw);
+  const list = Array.isArray(parsed) ? parsed : (parsed.candidates || parsed.topics || []);
+  return list.map((c: any) => ({ topic: c.topic, summary: c.summary, source: 'ai-suggested' }));
+}
+
+function topicToRecord(t: any): Record<string, unknown> {
+  const classification = String(t.classification || 'monitor');
+  const status = classification === 'domain_trend' || classification === 'supertrend_exception'
+    ? 'accepted' : classification === 'reject' ? 'rejected' : 'monitoring';
+  const num = (v: unknown) => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
+  return {
+    topic: String(t.topic || 'Untitled'),
+    summary: String(t.summary || ''),
+    classification,
+    domain_relevance_score: num(t.domain_relevance_score),
+    trend_impact_score: num(t.trend_impact_score),
+    adaptability_score: num(t.adaptability_score),
+    risk_score: num(t.risk_score),
+    confidence_score: num(t.confidence_score),
+    priority: String(t.priority || 'low'),
+    trend_stage: String(t.trend_stage || 'emerging'),
+    estimated_lifespan: String(t.estimated_lifespan || ''),
+    recommended_route: String(t.recommended_route || 'monitor'),
+    reason: String(t.reason || ''),
+    suggested_connection: String(t.suggested_connection || ''),
+    recommended_formats: Array.isArray(t.recommended_formats) ? t.recommended_formats : [],
+    related_keywords: Array.isArray(t.related_keywords) ? t.related_keywords : [],
+    status,
+  };
+}
+
+// ---- Handler -----------------------------------------------------------------
 
 interface ScanBody {
   account_label?: string;
@@ -25,7 +298,6 @@ interface ScanBody {
   mode?: 'live' | 'suggest';
 }
 
-// Collect signals (live via Tavily, else fall back to AI-suggested candidates).
 async function collect(profile: DomainProfile, accountLabel: string | undefined, mode: 'live' | 'suggest'): Promise<{ signals: TrendSignal[]; source: string; note?: string }> {
   if (mode === 'suggest') {
     const signals = await suggestCandidateSignals(profile, accountLabel);
@@ -33,7 +305,6 @@ async function collect(profile: DomainProfile, accountLabel: string | undefined,
   }
   const live = await collectTavilySignals(profile);
   if (live.length) return { signals: live, source: 'tavily' };
-  // No live source configured or nothing found — fall back so the run is useful.
   const signals = await suggestCandidateSignals(profile, accountLabel);
   return { signals, source: 'suggest', note: 'No live results (TAVILY_API_KEY not set or no matches) — used AI-suggested candidate topics instead.' };
 }
@@ -53,7 +324,6 @@ async function handleManual(req: VercelRequest, res: VercelResponse) {
 }
 
 async function handleCron(req: VercelRequest, res: VercelResponse) {
-  // Verify the request is from Vercel Cron when a secret is configured.
   const secret = process.env.CRON_SECRET;
   if (secret && req.headers.authorization !== `Bearer ${secret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
