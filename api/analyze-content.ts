@@ -4,17 +4,28 @@ const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MAX_RETRIES = 2;
 const INITIAL_BACKOFF_MS = 1000;
 
-const GROUNDING_SYSTEM_PROMPT = `You are a content intelligence analyst. You MUST follow these grounding rules strictly:
+const GROUNDING_SYSTEM_PROMPT = `You are a content intelligence analyst. CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Your entire response must be parseable by JSON.parse().
 
 GROUNDING CONTRACT:
-1. Every claim, insight, or recommendation you make MUST be directly traceable to the provided source material or knowledge base chunks.
-2. You MUST NOT use any world knowledge, assumptions, or information not present in the provided inputs.
-3. Every claim must be cited using [Source: <source_title>] for the primary source or [KB: <chunk_reference>] for knowledge base chunks.
-4. If the source material is insufficient to support a finding, say so explicitly rather than filling gaps with assumptions.
-5. If you are unsure whether a claim is supported, flag it in the warnings array.
-6. Do NOT hallucinate statistics, quotes, or facts. Only reference what is explicitly stated in the inputs.
+1. Every claim, insight, or recommendation MUST be directly traceable to the provided source material or knowledge base chunks.
+2. Do NOT use world knowledge, assumptions, or information not present in the provided inputs.
+3. Every claim must be cited using [Source: <source_title>] or [KB: <chunk_reference>].
+4. If source material is insufficient, say so in the warnings array rather than filling gaps.
+5. Do NOT hallucinate statistics, quotes, or facts.`;
 
-You analyze source content and return structured JSON. Your output must be valid JSON with no markdown wrapping.`;
+function extractJSON(text: string): unknown {
+  const stripped = text
+    .replace(/^```(?:json|javascript|js)?\s*\n?/gim, '')
+    .replace(/\n?```\s*$/gim, '')
+    .trim();
+  try { return JSON.parse(stripped); } catch { /* try brace extraction */ }
+  const s = stripped.indexOf('{');
+  const e = stripped.lastIndexOf('}');
+  if (s !== -1 && e > s) {
+    try { return JSON.parse(stripped.slice(s, e + 1)); } catch { /* fall through */ }
+  }
+  throw new Error('LLM returned a response that could not be parsed as JSON. Please try again.');
+}
 
 interface FileContext {
   file_id: string;
@@ -227,13 +238,10 @@ Remember: every claim must cite [Source: ${body.source_title}] or [KB: chunk_id]
 
     let analysis;
     try {
-      const cleaned = result.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '');
-      analysis = JSON.parse(cleaned);
-    } catch {
-      return res.status(502).json({
-        error: 'Failed to parse analysis response as JSON',
-        raw_response: result,
-      });
+      analysis = extractJSON(result);
+    } catch (parseErr) {
+      const msg = parseErr instanceof Error ? parseErr.message : 'Failed to parse analysis response';
+      return res.status(502).json({ error: msg });
     }
 
     return res.status(200).json({ success: true, analysis, id: null });

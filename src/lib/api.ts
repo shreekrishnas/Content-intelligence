@@ -262,9 +262,9 @@ export const api = {
             source_owner: params.sourceOwner,
             source_url: params.sourceUrl,
             marketing_notes: params.marketingNotes,
-            knowledge_chunks: params.knowledgeChunks?.map((text, i) => ({
+            knowledge_chunks: params.knowledgeChunks?.slice(0, 25).map((text, i) => ({
               id: `chunk-${i}`,
-              content: text,
+              content: text.slice(0, 500),
             })),
             file_context: params.fileContext,
             account_id: params.accountId,
@@ -314,7 +314,7 @@ export const api = {
           suggested_cta: opportunity.suggested_cta,
           source_context: opportunity.source_context,
         },
-        knowledge_chunks: kbChunks.map((text, i) => ({ id: `chunk-${i}`, content: text })),
+        knowledge_chunks: kbChunks.slice(0, 25).map((text, i) => ({ id: `chunk-${i}`, content: text.slice(0, 500) })),
         file_context: fileContext,
       });
     },
@@ -338,7 +338,7 @@ export const api = {
           source_context: opportunity.source_context,
         },
         existing_content: outline,
-        knowledge_chunks: kbChunks.map((text, i) => ({ id: `chunk-${i}`, content: text })),
+        knowledge_chunks: kbChunks.slice(0, 25).map((text, i) => ({ id: `chunk-${i}`, content: text.slice(0, 500) })),
         file_context: fileContext,
       });
     },
@@ -360,7 +360,7 @@ export const api = {
         },
         existing_content: content,
         feedback,
-        knowledge_chunks: kbChunks.map((text, i) => ({ id: `chunk-${i}`, content: text })),
+        knowledge_chunks: kbChunks.slice(0, 25).map((text, i) => ({ id: `chunk-${i}`, content: text.slice(0, 500) })),
         file_context: fileContext,
       });
     },
@@ -381,7 +381,7 @@ export const api = {
           persona_match: opportunity.persona_name || 'General',
         },
         existing_content: draft,
-        knowledge_chunks: kbChunks.map((text, i) => ({ id: `chunk-${i}`, content: text })),
+        knowledge_chunks: kbChunks.slice(0, 25).map((text, i) => ({ id: `chunk-${i}`, content: text.slice(0, 500) })),
         file_context: fileContext,
       });
     },

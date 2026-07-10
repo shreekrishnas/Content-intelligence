@@ -183,7 +183,7 @@ export default function AnalyzePage() {
       }
 
       const kbChunks = [
-        ...retrieval.constraintChunks.map((c) => c.chunk_text),
+        ...retrieval.constraintChunks.slice(0, 15).map((c) => c.chunk_text),
         ...retrieval.chunks.map((c) => c.chunk_text),
       ];
 

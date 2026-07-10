@@ -118,7 +118,7 @@ export default function StudioPage() {
     const result = await retrieve(accountId, activeOpp?.title || '', 'generation');
     if (result.refused) throw new Error(result.reason || 'Knowledge base not ready.');
     const allChunks = [
-      ...result.constraintChunks,
+      ...result.constraintChunks.slice(0, 15),
       ...result.chunks,
     ];
     if (allChunks.length === 0) {

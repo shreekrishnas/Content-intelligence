@@ -4,17 +4,28 @@ const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MAX_RETRIES = 2;
 const INITIAL_BACKOFF_MS = 1000;
 
-const GROUNDING_SYSTEM_PROMPT = `You are a content generation engine for a content intelligence platform. You MUST follow these grounding rules strictly:
+const GROUNDING_SYSTEM_PROMPT = `You are a content generation engine. CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Your entire response must be parseable by JSON.parse().
 
 GROUNDING CONTRACT:
-1. Every claim, statistic, or factual statement in generated content MUST be directly traceable to the provided source references or knowledge base chunks.
-2. You MUST NOT use any world knowledge, assumptions, or information not present in the provided inputs.
-3. Cite sources using [Source: <title>] for primary sources or [KB: <chunk_reference>] for knowledge base chunks.
-4. If you cannot ground a statement in the provided sources, omit it or flag it explicitly.
-5. Do NOT hallucinate statistics, quotes, case studies, or facts.
-6. When generating content, maintain the persona's tone and the brand voice guidelines while staying grounded in source material.
+1. Every claim, statistic, or factual statement MUST be traceable to the provided source references or knowledge base chunks.
+2. Do NOT use world knowledge, assumptions, or information not present in the provided inputs.
+3. Cite sources using [Source: <title>] or [KB: <chunk_reference>].
+4. If a statement cannot be grounded in provided sources, omit it or flag it explicitly.
+5. Do NOT hallucinate statistics, quotes, case studies, or facts.`;
 
-You return structured JSON. Your output must be valid JSON with no markdown wrapping.`;
+function extractJSON(text: string): unknown {
+  const stripped = text
+    .replace(/^```(?:json|javascript|js)?\s*\n?/gim, '')
+    .replace(/\n?```\s*$/gim, '')
+    .trim();
+  try { return JSON.parse(stripped); } catch { /* try brace extraction */ }
+  const s = stripped.indexOf('{');
+  const e = stripped.lastIndexOf('}');
+  if (s !== -1 && e > s) {
+    try { return JSON.parse(stripped.slice(s, e + 1)); } catch { /* fall through */ }
+  }
+  throw new Error('LLM returned a response that could not be parsed as JSON. Please try again.');
+}
 
 interface FileContext {
   file_id: string;
@@ -387,10 +398,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let output;
     try {
-      const cleaned = result.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '');
-      output = JSON.parse(cleaned);
-    } catch {
-      return res.status(502).json({ error: 'Failed to parse generation response as JSON', raw_response: result });
+      output = extractJSON(result);
+    } catch (parseErr) {
+      const msg = parseErr instanceof Error ? parseErr.message : 'Failed to parse generation response';
+      return res.status(502).json({ error: msg });
     }
 
     return res.status(200).json({ success: true, task: body.task, output });

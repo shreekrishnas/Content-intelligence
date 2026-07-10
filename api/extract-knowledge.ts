@@ -2,7 +2,21 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
-const SYSTEM_PROMPT = `You are a knowledge extraction engine. Extract structured metadata from the provided content sample. Return only valid JSON, no markdown.`;
+const SYSTEM_PROMPT = `You are a knowledge extraction engine. CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after. Your entire response must be parseable by JSON.parse().`;
+
+function extractJSON(text: string): unknown {
+  const stripped = text
+    .replace(/^```(?:json|javascript|js)?\s*\n?/gim, '')
+    .replace(/\n?```\s*$/gim, '')
+    .trim();
+  try { return JSON.parse(stripped); } catch { /* try brace extraction */ }
+  const s = stripped.indexOf('{');
+  const e = stripped.lastIndexOf('}');
+  if (s !== -1 && e > s) {
+    try { return JSON.parse(stripped.slice(s, e + 1)); } catch { /* fall through */ }
+  }
+  throw new Error('LLM returned a response that could not be parsed as JSON. Please try again.');
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -73,13 +87,13 @@ Return JSON with this exact structure:
 
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content ?? '';
-    const cleaned = text.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '');
 
     let structured: Record<string, unknown>;
     try {
-      structured = JSON.parse(cleaned);
-    } catch {
-      return res.status(502).json({ error: 'Failed to parse extraction response', raw: text });
+      structured = extractJSON(text) as Record<string, unknown>;
+    } catch (parseErr) {
+      const msg = parseErr instanceof Error ? parseErr.message : 'Failed to parse extraction response';
+      return res.status(502).json({ error: msg });
     }
 
     return res.status(200).json({ success: true, structured });
