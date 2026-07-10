@@ -182,66 +182,40 @@ ${marketingSection}${fileContextSection}${knowledgeSection}${personaSection}
 SOURCE CONTENT (truncated to first 12000 chars):
 ${String(body.source_text).slice(0, 12000)}
 
-Return a JSON object with this exact structure (no markdown code fences, just raw JSON):
+Output raw JSON (no fences, no extra text) matching this structure exactly. Keep all string values concise — 1-2 sentences max per field. Limit arrays to 5 items max each.
+
 {
-  "summary": "A concise summary of the source content, citing key points with [Source: ${body.source_title}]",
+  "summary": "2-3 sentence summary [Source: ${body.source_title}]",
   "topics": ["topic1", "topic2"],
   "insights": [
-    {
-      "text": "The insight text with citation [Source: ${body.source_title}]",
-      "confidence": "high|medium|low",
-      "source_reference": "The specific part of the source that supports this"
-    }
+    { "text": "insight [Source: ${body.source_title}]", "confidence": "high|medium|low", "source_reference": "brief quote" }
   ],
   "persona_matches": [
-    {
-      "persona_name": "Name of matched persona",
-      "relevance_score": 0.0,
-      "matching_points": ["point1 [Source: ${body.source_title}]"],
-      "suggested_angle": "How to approach content for this persona"
-    }
+    { "persona_name": "persona name", "relevance_score": 0.0, "matching_points": ["point"], "suggested_angle": "angle" }
   ],
   "depth_analysis": [
-    {
-      "topic": "Topic name",
-      "depth": "surface|moderate|deep",
-      "key_points": ["point with citation"],
-      "gaps": ["What the source does not cover"]
-    }
+    { "topic": "topic", "depth": "surface|moderate|deep", "key_points": ["point"], "gaps": ["gap"] }
   ],
   "opportunities": [
-    {
-      "title": "Content opportunity title",
-      "content_angle": "The specific angle to take, grounded in source [Source: ${body.source_title}]",
-      "recommended_format": "blog_post|whitepaper|social_post|email|case_study|infographic|video_script",
-      "priority": "high|medium|low",
-      "persona_match": "Name of best-fit persona or 'general'",
-      "suggested_cta": "Call to action suggestion grounded in source insights",
-      "source_context": "Direct quote or paraphrase from source that supports this opportunity"
-    }
+    { "title": "title", "content_angle": "angle", "recommended_format": "blog_post|social_post|email|case_study|video_script", "priority": "high|medium|low", "persona_match": "persona or general", "suggested_cta": "cta", "source_context": "brief quote" }
   ],
-  "quality_check": {
-    "source_richness": "high|medium|low",
-    "actionability": "high|medium|low",
-    "uniqueness": "high|medium|low",
-    "completeness": "high|medium|low"
-  },
-  "warnings": ["Any concerns about source quality, potential bias, unsupported claims, or insufficient data"]
-}
-
-Remember: every claim must cite [Source: ${body.source_title}] or [KB: chunk_id]. Do not invent or assume anything not in the provided content.`;
+  "quality_check": { "source_richness": "high|medium|low", "actionability": "high|medium|low", "uniqueness": "high|medium|low", "completeness": "high|medium|low" },
+  "warnings": ["concern if any"]
+}`;
 
     const result = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
-      maxTokens: 4096,
+      maxTokens: 8192,
       temperature: 0.2,
     });
 
     let analysis;
     try {
       analysis = extractJSON(result);
-    } catch (parseErr) {
-      const msg = parseErr instanceof Error ? parseErr.message : 'Failed to parse analysis response';
-      return res.status(502).json({ error: msg });
+    } catch {
+      const preview = result.slice(0, 300).replace(/\n/g, ' ');
+      return res.status(502).json({
+        error: `Analysis failed: the model returned an unexpected response. Try with shorter content or fewer knowledge files. Preview: "${preview}..."`,
+      });
     }
 
     return res.status(200).json({ success: true, analysis, id: null });

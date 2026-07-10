@@ -389,7 +389,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       default: throw new Error(`Unhandled task type: ${body.task}`);
     }
 
-    const maxTokens = body.task === 'draft' || body.task === 'regenerate' ? 8192 : 4096;
+    const maxTokens = 8192;
 
     const result = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
       maxTokens,
@@ -399,9 +399,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let output;
     try {
       output = extractJSON(result);
-    } catch (parseErr) {
-      const msg = parseErr instanceof Error ? parseErr.message : 'Failed to parse generation response';
-      return res.status(502).json({ error: msg });
+    } catch {
+      const preview = result.slice(0, 300).replace(/\n/g, ' ');
+      return res.status(502).json({
+        error: `Generation failed: the model returned an unexpected response. Try again or reduce content length. Preview: "${preview}..."`,
+      });
     }
 
     return res.status(200).json({ success: true, task: body.task, output });
