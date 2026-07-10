@@ -4,14 +4,17 @@ const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MAX_RETRIES = 2;
 const INITIAL_BACKOFF_MS = 1000;
 
-const GROUNDING_SYSTEM_PROMPT = `You are a content intelligence analyst. CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Your entire response must be parseable by JSON.parse().
+const GROUNDING_SYSTEM_PROMPT = `You are a senior content strategist for a financial services brand. Your job is to turn raw source material into specific, actionable content opportunities that a marketing team can execute immediately.
 
-GROUNDING CONTRACT:
-1. Every claim, insight, or recommendation MUST be directly traceable to the provided source material or knowledge base chunks.
-2. Do NOT use world knowledge, assumptions, or information not present in the provided inputs.
-3. Every claim must be cited using [Source: <source_title>] or [KB: <chunk_reference>].
-4. If source material is insufficient, say so in the warnings array rather than filling gaps.
-5. Do NOT hallucinate statistics, quotes, or facts.`;
+CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after. Your entire response must be parseable by JSON.parse().
+
+YOUR ROLE:
+- Extract the most valuable, specific, shareable insights from the source
+- Suggest CONCRETE content ideas with real angles — not generic templates
+- Match content to the right audience with real persona-specific angles
+- Every opportunity title should be a specific headline a writer could use directly
+- Use your knowledge of content marketing, audience psychology, and format effectiveness
+- Do NOT just restate what the source says — synthesise it into publishable ideas`;
 
 function extractJSON(text: string): unknown {
   const stripped = text
@@ -170,38 +173,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? `\n\nMARKETING NOTES:\n${body.marketing_notes}`
       : '';
 
-    const userPrompt = `Analyze the following source content and return a structured JSON analysis.
+    const userPrompt = `You are analysing source content for a financial services content team. Extract specific, usable marketing insights and content opportunities.
 
-SOURCE METADATA:
-- Title: ${body.source_title}
-- Type: ${body.source_type}
-- Owner: ${body.source_owner ?? 'Unknown'}
-- URL: ${body.source_url ?? 'N/A'}
+SOURCE: "${body.source_title}" — ${body.source_type} by ${body.source_owner ?? 'Unknown'}
 ${marketingSection}${fileContextSection}${knowledgeSection}${personaSection}
 
-SOURCE CONTENT (truncated to first 12000 chars):
+SOURCE CONTENT:
 ${String(body.source_text).slice(0, 12000)}
 
-Output raw JSON (no fences, no extra text) matching this structure exactly. Keep all string values concise — 1-2 sentences max per field. Limit arrays to 5 items max each.
+---
+Now output a JSON object. Rules:
+- "summary": 2-3 sentences describing what this source is about and why it matters for content
+- "topics": 3-6 specific topic strings extracted from the source (not generic — e.g. "AIF minimum investment of 1 crore" not "investing")
+- "insights": 4-6 insights that a marketer can act on. Each "text" must be a specific, surprising, or counterintuitive point from the source — not a restatement. "confidence" is high/medium/low. "source_reference" is a short direct quote.
+- "persona_matches": match the source content to the personas listed above (or infer likely audience from content if none given). "relevance_score" 0.0-1.0. "suggested_angle" must be a specific hook, not generic ("Why HNI investors are switching from MFs to AIFs despite the 1Cr lock-in" not "Investment advice for HNIs").
+- "depth_analysis": for each major topic, rate depth as surface/moderate/deep and list specific key points and what the source does NOT cover (gaps)
+- "opportunities": 4-6 SPECIFIC content opportunities. Each "title" must be a publishable headline (specific, compelling — something a writer could use directly). "content_angle" is the specific unique angle. "recommended_format" is blog_post/social_post/email/case_study/video_script/carousel/infographic. "priority" is high/medium/low. "persona_match" names the target. "suggested_cta" is specific. "source_context" is the key quote/point that inspired this opportunity.
+- "quality_check": rate source_richness/actionability/uniqueness/completeness as high/medium/low
+- "warnings": any content risks, compliance concerns, or gaps worth flagging (empty array if none)
 
-{
-  "summary": "2-3 sentence summary [Source: ${body.source_title}]",
-  "topics": ["topic1", "topic2"],
-  "insights": [
-    { "text": "insight [Source: ${body.source_title}]", "confidence": "high|medium|low", "source_reference": "brief quote" }
-  ],
-  "persona_matches": [
-    { "persona_name": "persona name", "relevance_score": 0.0, "matching_points": ["point"], "suggested_angle": "angle" }
-  ],
-  "depth_analysis": [
-    { "topic": "topic", "depth": "surface|moderate|deep", "key_points": ["point"], "gaps": ["gap"] }
-  ],
-  "opportunities": [
-    { "title": "title", "content_angle": "angle", "recommended_format": "blog_post|social_post|email|case_study|video_script", "priority": "high|medium|low", "persona_match": "persona or general", "suggested_cta": "cta", "source_context": "brief quote" }
-  ],
-  "quality_check": { "source_richness": "high|medium|low", "actionability": "high|medium|low", "uniqueness": "high|medium|low", "completeness": "high|medium|low" },
-  "warnings": ["concern if any"]
-}`;
+Output ONLY the raw JSON object, no fences, no extra text.`;
 
     const result = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
       maxTokens: 8192,

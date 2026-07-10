@@ -250,6 +250,7 @@ export const api = {
       marketingNotes?: string;
       knowledgeChunks?: string[];
       fileContext?: KBFileContext[];
+      personas?: Array<{ name: string; description: string; pain_points?: string[]; goals?: string[] }>;
     }): Promise<Result<Analysis>> {
       try {
         const response = await fetch('/api/analyze-content', {
@@ -262,6 +263,7 @@ export const api = {
             source_owner: params.sourceOwner,
             source_url: params.sourceUrl,
             marketing_notes: params.marketingNotes,
+            personas: params.personas,
             knowledge_chunks: params.knowledgeChunks?.slice(0, 25).map((text, i) => ({
               id: `chunk-${i}`,
               content: text.slice(0, 500),
@@ -557,7 +559,7 @@ export const api = {
     ): Promise<Result<Opportunity[]>> {
       const rows = opps.map((o) => ({
         account_id: accountId,
-        analysis_id: analysisId,
+        analysis_id: analysisId || null,
         title: o.title,
         content_angle: o.content_angle,
         format: o.format,

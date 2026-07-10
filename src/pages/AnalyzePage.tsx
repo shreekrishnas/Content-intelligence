@@ -4,7 +4,7 @@ import { useAccount } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
 import { auditLog } from '@/lib/audit';
 import { retrieve } from '@/lib/retrieval';
-import { supabaseConfigured } from '@/lib/supabase';
+import { supabase, supabaseConfigured } from '@/lib/supabase';
 import type { SourceType } from '@/types';
 
 const ACTIVITY_LABELS = [
@@ -167,7 +167,17 @@ export default function AnalyzePage() {
     const sourceTypeLabel = activeType?.name ?? sourceType;
 
     try {
-      const retrieval = await retrieve(accountId, content, sourceType);
+      // Load personas from KB (category = 'persona') in parallel with retrieval
+      const [retrieval, personaFilesResult] = await Promise.all([
+        retrieve(accountId, content, sourceType),
+        supabase
+          .from('knowledge_files')
+          .select('file_name, structured')
+          .eq('account_id', accountId)
+          .eq('category', 'persona')
+          .eq('active', true)
+          .eq('ingest_status', 'ready'),
+      ]);
 
       if (retrieval.refused) {
         clearInterval(stepTimer);
@@ -188,6 +198,13 @@ export default function AnalyzePage() {
         ...retrieval.chunks.map((c) => c.chunk_text),
       ];
 
+      const personas = (personaFilesResult.data || []).map((f: any) => ({
+        name: f.file_name,
+        description: (f.structured as any)?.summary || f.file_name,
+        pain_points: (f.structured as any)?.key_messages?.slice(0, 4) || [],
+        goals: (f.structured as any)?.main_topics?.slice(0, 4) || [],
+      }));
+
       const { data, error: apiErr } = await api.analysis.run({
         accountId,
         sourceText: content,
@@ -198,6 +215,7 @@ export default function AnalyzePage() {
         marketingNotes: marketingNotes || undefined,
         knowledgeChunks: kbChunks,
         fileContext: retrieval.sourcesUsed,
+        personas: personas.length > 0 ? personas : undefined,
       });
 
       clearInterval(stepTimer);
@@ -218,12 +236,11 @@ export default function AnalyzePage() {
       // Scroll results into view
       setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
 
-      // Save opportunities fire-and-forget (non-blocking)
+      // Save opportunities — non-blocking but surface errors to user
       if (analysis?.opportunities?.length > 0 && accountId) {
-        const analysisId = (data as any)?.id;
         api.opportunities.createFromAnalysis(
           accountId,
-          analysisId || '',
+          null as any,
           analysis.opportunities.map((o: any) => ({
             title: o.title,
             content_angle: o.content_angle,
@@ -233,7 +250,11 @@ export default function AnalyzePage() {
             suggested_cta: o.suggested_cta,
             source_context: o.source_context,
           })),
-        ).catch(() => {});
+        ).then((res) => {
+          if (res.error) {
+            setError(`Results saved but opportunities could not be stored: ${res.error}. Check Supabase RLS policies.`);
+          }
+        }).catch(() => {});
       }
 
       auditLog({
