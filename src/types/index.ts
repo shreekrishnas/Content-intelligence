@@ -200,6 +200,7 @@ export interface SourceType {
   slug: string;
   description: string;
   formats: string[];
+  analysis_guidance?: string;
   created_at: string;
 }
 

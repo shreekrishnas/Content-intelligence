@@ -1,20 +1,26 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { buildSourceGuidance, type SourceTypeContext } from '../lib/source-archetypes';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const MAX_RETRIES = 2;
 const INITIAL_BACKOFF_MS = 1000;
 
-const GROUNDING_SYSTEM_PROMPT = `You are a senior content strategist for a financial services brand. Your job is to turn raw source material into specific, actionable content opportunities that a marketing team can execute immediately.
+// Brand-agnostic REPURPOSING strategist. The app runs across many
+// verticals (finance, eyewear, 3D printing, water treatment, IT services)
+// — brand specifics come from the KB and the source-type guidance block.
+const GROUNDING_SYSTEM_PROMPT = `You are a senior content repurposing strategist. The user has ONE source piece — a video, blog, webinar, report, interview, whatever — and your job is to plan the derivative content pieces that can be created from it.
+
+CORE MENTAL MODEL: One source → many outputs. You are not writing the pieces; you are designing the plan. Every output you propose must trace back to a specific moment, quote, stat, or argument in the source.
 
 CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after. Your entire response must be parseable by JSON.parse().
 
 YOUR ROLE:
-- Extract the most valuable, specific, shareable insights from the source
-- Suggest CONCRETE content ideas with real angles — not generic templates
-- Match content to the right audience with real persona-specific angles
-- Every opportunity title should be a specific headline a writer could use directly
-- Use your knowledge of content marketing, audience psychology, and format effectiveness
-- Do NOT just restate what the source says — synthesise it into publishable ideas`;
+- Read the SOURCE TYPE guidance carefully — it defines how a strategist approaches THIS kind of source (a webinar is repurposed differently than a competitor blog).
+- Extract the reusable raw material: quotable moments, load-bearing arguments, killer stats, contradiction points, verbatim customer language.
+- Design a REPURPOSING PLAN: distinct derivative pieces across formats, audiences, and funnel stages — no two pieces should be the same idea reworded.
+- Every derivative piece must name the exact source moment it repurposes (a quote, a stat, a section).
+- Respect the SOURCE TYPE's allowed formats list — do not propose formats outside that list.
+- Brand voice, compliance, and terminology come from the KB (when provided) — respect them. If a source moment conflicts with KB compliance, flag it in warnings.`;
 
 function extractJSON(text: string): unknown {
   const stripped = text
@@ -40,6 +46,7 @@ interface FileContext {
 interface AnalyzeRequest {
   source_text: string;
   source_type: string;
+  source_type_context?: SourceTypeContext;
   source_title: string;
   source_owner?: string;
   source_url?: string;
@@ -173,24 +180,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? `\n\nMARKETING NOTES:\n${body.marketing_notes}`
       : '';
 
-    const userPrompt = `You are analysing source content for a financial services content team. Extract specific, usable marketing insights and content opportunities.
+    const guidance = buildSourceGuidance(body.source_type_context ?? { name: body.source_type });
+    const formatsHint = body.source_type_context?.formats?.length
+      ? ` Choose "recommended_format" from: ${body.source_type_context.formats.join(', ')}.`
+      : '';
+
+    const userPrompt = `Design a repurposing plan for this one source piece.
 
 SOURCE: "${body.source_title}" — ${body.source_type} by ${body.source_owner ?? 'Unknown'}
+
+${guidance.block}
 ${marketingSection}${fileContextSection}${knowledgeSection}${personaSection}
 
 SOURCE CONTENT:
 ${String(body.source_text).slice(0, 12000)}
 
 ---
-Now output a JSON object. Rules:
-- "summary": 2-3 sentences describing what this source is about and why it matters for content
-- "topics": 3-6 specific topic strings extracted from the source (not generic — e.g. "AIF minimum investment of 1 crore" not "investing")
-- "insights": 4-6 insights that a marketer can act on. Each "text" must be a specific, surprising, or counterintuitive point from the source — not a restatement. "confidence" is high/medium/low. "source_reference" is a short direct quote.
-- "persona_matches": match the source content to the personas listed above (or infer likely audience from content if none given). "relevance_score" 0.0-1.0. "suggested_angle" must be a specific hook, not generic ("Why HNI investors are switching from MFs to AIFs despite the 1Cr lock-in" not "Investment advice for HNIs").
-- "depth_analysis": for each major topic, rate depth as surface/moderate/deep and list specific key points and what the source does NOT cover (gaps)
-- "opportunities": 4-6 SPECIFIC content opportunities. Each "title" must be a publishable headline (specific, compelling — something a writer could use directly). "content_angle" is the specific unique angle. "recommended_format" is blog_post/social_post/email/case_study/video_script/carousel/infographic. "priority" is high/medium/low. "persona_match" names the target. "suggested_cta" is specific. "source_context" is the key quote/point that inspired this opportunity.
+Return ONE JSON object with these fields. Every derivative piece MUST trace back to a specific moment/quote in the source above.
+
+- "summary": 2-3 sentences describing what this source is about, what makes it repurposable, and any risk to flag.
+- "topics": 3-6 specific topic strings extracted from the source (concrete, not generic).
+- "insights": 4-6 acts of specific value from the source — surprising claims, sharp quotes, load-bearing arguments, or stats. "text" must be specific (not restated); "confidence" is high/medium/low; "source_reference" is a short direct quote from the source.
+- "persona_matches": which listed persona each derivative angle serves best (or inferred if no personas were provided). "relevance_score" 0.0-1.0. "suggested_angle" must be a specific hook — not a topic.
+- "depth_analysis": for each major topic, rate depth as surface/moderate/deep, list the specific points made, and list the gaps the source leaves open (each gap = a potential follow-up piece).
+- "opportunities": 5-8 DERIVATIVE CONTENT PIECES repurposed from the source. Prioritise variety across format, funnel stage, and audience. Each piece:
+    - "title": the exact publishable headline / caption (specific, compelling — a writer could use it verbatim)
+    - "content_angle": what makes this piece distinct from the source and from the other pieces
+    - "recommended_format": the output format.${formatsHint}
+    - "priority": high/medium/low
+    - "persona_match": which target persona this piece serves
+    - "suggested_cta": specific next-action for the reader
+    - "source_context": the exact moment (quote / stat / section) in the source this piece repurposes — this is the traceability link
 - "quality_check": rate source_richness/actionability/uniqueness/completeness as high/medium/low
-- "warnings": any content risks, compliance concerns, or gaps worth flagging (empty array if none)
+- "warnings": compliance concerns, factual risks, or brand-fit issues worth flagging (empty array if none)
 
 Output ONLY the raw JSON object, no fences, no extra text.`;
 

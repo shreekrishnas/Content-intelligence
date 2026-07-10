@@ -246,6 +246,13 @@ export const api = {
       accountId: string;
       sourceText: string;
       sourceType: string;
+      sourceTypeContext?: {
+        name?: string;
+        slug?: string;
+        description?: string;
+        formats?: string[];
+        analysis_guidance?: string;
+      };
       sourceTitle: string;
       sourceOwner?: string;
       sourceUrl?: string;
@@ -261,6 +268,7 @@ export const api = {
           body: JSON.stringify({
             source_text: params.sourceText.slice(0, 15000),
             source_type: params.sourceType,
+            source_type_context: params.sourceTypeContext,
             source_title: params.sourceTitle || 'Untitled Source',
             source_owner: params.sourceOwner,
             source_url: params.sourceUrl,
@@ -854,6 +862,7 @@ export const api = {
       name: string,
       description: string,
       formats: string[],
+      analysisGuidance?: string,
     ): Promise<Result<SourceType>> {
       const slug = name
         .toLowerCase()
@@ -868,11 +877,26 @@ export const api = {
           slug,
           description,
           formats,
+          analysis_guidance: analysisGuidance ?? '',
         })
         .select()
         .single();
       if (error) return err(pgError(error));
       return ok(data as SourceType);
+    },
+
+    async update(
+      accountId: string,
+      id: string,
+      patch: Partial<Pick<SourceType, 'description' | 'formats' | 'analysis_guidance'>>,
+    ): Promise<Result<void>> {
+      const { error } = await supabase
+        .from('source_types')
+        .update(patch)
+        .eq('id', id)
+        .eq('account_id', accountId);
+      if (error) return err(pgError(error));
+      return ok(undefined as void);
     },
 
     async delete(accountId: string, id: string): Promise<Result<void>> {

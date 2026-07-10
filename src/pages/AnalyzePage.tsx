@@ -6,6 +6,7 @@ import { auditLog } from '@/lib/audit';
 import { retrieve } from '@/lib/retrieval';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
 import type { SourceType } from '@/types';
+import { archetypeHint } from '@/lib/archetype-hint';
 
 const ACTIVITY_LABELS = [
   'Reading Source',
@@ -29,10 +30,11 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
   );
 }
 
-function AddSourceTypeModal({ onClose, onSave }: { onClose: () => void; onSave: (name: string, description: string, formats: string[]) => void }) {
+function AddSourceTypeModal({ onClose, onSave }: { onClose: () => void; onSave: (name: string, description: string, formats: string[], guidance: string) => void }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [formatsText, setFormatsText] = useState('');
+  const [guidance, setGuidance] = useState('');
 
   const handleSave = () => {
     if (!name.trim() || !description.trim()) return;
@@ -40,7 +42,7 @@ function AddSourceTypeModal({ onClose, onSave }: { onClose: () => void; onSave: 
       .split(',')
       .map((f) => f.trim())
       .filter(Boolean);
-    onSave(name.trim(), description.trim(), formats.length > 0 ? formats : ['Blog', 'Single Image', 'Carousel']);
+    onSave(name.trim(), description.trim(), formats.length > 0 ? formats : ['Blog', 'Single Image', 'Carousel'], guidance.trim());
   };
 
   return (
@@ -55,12 +57,17 @@ function AddSourceTypeModal({ onClose, onSave }: { onClose: () => void; onSave: 
         <div className="field" style={{ marginBottom: '0.8rem' }}>
           <label className="field-label">Description</label>
           <textarea className="glass-textarea" rows={3} placeholder="Describe what this source type is so the AI can understand it. e.g. 'Audio podcast episodes discussing industry trends and expert interviews.'" value={description} onChange={(e) => setDescription(e.target.value)} />
-          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>The AI uses this description to understand the source type and tailor its analysis.</div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>The AI infers an archetype (video / blog / webinar / etc.) from the name — this description sharpens the interpretation.</div>
         </div>
-        <div className="field" style={{ marginBottom: '1rem' }}>
+        <div className="field" style={{ marginBottom: '0.8rem' }}>
           <label className="field-label">Output Formats (comma-separated)</label>
           <input className="glass-input" type="text" placeholder="Blog, Carousel, Single Image" value={formatsText} onChange={(e) => setFormatsText(e.target.value)} />
-          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Leave empty for defaults: Blog, Single Image, Carousel</div>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>The AI will only propose repurposed pieces from this list. Leave empty for defaults.</div>
+        </div>
+        <div className="field" style={{ marginBottom: '1rem' }}>
+          <label className="field-label">Analysis Guidance (optional)</label>
+          <textarea className="glass-textarea" rows={3} placeholder="Override the archetype defaults. e.g. 'Ignore the intro/outro. Focus on the guest's answers, not the host's questions. Always suggest 2 short-form clips per major point.'" value={guidance} onChange={(e) => setGuidance(e.target.value)} />
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Any specifics you want the AI to follow when repurposing this type of source. Takes priority over the built-in defaults.</div>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
           <button className="btn btn-sm" onClick={onClose} style={{ opacity: 0.7 }}>Cancel</button>
@@ -119,10 +126,10 @@ export default function AnalyzePage() {
     return () => { cancelled = true; };
   }, [accountId]);
 
-  const handleAddSourceType = useCallback(async (name: string, description: string, formats: string[]) => {
+  const handleAddSourceType = useCallback(async (name: string, description: string, formats: string[], guidance: string) => {
     if (!accountId) return;
     setShowAddModal(false);
-    const { data, error: apiErr } = await api.sourceTypes.create(accountId, name, description, formats);
+    const { data, error: apiErr } = await api.sourceTypes.create(accountId, name, description, formats, guidance);
     if (apiErr || !data) return;
     setSourceTypes((prev) => [...prev, data]);
     setSourceType(data.slug);
@@ -214,6 +221,13 @@ export default function AnalyzePage() {
         accountId,
         sourceText: content,
         sourceType: sourceTypeLabel,
+        sourceTypeContext: activeType ? {
+          name: activeType.name,
+          slug: activeType.slug,
+          description: activeType.description,
+          formats: activeType.formats,
+          analysis_guidance: activeType.analysis_guidance,
+        } : undefined,
         sourceTitle: sourceTitle || 'Untitled Source',
         sourceOwner,
         sourceUrl: inputMode === 'url' ? sourceUrl : undefined,
@@ -323,8 +337,15 @@ export default function AnalyzePage() {
             </span>
           </div>
         )}
-        {activeFormats.length > 0 && (
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>Available formats: {activeFormats.join(', ')}</div>
+        {activeType && (
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem', display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            {(() => {
+              const hint = archetypeHint(activeType.name, activeType.slug);
+              return hint ? <span>Archetype: <strong>{hint}</strong></span> : null;
+            })()}
+            {activeFormats.length > 0 && <span>Repurposed as: {activeFormats.join(', ')}</span>}
+            {activeType.analysis_guidance && <span title={activeType.analysis_guidance}>Custom guidance ✓</span>}
+          </div>
         )}
         {sourceTypes.length === 0 && !loadingTypes && supabaseConfigured && (
           <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
