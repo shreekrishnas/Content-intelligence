@@ -95,6 +95,7 @@ export default function AnalyzePage() {
   const [sourcesUsed, setSourcesUsed] = useState<Array<{ file_name: string; category: string }>>([]);
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
@@ -208,14 +209,19 @@ export default function AnalyzePage() {
       if (kbWarning && analysis) {
         analysis.warnings = [...(analysis.warnings || []), kbWarning];
       }
+
+      // Show results immediately — don't block on DB saves
       setResult(analysis);
       setSourcesUsed(retrieval.sourcesUsed);
+      setActivityStep(ACTIVITY_LABELS.length);
 
+      // Scroll results into view
+      setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+
+      // Save opportunities fire-and-forget (non-blocking)
       if (analysis?.opportunities?.length > 0 && accountId) {
-        setActivityStep(ACTIVITY_LABELS.length - 2);
-
         const analysisId = (data as any)?.id;
-        await api.opportunities.createFromAnalysis(
+        api.opportunities.createFromAnalysis(
           accountId,
           analysisId || '',
           analysis.opportunities.map((o: any) => ({
@@ -227,18 +233,16 @@ export default function AnalyzePage() {
             suggested_cta: o.suggested_cta,
             source_context: o.source_context,
           })),
-        );
+        ).catch(() => {});
       }
 
-      setActivityStep(ACTIVITY_LABELS.length);
-
-      await auditLog({
+      auditLog({
         accountId,
         action: 'analyze',
         targetType: 'analysis',
         targetId: (data as any)?.id,
         detail: { source_type: sourceType, source_title: sourceTitle },
-      });
+      }).catch(() => {});
     } catch (e: any) {
       clearInterval(stepTimer);
       timerRef.current = null;
@@ -394,6 +398,11 @@ export default function AnalyzePage() {
                     </div>
                   );
                 })}
+                {activityStep >= ACTIVITY_LABELS.length && (
+                  <div style={{ marginTop: '0.6rem', padding: '0.6rem 0.8rem', background: 'var(--status-success)18', borderRadius: '0.4rem', borderLeft: '3px solid var(--status-success)' }}>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--status-success)', fontWeight: 600 }}>&#8595; Results ready — scroll down</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -401,7 +410,7 @@ export default function AnalyzePage() {
       </div>
 
       {result && (
-        <div style={{ marginTop: '2rem' }}>
+        <div ref={resultsRef} style={{ marginTop: '2rem' }}>
           <div className="hairline" style={{ marginBottom: '1.5rem' }} />
           <div className="grid grid-4" style={{ gap: '0.8rem', marginBottom: '1.5rem' }}>
             <StatCard label="Topics" value={result.topics?.length ?? 0} color="var(--accent-primary)" />
