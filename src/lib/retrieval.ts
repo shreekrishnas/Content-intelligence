@@ -26,6 +26,7 @@ export interface RetrievalResult {
   chunks: RetrievalChunk[];
   constraintChunks: RetrievalChunk[];
   sourcesUsed: KBFileContext[];
+  topScore: number;
   readiness: {
     ready: boolean;
     categories: Record<string, boolean>;
@@ -96,6 +97,7 @@ export async function retrieve(
       chunks: [],
       constraintChunks: [],
       sourcesUsed: [],
+      topScore: 0,
       readiness: { ready: false, categories: {}, missingRequired: REQUIRED_CATEGORIES },
     };
   }
@@ -111,6 +113,7 @@ export async function retrieve(
       chunks: [],
       constraintChunks: [],
       sourcesUsed: [],
+      topScore: 0,
       readiness: { ready: false, categories: {}, missingRequired: REQUIRED_CATEGORIES },
     };
   }
@@ -134,6 +137,7 @@ export async function retrieve(
       chunks: [],
       constraintChunks: [],
       sourcesUsed: [],
+      topScore: 0,
       readiness,
     };
   }
@@ -164,6 +168,7 @@ export async function retrieve(
     .filter((id: string) => !constraintIds.includes(id));
 
   let chunks: RetrievalChunk[] = [];
+  let topScore = 0;
   if (contextIds.length > 0) {
     const { data } = await supabase
       .from('knowledge_chunks')
@@ -174,9 +179,11 @@ export async function retrieve(
       .limit(FETCH_LIMIT);
 
     const candidates = (data || []).map(mapChunk);
-    chunks = candidates
+    const scored = candidates
       .map(c => ({ chunk: c, score: scoreChunk(c.chunk_text, queryWords) }))
-      .sort((a, b) => b.score - a.score)
+      .sort((a, b) => b.score - a.score);
+    topScore = scored[0]?.score ?? 0;
+    chunks = scored
       .slice(0, TOP_K)
       .map(s => ({ ...s.chunk, similarity: s.score }));
   }
@@ -218,6 +225,25 @@ export async function retrieve(
     }
   }
 
+  // Strict grounding gate: if the source topic doesn't overlap with any
+  // context KB chunk (topScore = 0) AND we have no constraint chunks
+  // to lean on either, refuse. The user asked: no relevant KB → say so
+  // rather than invent.
+  const hasAnyContext = chunks.length > 0 && topScore > 0;
+  const hasAnyConstraints = constraintChunks.length > 0;
+  if (!hasAnyContext && !hasAnyConstraints) {
+    return {
+      refused: true,
+      reason: "I don't have that idea in the knowledge base. Add relevant knowledge files (persona, brand, guidelines, or expert content) that cover this topic — I can only generate content that is grounded in your KB.",
+      missing: readiness.missingRequired,
+      chunks: [],
+      constraintChunks: [],
+      sourcesUsed: [],
+      topScore: 0,
+      readiness,
+    };
+  }
+
   return {
     refused: false,
     reason: readiness.missingRequired.length > 0
@@ -227,6 +253,7 @@ export async function retrieve(
     chunks,
     constraintChunks,
     sourcesUsed,
+    topScore,
     readiness,
   };
 }

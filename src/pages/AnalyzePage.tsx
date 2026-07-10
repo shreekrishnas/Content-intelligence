@@ -247,6 +247,15 @@ export default function AnalyzePage() {
         analysis.warnings = [...(analysis.warnings || []), kbWarning];
       }
 
+      // Strict-grounding refusal path — surface as an error so the user
+      // can act (upload relevant KB files) instead of seeing empty cards.
+      if (analysis?.refused === true) {
+        setError(analysis.reason || "I don't have that idea in the knowledge base. Add relevant knowledge files that cover this source's topic.");
+        setActivityStep(-1);
+        setIsRunning(false);
+        return;
+      }
+
       // Show results immediately — don't block on DB saves
       setResult(analysis);
       setSourcesUsed(retrieval.sourcesUsed);
