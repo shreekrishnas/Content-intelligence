@@ -127,6 +127,8 @@ export default function KnowledgeBasePage() {
     loadFiles();
   }
 
+  const [confirmDelete, setConfirmDelete] = useState<KnowledgeFile | null>(null);
+
   async function handleDelete(file: KnowledgeFile) {
     const { error } = await api.kb.delete(accountId!, file.id);
     if (error) { showToast(error, 'error'); return; }
@@ -138,6 +140,7 @@ export default function KnowledgeBasePage() {
       detail: { file_name: file.file_name },
     });
     showToast('File deleted');
+    setConfirmDelete(null);
     loadFiles();
   }
 
@@ -223,7 +226,7 @@ export default function KnowledgeBasePage() {
                   Active
                 </label>
                 <button className="btn btn-ghost btn-sm" onClick={() => setPreviewFile(file)}>Details</button>
-                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(file)}>Delete</button>
+                <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(file)}>Delete</button>
               </div>
             );
           })
@@ -245,11 +248,41 @@ export default function KnowledgeBasePage() {
                   const f = e.target.files?.[0];
                   if (f) setSelectedFile(f);
                 }}
-                style={{ fontSize: 13 }}
+                style={{ display: 'none' }}
               />
-              {selectedFile && (
-                <p style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>{selectedFile.name}</p>
-              )}
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const f = e.dataTransfer.files?.[0];
+                  if (f) setSelectedFile(f);
+                }}
+                style={{
+                  border: '2px dashed var(--border-default, #6366F1)',
+                  borderRadius: 12,
+                  padding: '28px 20px',
+                  textAlign: 'center',
+                  cursor: 'pointer',
+                  background: selectedFile ? '#10B98110' : 'var(--surface-card, #f9fafb)',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <div style={{ fontSize: 32, marginBottom: 8 }}>{selectedFile ? '✅' : '\u{1F4C1}'}</div>
+                {selectedFile ? (
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{selectedFile.name}</div>
+                    <div style={{ fontSize: 12, opacity: 0.6 }}>{(selectedFile.size / 1024).toFixed(1)} KB</div>
+                    <div style={{ fontSize: 12, color: 'var(--accent-primary, #6366F1)', marginTop: 8, textDecoration: 'underline' }}>Click to change file</div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>Click to choose a file or drag & drop</div>
+                    <div style={{ fontSize: 12, opacity: 0.5 }}>Supports PDF, TXT, MD, DOCX, CSV</div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="field">
@@ -276,6 +309,24 @@ export default function KnowledgeBasePage() {
               <button className="btn btn-primary" onClick={handleUpload} disabled={uploading || !selectedFile}>
                 {uploading ? 'Uploading...' : 'Upload'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setConfirmDelete(null); }}>
+          <div className="glass-modal" style={{ maxWidth: 420 }}>
+            <h3 style={{ fontWeight: 700, marginBottom: 12 }}>Confirm Delete</h3>
+            <p style={{ fontSize: 14, marginBottom: 8 }}>
+              Are you sure you want to delete <strong>{confirmDelete.file_name}</strong>?
+            </p>
+            <p style={{ fontSize: 12, opacity: 0.6, marginBottom: 20 }}>
+              This action cannot be undone. The file and all associated chunks will be permanently removed.
+            </p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setConfirmDelete(null)}>Cancel</button>
+              <button className="btn btn-danger" onClick={() => handleDelete(confirmDelete)}>Yes, Delete</button>
             </div>
           </div>
         </div>

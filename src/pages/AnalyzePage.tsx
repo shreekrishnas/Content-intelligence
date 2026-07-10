@@ -80,6 +80,8 @@ export default function AnalyzePage() {
   const [sourceType, setSourceType] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
 
+  const [confirmDeleteType, setConfirmDeleteType] = useState<SourceType | null>(null);
+
   const [inputMode, setInputMode] = useState<'text' | 'url'>('text');
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceOwner, setSourceOwner] = useState('');
@@ -124,12 +126,13 @@ export default function AnalyzePage() {
     setSourceType(data.slug);
   }, [accountId]);
 
-  const handleDeleteSourceType = useCallback(async (id: string) => {
+  const handleDeleteSourceType = useCallback(async (st: SourceType) => {
     if (!accountId) return;
-    const { error: apiErr } = await api.sourceTypes.delete(accountId, id);
+    const { error: apiErr } = await api.sourceTypes.delete(accountId, st.id);
     if (apiErr) return;
+    setConfirmDeleteType(null);
     setSourceTypes((prev) => {
-      const next = prev.filter((t) => t.id !== id);
+      const next = prev.filter((t) => t.id !== st.id);
       if (next.length > 0 && !next.find((t) => t.slug === sourceType)) {
         setSourceType(next[0].slug);
       } else if (next.length === 0) {
@@ -259,13 +262,13 @@ export default function AnalyzePage() {
         ) : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
             {sourceTypes.map((st) => (
-              <span key={st.id} className="badge" onClick={() => setSourceType(st.slug)} style={{ cursor: 'pointer', background: sourceType === st.slug ? 'var(--accent-primary)' : undefined, color: sourceType === st.slug ? '#fff' : undefined, position: 'relative' }}>
+              <span key={st.id} className="badge" onClick={() => setSourceType(st.slug)} style={{ cursor: 'pointer', background: sourceType === st.slug ? 'var(--accent-primary)' : undefined, color: sourceType === st.slug ? '#fff' : undefined, position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px' }}>
                 {st.name}
                 <span
-                  onClick={(e) => { e.stopPropagation(); handleDeleteSourceType(st.id); }}
-                  style={{ marginLeft: 6, fontSize: '0.65rem', opacity: 0.6, cursor: 'pointer' }}
+                  onClick={(e) => { e.stopPropagation(); setConfirmDeleteType(st); }}
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: '50%', background: 'rgba(220,38,38,0.15)', color: '#DC2626', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', lineHeight: 1, flexShrink: 0 }}
                   title="Remove source type"
-                >x</span>
+                >&times;</span>
               </span>
             ))}
             <span
@@ -289,6 +292,25 @@ export default function AnalyzePage() {
       </div>
 
       {showAddModal && <AddSourceTypeModal onClose={() => setShowAddModal(false)} onSave={handleAddSourceType} />}
+
+      {confirmDeleteType && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} onClick={() => setConfirmDeleteType(null)} />
+          <div className="glass-card-static" style={{ position: 'relative', width: '100%', maxWidth: 420, padding: '1.5rem', zIndex: 1 }}>
+            <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.75rem' }}>Delete Source Type</div>
+            <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+              Are you sure you want to delete <strong>{confirmDeleteType.name}</strong>?
+            </p>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1.2rem' }}>
+              This action cannot be undone. Existing analyses using this source type will not be affected.
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button className="btn btn-sm" onClick={() => setConfirmDeleteType(null)} style={{ opacity: 0.7 }}>Cancel</button>
+              <button className="btn btn-sm" onClick={() => handleDeleteSourceType(confirmDeleteType)} style={{ background: '#DC2626', color: '#fff' }}>Yes, Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-2" style={{ gap: '1.5rem', alignItems: 'start' }}>
         <div>
