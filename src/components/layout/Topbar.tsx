@@ -25,6 +25,10 @@ const tabMeta: Record<string, { title: string; subtitle: string }> = {
     title: 'Knowledge Base',
     subtitle: 'Everything the agent is allowed to know. Only active files are used.',
   },
+  ideas: {
+    title: 'Ideas Lab',
+    subtitle: 'Generate, repurpose, and plan content ideas — grounded in your Knowledge Base.',
+  },
   calendar: {
     title: 'Calendar',
     subtitle: 'Approved content, ready to schedule or export.',

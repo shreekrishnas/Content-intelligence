@@ -5,6 +5,7 @@
   "functions": {
     "api/analyze-content.ts": { "maxDuration": 120 },
     "api/generate-content.ts": { "maxDuration": 120 },
+    "api/ideas-lab.ts": { "maxDuration": 120 },
     "api/extract-knowledge.ts": { "maxDuration": 60 }
   },
   "rewrites": [

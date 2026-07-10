@@ -43,6 +43,16 @@ const tabs = [
     ),
   },
   {
+    id: "ideas",
+    label: "Ideas Lab",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 3h6M10 3v6.5L5.2 18a1.6 1.6 0 0 0 1.4 2.5h10.8a1.6 1.6 0 0 0 1.4-2.5L14 9.5V3" />
+        <path d="M7.5 14h9" />
+      </svg>
+    ),
+  },
+  {
     id: "calendar",
     label: "Calendar",
     icon: (

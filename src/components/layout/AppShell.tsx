@@ -8,6 +8,7 @@ const AnalyzePage = lazy(() => import('@/pages/AnalyzePage'));
 const OpportunitiesPage = lazy(() => import('@/pages/OpportunitiesPage'));
 const StudioPage = lazy(() => import('@/pages/StudioPage'));
 const KnowledgeBasePage = lazy(() => import('@/pages/KnowledgeBasePage'));
+const IdeasLabPage = lazy(() => import('@/pages/IdeasLabPage'));
 const CalendarPage = lazy(() => import('@/pages/CalendarPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 
@@ -16,6 +17,7 @@ const pages: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
   opportunities: OpportunitiesPage,
   studio: StudioPage,
   kb: KnowledgeBasePage,
+  ideas: IdeasLabPage,
   calendar: CalendarPage,
   settings: SettingsPage,
 };

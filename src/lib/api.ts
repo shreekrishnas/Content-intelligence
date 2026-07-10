@@ -409,6 +409,92 @@ export const api = {
   },
 
   // --------------------------------------------------------------------------
+  // Ideas Lab — calls ideas-lab Edge Function
+  // --------------------------------------------------------------------------
+  ideas: {
+    async _call(body: Record<string, any>): Promise<Result<any>> {
+      try {
+        const response = await fetch('/api/ideas-lab', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...body,
+            knowledge_chunks: (body.knowledge_chunks as string[] | undefined)
+              ?.slice(0, 25)
+              .map((text, i) => ({ id: `chunk-${i}`, content: String(text).slice(0, 500) })),
+          }),
+        });
+        const rawText = await response.text();
+        let data: any;
+        try { data = JSON.parse(rawText); } catch {
+          return err(`Server error (${response.status}): ${rawText.slice(0, 300) || 'Unexpected response format'}`);
+        }
+        if (!response.ok || data.error) return err(data.error || 'Idea generation failed');
+        return ok(data);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : 'Network error during idea generation');
+      }
+    },
+
+    async generate(params: {
+      accountLabel?: string;
+      topic?: string;
+      audience?: string;
+      contentType?: string;
+      goal?: string;
+      source?: string;
+      context?: string;
+      avoidTitles?: string[];
+      knowledgeChunks?: string[];
+    }): Promise<Result<any[]>> {
+      const res = await this._call({
+        task: 'generate',
+        account_label: params.accountLabel,
+        topic: params.topic,
+        audience: params.audience,
+        content_type: params.contentType,
+        goal: params.goal,
+        source: params.source,
+        context: params.context,
+        avoid_titles: params.avoidTitles,
+        knowledge_chunks: params.knowledgeChunks,
+      });
+      if (res.error) return err(res.error);
+      return ok((res.data?.ideas as any[]) || []);
+    },
+
+    async webinar(text: string, knowledgeChunks?: string[]): Promise<Result<any[]>> {
+      const res = await this._call({ task: 'webinar', text, knowledge_chunks: knowledgeChunks });
+      if (res.error) return err(res.error);
+      return ok((res.data?.ideas as any[]) || []);
+    },
+
+    async seo(keywords: string, knowledgeChunks?: string[]): Promise<Result<any[]>> {
+      const res = await this._call({ task: 'seo', keywords, knowledge_chunks: knowledgeChunks });
+      if (res.error) return err(res.error);
+      return ok((res.data?.ideas as any[]) || []);
+    },
+
+    async seasonal(params: { accountLabel?: string; month?: string; context?: string; knowledgeChunks?: string[] }): Promise<Result<any[]>> {
+      const res = await this._call({
+        task: 'seasonal',
+        account_label: params.accountLabel,
+        month: params.month,
+        context: params.context,
+        knowledge_chunks: params.knowledgeChunks,
+      });
+      if (res.error) return err(res.error);
+      return ok((res.data?.ideas as any[]) || []);
+    },
+
+    async expand(idea: Record<string, any>, outputType: 'brief' | 'carousel' | 'blog' | 'caption', knowledgeChunks?: string[]): Promise<Result<any>> {
+      const res = await this._call({ task: 'expand', idea, output_type: outputType, knowledge_chunks: knowledgeChunks });
+      if (res.error) return err(res.error);
+      return ok(res.data?.output);
+    },
+  },
+
+  // --------------------------------------------------------------------------
   // Calendar
   // --------------------------------------------------------------------------
   calendar: {
