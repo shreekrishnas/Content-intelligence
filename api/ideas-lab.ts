@@ -131,25 +131,39 @@ function avoidSection(titles?: string[]): string {
   return `\n\nDO NOT REPEAT these past ideas — produce all-new angles, numbers, and segments:\n${titles.slice(0, 40).map((t) => `- ${t}`).join('\n')}`;
 }
 
-const IDEA_CARD_SCHEMA = `Each idea object must have EXACTLY these fields:
+const IDEA_CARD_SCHEMA = `Each idea object must have EXACTLY these fields. Every field must be specific enough that a writer opens the card and can start producing — no vague labels, no topic strings.
+
 {
-  "title": "A specific, publishable headline",
-  "format": "e.g. LinkedIn carousel, Instagram Reel, Blog post, Email, Short video, Quote card",
+  "title": "The exact publishable headline (a writer uses this verbatim, max ~90 chars)",
+  "format": "One concrete format: LinkedIn carousel | Instagram Reel | Blog post | Email | Short video | Quote card | ...",
   "group": "Social | Video | Blog | Email | Seasonal",
-  "audience": "Specific target segment",
-  "hook": "A scroll-stopping opening line with a specific number, tension, or insight",
-  "angle": "e.g. Data-backed, Myth-buster, Contrarian, Case study, Framework, FAQ",
-  "score": 0,
-  "cta": "Specific call-to-action",
-  "visual_direction": "Concrete visual/design guidance",
-  "why_it_works": "The psychological or strategic reason this lands",
+  "audience": "The specific target segment (persona name or precise segment — not 'business owners')",
+  "hook": "The exact first sentence of the piece. Specific number, tension, or insight. No clichés. Max 200 chars.",
+  "structure": ["Beat 1 label", "Beat 2 label", "Beat 3 label", "..."],
+  "slide_flow": ["For carousels/videos ONLY: per-slide script line. Empty array for single-post formats."],
+  "angle": "Data-backed | Myth-buster | Contrarian | Case study | Framework | FAQ | Story | Comparison | ...",
+  "why_it_works": "One sentence — the psychological or strategic reason this lands with THIS audience.",
+  "cta": "One specific next-action: verb + object + destination. Not 'Learn more'.",
+  "visual_direction": "One sentence a designer can execute directly.",
   "compliance_reminder": "Any disclaimer or claim risk to watch (empty string if none)",
-  "slide_flow": ["Step or slide 1", "Step or slide 2", "..."],
-  "scores": { "audience_fit": 0, "clarity": 0, "platform_fit": 0, "conversion_potential": 0, "compliance_safety": 0 },
+  "effort": "quick | half-day | full-day",
+  "sequence_rank": 1,
+  "kpi": "The ONE metric that tells you this piece worked. Specific number where possible. Not 'engagement'.",
+  "prerequisites": ["Anything that must be true before publishing — assets, approvals, KB gaps. Empty array if ready to ship."],
+  "content_pillar": "The theme/pillar this belongs to",
   "platform_notes": "Format/timing/algorithm tips for the chosen platform",
-  "content_pillar": "The theme or pillar this belongs to"
+  "score": 0,
+  "scores": { "audience_fit": 0, "clarity": 0, "platform_fit": 0, "conversion_potential": 0, "compliance_safety": 0 }
 }
-All score values are integers 0-100.`;
+
+All score values are integers 0-100.
+
+Structure rules:
+- "structure" is the beat-by-beat outline of the piece (3-6 beats). Beat labels, not summary sentences.
+- "sequence_rank" is 1..N — 1 = ship this FIRST. Rank by timeliness and production readiness.
+- No two ideas may share the same hook or the same structure. Every idea is materially different.
+- Every hook must be publishable AS-IS. If you cannot write a specific hook, don't include the idea.
+- "prerequisites" is honest — empty array only when the writer could truly ship today.`;
 
 function buildGenerate(b: IdeasRequest): string {
   return `Brand/Account: ${b.account_label || 'General'}

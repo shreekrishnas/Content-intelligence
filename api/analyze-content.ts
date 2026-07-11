@@ -360,19 +360,32 @@ Otherwise, use these fields:
 - "insights": 4-6 items. Each: "text" (specific, not restated), "confidence" (high/medium/low), "source_reference" (short direct quote from the SOURCE), "kb_reference" (array of KB chunk IDs from above that ground this insight — MUST NOT be empty).
 - "persona_matches": one per persona, or inferred. Each: "persona_name", "relevance_score" (0.0-1.0), "matching_points" (array), "suggested_angle" (specific hook, not a topic), "kb_reference" (array of KB chunk IDs from above — MUST NOT be empty).
 - "depth_analysis": for each major topic — "topic", "depth" (surface/moderate/deep), "key_points" (array), "gaps" (array of what the source doesn't cover — each gap is a potential follow-up piece).
-- "opportunities": 5-8 DERIVATIVE CONTENT PIECES repurposed from the source. Vary format, funnel stage, audience. Each piece:
-    - "title": exact publishable headline/caption (a writer could use it verbatim)
-    - "content_angle": what makes this piece distinct from the source and from the other pieces
+- "opportunities": 5-8 DERIVATIVE CONTENT PIECES repurposed from the source. Vary format, funnel stage, audience. Each piece must be PRODUCTION-READY — a marketer should be able to open it and start writing.
+    - "title": the exact publishable headline / caption. A writer uses this verbatim. Not a topic label. (max ~90 chars)
+    - "hook": the exact opening sentence of the piece — the first line the reader sees. Specific, punchy, no clichés. (max 200 chars)
+    - "structure": array of 3-6 short strings, each describing ONE beat/section of the piece in order. Example for a blog: ["Cold open with the counter-intuitive stat", "Contrast: what most people believe", "The evidence: 3 examples from source", "What to do differently this week", "CTA"]. Not summary sentences — beat labels a writer can turn into paragraphs.
+    - "content_angle": one sentence — what makes this piece distinct from the source and from the other pieces in this plan.
     - "recommended_format": the output format.${formatsHint}
-    - "priority": high/medium/low
-    - "persona_match": target persona
-    - "suggested_cta": specific next-action for the reader
-    - "source_context": the exact moment (quote/stat/section) in the source this piece repurposes
-    - "kb_reference": array of KB chunk IDs from above that ground this piece — MUST NOT be empty
+    - "priority": high/medium/low — how important is this piece in the plan?
+    - "sequence_rank": integer 1-N. 1 = ship this FIRST. Rank by (a) timeliness and (b) production readiness — a quick-turn hero piece ranks above a deep case study.
+    - "effort": one of "quick" (under 1 hour), "half-day", "full-day" — realistic production time.
+    - "persona_match": target persona name.
+    - "suggested_cta": one specific next-action for the reader (verb + object + destination, e.g., "Book a 20-min portfolio review at rh.com/review").
+    - "kpi": the ONE metric that tells you this piece worked (e.g., "3+ replies from HNI segment", "click-through rate > 4%", "5 booked calls within 7 days"). Be specific, not "engagement".
+    - "prerequisites": array of things that must be true before publishing. Empty array if ready to ship. Examples: "Upload approved disclaimer for AIF claims", "Get founder quote for the second beat", "Design team confirms carousel template exists".
+    - "source_context": the exact moment (quote/stat/section) in the source this piece repurposes. This is the traceability link.
+    - "kb_reference": array of KB chunk IDs from above that ground this piece — MUST NOT be empty.
 - "quality_check": rate source_richness/actionability/uniqueness/completeness as high/medium/low.
 - "warnings": compliance concerns, factual risks, or brand-fit issues worth flagging (empty array if none).
 
-Do NOT include any item you cannot cite a KB chunk for. If you cannot cite ANYTHING, return the refusal object above. Output ONLY raw JSON.`;
+Rules that make the plan usable:
+- No two opportunities may share the same hook or the same structure — every piece is materially different.
+- Every hook must be publishable AS-IS. If you can't write a specific hook, don't include the piece.
+- The "prerequisites" field is honest — if a piece needs an approval or asset you can't see, list it. Empty array only when the writer could truly ship today.
+- Sequence must reflect real priority — do not rank arbitrarily.
+- Do NOT include any item you cannot cite a KB chunk for. If you cannot cite ANYTHING, return the refusal object above.
+
+Output ONLY raw JSON.`;
 
     const result = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
       maxTokens: 8192,

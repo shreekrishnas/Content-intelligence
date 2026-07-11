@@ -25,9 +25,13 @@ interface Idea {
   why_it_works?: string;
   compliance_reminder?: string;
   slide_flow?: string[];
+  structure?: string[];
   scores?: Record<string, number>;
   platform_notes?: string;
   content_pillar?: string;
+  sequence_rank?: number;
+  kpi?: string;
+  prerequisites?: string[];
   // webinar / seo / seasonal extras
   description?: string;
   key_insight?: string;
@@ -103,9 +107,24 @@ function IdeaCard({ idea, onOpen, onSave, saved }: { idea: Idea; onOpen: () => v
         )}
       </div>
       <div style={{ fontWeight: 700, fontSize: '0.9rem', lineHeight: 1.3 }}>{idea.title || 'Untitled idea'}</div>
-      {(idea.hook || idea.description) && (
-        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{idea.hook || idea.description}</div>
+      {idea.hook && (
+        <div style={{ fontSize: '0.76rem', color: 'var(--text-primary)', fontStyle: 'italic', paddingLeft: 6, borderLeft: `2px solid ${groupColor}`, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+          &ldquo;{idea.hook}&rdquo;
+        </div>
       )}
+      {!idea.hook && idea.description && (
+        <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{idea.description}</div>
+      )}
+      {idea.structure && idea.structure.length > 0 && (
+        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          <span style={{ fontWeight: 600 }}>Beats:</span> {idea.structure.slice(0, 3).join(' → ')}{idea.structure.length > 3 ? ' → …' : ''}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+        {idea.effort && <span>⏱ {idea.effort}</span>}
+        {idea.sequence_rank != null && <span>· #{idea.sequence_rank}</span>}
+        {idea.prerequisites && idea.prerequisites.length > 0 && <span style={{ color: '#F59E0B' }}>· {idea.prerequisites.length} prereq{idea.prerequisites.length > 1 ? 's' : ''}</span>}
+      </div>
       <div style={{ display: 'flex', gap: 6, marginTop: 'auto', paddingTop: 6 }} onClick={(e) => e.stopPropagation()}>
         <button className="btn btn-ghost btn-sm" onClick={onSave} style={{ fontSize: '0.7rem' }}>{saved ? 'Saved ✓' : 'Save'}</button>
         <button className="btn btn-secondary btn-sm" onClick={onOpen} style={{ fontSize: '0.7rem' }}>View</button>
@@ -461,7 +480,9 @@ export default function IdeasLabPage() {
     saved;
 
   const groups = useMemo(() => ['All', ...Array.from(new Set(activeIdeas.map((i) => i.group).filter(Boolean)))] as string[], [activeIdeas]);
-  const filtered = filter === 'All' ? activeIdeas : activeIdeas.filter((i) => i.group === filter);
+  const filtered = (filter === 'All' ? activeIdeas : activeIdeas.filter((i) => i.group === filter))
+    .slice()
+    .sort((a, b) => (a.sequence_rank ?? 99) - (b.sequence_rank ?? 99));
 
   const metrics = useMemo(() => {
     const scores = activeIdeas.map((i) => i.score).filter((s): s is number => typeof s === 'number');
@@ -615,12 +636,38 @@ export default function IdeasLabPage() {
             <Row label="CTA" value={selected.cta} />
             <Row label="Compliance" value={selected.compliance_reminder} />
 
+            {selected.structure && selected.structure.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 4 }}>Structure (beat-by-beat)</div>
+                <ol style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.8rem', lineHeight: 1.6 }}>
+                  {selected.structure.map((s, i) => <li key={i}>{s}</li>)}
+                </ol>
+              </div>
+            )}
+
             {selected.slide_flow && selected.slide_flow.length > 0 && (
               <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 4 }}>Content Flow</div>
+                <div style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 4 }}>Slide / Scene Flow</div>
                 <ol style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.8rem', lineHeight: 1.6 }}>
                   {selected.slide_flow.map((s, i) => <li key={i}>{s}</li>)}
                 </ol>
+              </div>
+            )}
+
+            {(selected.effort || selected.sequence_rank || selected.kpi) && (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                {selected.sequence_rank != null && <span className="badge" style={{ background: '#6366F118', color: '#6366F1' }}>#{selected.sequence_rank} in sequence</span>}
+                {selected.effort && <span className="badge" style={{ background: '#F59E0B18', color: '#F59E0B' }}>Effort: {selected.effort}</span>}
+                {selected.kpi && <span className="badge" style={{ background: '#10B98118', color: '#10B981' }}>KPI: {selected.kpi}</span>}
+              </div>
+            )}
+
+            {selected.prerequisites && selected.prerequisites.length > 0 && (
+              <div style={{ marginBottom: 10, padding: 10, background: 'var(--surface-card)', borderRadius: 6, borderLeft: '3px solid #F59E0B' }}>
+                <div style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#F59E0B', marginBottom: 4 }}>Before Publishing</div>
+                <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.78rem', lineHeight: 1.5 }}>
+                  {selected.prerequisites.map((p, i) => <li key={i}>{p}</li>)}
+                </ul>
               </div>
             )}
 

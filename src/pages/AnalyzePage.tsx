@@ -594,18 +594,43 @@ export default function AnalyzePage() {
 
           {result.opportunities?.length > 0 && (
             <div className="glass-card-static" style={{ padding: '1rem 1.2rem', marginBottom: '1rem' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>Content Opportunities</div>
+              <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.6rem' }}>Repurposing Plan</div>
               <div className="grid grid-2" style={{ gap: '0.8rem' }}>
-                {result.opportunities.map((opp: any, i: number) => (
+                {[...result.opportunities]
+                  .sort((a: any, b: any) => (a.sequence_rank ?? 99) - (b.sequence_rank ?? 99))
+                  .map((opp: any, i: number) => (
                   <div key={i} className="glass-card-static" style={{ padding: '0.8rem' }}>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
+                      {opp.sequence_rank != null && <span className="badge" style={{ fontSize: '0.6rem', background: '#6366F118', color: '#6366F1' }}>#{opp.sequence_rank}</span>}
                       <span className="badge" style={{ fontSize: '0.6rem', background: opp.priority === 'high' ? '#DC262618' : '#0EA5E918', color: opp.priority === 'high' ? '#DC2626' : '#0EA5E9' }}>{opp.priority}</span>
                       <span className="badge" style={{ fontSize: '0.6rem' }}>{opp.recommended_format}</span>
+                      {opp.effort && <span className="badge" style={{ fontSize: '0.6rem', background: '#F59E0B18', color: '#F59E0B' }}>{opp.effort}</span>}
                     </div>
                     <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: '0.3rem' }}>{opp.title}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{opp.content_angle}</div>
+                    {opp.hook && (
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-primary)', fontStyle: 'italic', marginBottom: '0.4rem', paddingLeft: 6, borderLeft: '2px solid var(--accent-primary)' }}>
+                        &ldquo;{opp.hook}&rdquo;
+                      </div>
+                    )}
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '0.3rem' }}>{opp.content_angle}</div>
+                    {opp.structure?.length > 0 && (
+                      <div style={{ marginTop: 6, marginBottom: 4 }}>
+                        <div style={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: 2 }}>Structure</div>
+                        <ol style={{ margin: 0, paddingLeft: '1rem', fontSize: '0.7rem', lineHeight: 1.5 }}>
+                          {opp.structure.slice(0, 6).map((s: string, idx: number) => <li key={idx}>{s}</li>)}
+                        </ol>
+                      </div>
+                    )}
+                    {opp.kpi && (
+                      <div style={{ fontSize: '0.68rem', color: '#10B981', marginTop: 4 }}>KPI: {opp.kpi}</div>
+                    )}
+                    {opp.prerequisites?.length > 0 && (
+                      <div style={{ fontSize: '0.68rem', color: '#F59E0B', marginTop: 4 }}>
+                        Needs: {opp.prerequisites.slice(0, 2).join(' · ')}{opp.prerequisites.length > 2 ? '…' : ''}
+                      </div>
+                    )}
                     {opp.persona_match && opp.persona_match !== 'general' && (
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Persona: {opp.persona_match}</div>
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 4 }}>Persona: {opp.persona_match}</div>
                     )}
                   </div>
                 ))}
