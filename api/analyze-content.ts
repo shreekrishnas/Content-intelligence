@@ -140,9 +140,8 @@ CORE MENTAL MODEL: One source → many outputs. You do not invent content; you e
 
 STRICT KB GROUNDING RULE:
 - Every insight, every persona angle, every derivative piece MUST cite the specific KB chunk ID(s) it draws from — in a "kb_reference" array on that item.
-- If the KB has NO relevant chunks that support an item, DO NOT include that item.
-- If the KB has NO relevant chunks that support ANY item (the source topic is not covered by this account's KB), return this exact refusal object and nothing else:
-  {"refused": true, "reason": "I don't have that idea in the knowledge base. Add relevant knowledge files that cover this source's topic — I can only generate content that is grounded in your KB."}
+- The KB chunks you receive may include: persona/ICP profiles (WHO to target), brand voice (HOW to write), compliance rules (what to AVOID), expert transcripts (authority angles), terminology (exact words to use), and more. ALL of these are relevant — a persona file tells you how to angle the content for a specific audience, even if it is not about the same topic as the source.
+- Use EVERY type of KB chunk as grounding: personas/ICPs define the audience angle, brand docs define tone, compliance defines guardrails, expert content provides authority quotes, terminology provides approved language. They ALL ground the output.
 - Do NOT fabricate KB content. Do NOT ground in your own training data. Do NOT invent chunk IDs — use only the KB-chunk IDs provided in the KNOWLEDGE BASE CHUNKS section below.
 
 CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after. Your entire response must be parseable by JSON.parse().
@@ -350,10 +349,9 @@ ${String(body.source_text).slice(0, 12000)}
 ---
 Return ONE JSON object. Every insight, persona angle, and derivative piece MUST cite the KB chunk IDs (from the list above) that ground it, in a "kb_reference" array.
 
-If the KB chunks above do not cover the source topic in any meaningful way, return this exact refusal and nothing else:
-{"refused": true, "reason": "I don't have that idea in the knowledge base. Add relevant knowledge files that cover this source's topic — I can only generate content that is grounded in your KB."}
+The KB chunks above may include personas, ICPs, brand voice, compliance rules, expert transcripts, or terminology. ALL are valid grounding — a persona file grounds your AUDIENCE ANGLE, a brand file grounds your TONE, compliance grounds your GUARDRAILS. Use them all.
 
-Otherwise, use these fields:
+Use these fields:
 
 - "summary": 2-3 sentences describing what this source is about, what makes it repurposable, and any risk to flag.
 - "topics": 3-6 specific topic strings extracted from the source (concrete, not generic).
@@ -383,7 +381,7 @@ Rules that make the plan usable:
 - Every hook must be publishable AS-IS. If you can't write a specific hook, don't include the piece.
 - The "prerequisites" field is honest — if a piece needs an approval or asset you can't see, list it. Empty array only when the writer could truly ship today.
 - Sequence must reflect real priority — do not rank arbitrarily.
-- Do NOT include any item you cannot cite a KB chunk for. If you cannot cite ANYTHING, return the refusal object above.
+- Every item MUST cite at least one KB chunk. Persona/ICP chunks count — they ground WHO the piece is for.
 
 Output ONLY raw JSON.`;
 
