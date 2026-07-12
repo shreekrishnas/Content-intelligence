@@ -53,7 +53,6 @@ export default function TrendsPage() {
   const [filter, setFilter] = useState<string>('all');
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
-  const [urlInput, setUrlInput] = useState('');
   const autoDetectedRef = useRef(false);
 
   const accountUrl = useMemo(() => {
@@ -67,10 +66,8 @@ export default function TrendsPage() {
     const [prof, recs] = await Promise.all([api.trends.getProfile(accountId), api.trends.list(accountId)]);
     if (prof.data) {
       setProfile({ ...EMPTY_PROFILE, ...prof.data, business_name: prof.data.business_name || account?.name });
-      setUrlInput(prof.data.website_url || accountUrl || '');
     } else {
       setProfile({ ...EMPTY_PROFILE, business_name: account?.name });
-      setUrlInput(accountUrl || '');
     }
     autoDetectedRef.current = false;
     setRecords(recs.data || []);
@@ -86,7 +83,6 @@ export default function TrendsPage() {
     load().then((savedProfile) => {
       if (savedProfile?.core_topics || savedProfile?.industry) return;
       autoDetectedRef.current = true;
-      setUrlInput(accountUrl);
       (async () => {
         setDetecting(true); setError(null);
         try {
@@ -119,24 +115,6 @@ export default function TrendsPage() {
       })();
     });
   }, [accountId, accountUrl, loading]);
-
-  async function autoDetect(url?: string) {
-    const targetUrl = url || urlInput;
-    if (!targetUrl.trim()) { showToast('Enter a website URL first', 'warn'); return; }
-    setDetecting(true); setError(null);
-    try {
-      const res = await api.trends.autoDetectProfile(targetUrl.trim());
-      if (res.error) { setError(res.error); return; }
-      const detected = res.data || {};
-      setProfile((prev) => ({
-        ...prev,
-        ...Object.fromEntries(Object.entries(detected).filter(([, v]) => v && String(v).trim())),
-        website_url: targetUrl.trim(),
-      }));
-      setShowProfile(true);
-      showToast('Domain profile auto-detected — review and save');
-    } finally { setDetecting(false); }
-  }
 
   async function saveProfile() {
     if (!accountId) return;
@@ -296,18 +274,6 @@ export default function TrendsPage() {
       {showProfile && (
         <div className="glass-card-static" style={{ padding: '1.2rem', marginBottom: 16 }}>
           <h4 style={{ fontWeight: 700, marginBottom: 12 }}>Domain Profile</h4>
-
-          {/* URL auto-detect bar */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'flex-end' }}>
-            <div className="field" style={{ flex: 1, marginBottom: 0 }}>
-              <label className="field-label">Website URL</label>
-              <input className="glass-input" placeholder="https://yourwebsite.com" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') autoDetect(); }} />
-            </div>
-            <button className="btn btn-brand btn-sm" onClick={() => autoDetect()} disabled={detecting || !urlInput.trim()} style={{ whiteSpace: 'nowrap', height: 38 }}>
-              {detecting ? 'Detecting…' : '🔍 Auto-detect Profile'}
-            </button>
-          </div>
-
           <div className="grid grid-2" style={{ gap: '0.7rem' }}>
             <Field label="Business Name" v={profile.business_name} on={(v) => setField('business_name', v)} />
             <Field label="Industry" v={profile.industry} on={(v) => setField('industry', v)} />
@@ -367,27 +333,7 @@ export default function TrendsPage() {
       ) : records.length === 0 ? (
         <div className="empty-state">
           <p style={{ fontSize: '1rem', fontWeight: 600 }}>No trends yet</p>
-          <p style={{ marginTop: 8, opacity: 0.7, maxWidth: 420 }}>Enter your website URL below — we'll auto-detect your domain, branding, and business type, then generate relevant trend ideas.</p>
-          <div style={{ display: 'flex', gap: 8, marginTop: 16, maxWidth: 500, width: '100%' }}>
-            <input className="glass-input" placeholder="https://yourwebsite.com" value={urlInput} onChange={(e) => setUrlInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && urlInput.trim()) autoDetect(); }} style={{ flex: 1 }} />
-            <button className="btn btn-brand btn-sm" disabled={detecting || scanning || !urlInput.trim()} onClick={async () => {
-              await autoDetect();
-              if (!error) {
-                setProfile((p) => {
-                  const updated = { ...p, website_url: urlInput.trim() };
-                  (async () => {
-                    if (!accountId) return;
-                    await api.trends.saveProfile(accountId, updated);
-                    runScan('suggest');
-                  })();
-                  return updated;
-                });
-              }
-            }} style={{ whiteSpace: 'nowrap' }}>
-              {detecting ? 'Detecting…' : scanning ? 'Scanning…' : '🚀 Detect & Scan'}
-            </button>
-          </div>
-          <p style={{ marginTop: 12, fontSize: '0.75rem', opacity: 0.5 }}>Or open Domain Profile above to configure manually.</p>
+          <p style={{ marginTop: 8, opacity: 0.7, maxWidth: 420 }}>Trends will be auto-generated based on your account's website. Run a scan or wait for auto-detection to complete.</p>
         </div>
       ) : (
         <div className="grid grid-2" style={{ gap: '0.8rem' }}>
