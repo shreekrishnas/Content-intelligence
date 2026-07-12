@@ -18,17 +18,21 @@ const VOYAGE_URL = 'https://api.voyageai.com/v1/embeddings';
 const VOYAGE_MODEL = 'voyage-3';
 const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings';
 const OPENAI_MODEL = 'text-embedding-3-small';
+const OPENROUTER_EMBEDDINGS_URL = 'https://openrouter.ai/api/v1/embeddings';
+const OPENROUTER_EMBED_MODEL = process.env.OPENROUTER_EMBED_MODEL || 'openai/text-embedding-3-small';
 const TARGET_DIMS = 1024;
 const EMBED_BATCH = 100;
 const EMBED_INPUT_MAX_CHARS = 8000;
 
-type EmbedProvider = 'voyage' | 'openai';
+type EmbedProvider = 'voyage' | 'openai' | 'openrouter';
 function pickEmbedProvider(): EmbedProvider | null {
   const forced = (process.env.EMBED_PROVIDER || '').toLowerCase() as EmbedProvider;
   if (forced === 'voyage' && process.env.VOYAGE_API_KEY) return 'voyage';
   if (forced === 'openai' && process.env.OPENAI_API_KEY) return 'openai';
+  if (forced === 'openrouter' && process.env.OPENROUTER_API_KEY) return 'openrouter';
   if (process.env.VOYAGE_API_KEY) return 'voyage';
   if (process.env.OPENAI_API_KEY) return 'openai';
+  if (process.env.OPENROUTER_API_KEY) return 'openrouter';
   return null;
 }
 
@@ -123,12 +127,15 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
   if (!provider) throw new Error('No embedding provider configured (VOYAGE_API_KEY or OPENAI_API_KEY)');
 
   const inputs = texts.map((t) => (t || '').slice(0, EMBED_INPUT_MAX_CHARS));
-  const url = provider === 'voyage' ? VOYAGE_URL : OPENAI_EMBEDDINGS_URL;
-  const model = provider === 'voyage' ? VOYAGE_MODEL : OPENAI_MODEL;
-  const apiKey = provider === 'voyage' ? process.env.VOYAGE_API_KEY : process.env.OPENAI_API_KEY;
+  const url = provider === 'voyage' ? VOYAGE_URL : provider === 'openrouter' ? OPENROUTER_EMBEDDINGS_URL : OPENAI_EMBEDDINGS_URL;
+  const model = provider === 'voyage' ? VOYAGE_MODEL : provider === 'openrouter' ? OPENROUTER_EMBED_MODEL : OPENAI_MODEL;
+  const apiKey = provider === 'voyage' ? process.env.VOYAGE_API_KEY : provider === 'openrouter' ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY;
   const body = provider === 'voyage'
     ? { model, input: inputs, input_type: 'document' }
     : { model, input: inputs, dimensions: TARGET_DIMS };
+  const extraHeaders: Record<string, string> = provider === 'openrouter'
+    ? { 'HTTP-Referer': process.env.SITE_URL ?? 'https://content-intelligence-ebon.vercel.app', 'X-Title': 'Content Intelligence Platform' }
+    : {};
 
   for (let attempt = 0; attempt <= 4; attempt++) {
     const resp = await fetch(url, {
@@ -136,6 +143,7 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
+        ...extraHeaders,
       },
       body: JSON.stringify(body),
     });
@@ -158,7 +166,8 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
     try {
       const b = await resp.json();
       const detail = b?.error?.message || b?.detail || 'Unknown error';
-      if (resp.status === 401) msg = `Invalid ${provider === 'voyage' ? 'VOYAGE_API_KEY' : 'OPENAI_API_KEY'}.`;
+      if (resp.status === 401) msg = `Invalid ${provider === 'voyage' ? 'VOYAGE_API_KEY' : provider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'OPENAI_API_KEY'}.`;
+      else if (resp.status === 404 && provider === 'openrouter') msg = `OpenRouter does not currently expose embeddings for '${OPENROUTER_EMBED_MODEL}'. Try VOYAGE_API_KEY (free) or OPENAI_API_KEY instead.`;
       else if (resp.status === 429) msg = `${provider} rate limit hit repeatedly.`;
       else msg = `${provider} embeddings error (${resp.status}): ${detail}`;
     } catch { msg = `${provider} embeddings error (${resp.status}).`; }
