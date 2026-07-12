@@ -130,12 +130,42 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
   const url = provider === 'voyage' ? VOYAGE_URL : provider === 'openrouter' ? OPENROUTER_EMBEDDINGS_URL : OPENAI_EMBEDDINGS_URL;
   const model = provider === 'voyage' ? VOYAGE_MODEL : provider === 'openrouter' ? OPENROUTER_EMBED_MODEL : OPENAI_MODEL;
   const apiKey = provider === 'voyage' ? process.env.VOYAGE_API_KEY : provider === 'openrouter' ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY;
-  const body = provider === 'voyage'
-    ? { model, input: inputs, input_type: 'document' }
-    : { model, input: inputs, dimensions: TARGET_DIMS };
   const extraHeaders: Record<string, string> = provider === 'openrouter'
     ? { 'HTTP-Referer': process.env.SITE_URL ?? 'https://content-intelligence-ebon.vercel.app', 'X-Title': 'Content Intelligence Platform' }
     : {};
+
+  // OpenRouter's /v1/embeddings accepts only single-input requests.
+  if (provider === 'openrouter') {
+    const embeddings: number[][] = [];
+    for (const single of inputs) {
+      const body = { model, input: single, dimensions: TARGET_DIMS };
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, ...extraHeaders },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        let msg: string;
+        try {
+          const b = await resp.json();
+          const detail = b?.error?.message || b?.detail || 'Unknown error';
+          if (resp.status === 401) msg = 'Invalid OPENROUTER_API_KEY.';
+          else if (resp.status === 404) msg = `OpenRouter does not currently expose embeddings for '${model}'.`;
+          else msg = `OpenRouter embeddings error (${resp.status}): ${detail}`;
+        } catch { msg = `OpenRouter embeddings error (${resp.status}).`; }
+        throw new Error(msg);
+      }
+      const data = await resp.json();
+      const emb = data?.data?.[0]?.embedding;
+      if (!Array.isArray(emb)) throw new Error(`OpenRouter returned no embedding for chunk. Response: ${JSON.stringify(data).slice(0, 200)}`);
+      embeddings.push(emb);
+    }
+    return { embeddings, model };
+  }
+
+  const body = provider === 'voyage'
+    ? { model, input: inputs, input_type: 'document' }
+    : { model, input: inputs, dimensions: TARGET_DIMS };
 
   for (let attempt = 0; attempt <= 4; attempt++) {
     const resp = await fetch(url, {
@@ -151,7 +181,7 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
     if (resp.ok) {
       const data = await resp.json();
       const embeddings: number[][] = (data?.data || []).map((d: any) => d.embedding);
-      if (embeddings.length !== texts.length) throw new Error('Embedding count mismatch');
+      if (embeddings.length !== texts.length) throw new Error(`Embedding count mismatch: sent ${texts.length}, got ${embeddings.length}`);
       return { embeddings, model };
     }
 

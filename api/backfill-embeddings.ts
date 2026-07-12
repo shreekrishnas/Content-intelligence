@@ -52,12 +52,57 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
   const url = provider === 'voyage' ? VOYAGE_URL : provider === 'openrouter' ? OPENROUTER_EMBEDDINGS_URL : OPENAI_EMBEDDINGS_URL;
   const model = provider === 'voyage' ? VOYAGE_MODEL : provider === 'openrouter' ? OPENROUTER_EMBED_MODEL : OPENAI_MODEL;
   const apiKey = provider === 'voyage' ? process.env.VOYAGE_API_KEY : provider === 'openrouter' ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY;
-  const body = provider === 'voyage'
-    ? { model, input: inputs, input_type: 'document' }
-    : { model, input: inputs, dimensions: TARGET_DIMS };
   const extraHeaders: Record<string, string> = provider === 'openrouter'
     ? { 'HTTP-Referer': process.env.SITE_URL ?? 'https://content-intelligence-ebon.vercel.app', 'X-Title': 'Content Intelligence Platform' }
     : {};
+
+  // OpenRouter's /v1/embeddings currently accepts ONE input per request
+  // (not a batch array). Send serially and collect. Fine for backfill —
+  // OpenAI charges per token, not per request, so cost is unchanged.
+  if (provider === 'openrouter') {
+    const embeddings: number[][] = [];
+    for (const single of inputs) {
+      const body = { model, input: single, dimensions: TARGET_DIMS };
+      let ok = false;
+      for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt++) {
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, ...extraHeaders },
+          body: JSON.stringify(body),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          const emb = data?.data?.[0]?.embedding;
+          if (!Array.isArray(emb)) throw new Error(`OpenRouter returned no embedding (model ${model}). Response: ${JSON.stringify(data).slice(0, 200)}`);
+          embeddings.push(emb);
+          ok = true;
+          break;
+        }
+        if (resp.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+          const retryAfter = resp.headers.get('retry-after');
+          const waitMs = retryAfter ? Math.min(30_000, parseInt(retryAfter, 10) * 1000) : 5_000 * Math.pow(2, attempt);
+          await sleep(waitMs);
+          continue;
+        }
+        let msg: string;
+        try {
+          const b = await resp.json();
+          const detail = b?.error?.message || b?.detail || 'Unknown error';
+          if (resp.status === 401) msg = 'Invalid OPENROUTER_API_KEY.';
+          else if (resp.status === 404) msg = `OpenRouter does not currently expose embeddings for '${model}'. Try VOYAGE_API_KEY (free) or OPENAI_API_KEY instead.`;
+          else msg = `OpenRouter embeddings error (${resp.status}): ${detail}`;
+        } catch { msg = `OpenRouter embeddings error (${resp.status}).`; }
+        throw new Error(msg);
+      }
+      if (!ok) throw new Error('OpenRouter embed failed after retries');
+    }
+    return { embeddings, model };
+  }
+
+  // Voyage / OpenAI accept batched inputs.
+  const body = provider === 'voyage'
+    ? { model, input: inputs, input_type: 'document' }
+    : { model, input: inputs, dimensions: TARGET_DIMS };
 
   for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt++) {
     const resp = await fetch(url, {
@@ -73,7 +118,9 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
     if (resp.ok) {
       const data = await resp.json();
       const embeddings: number[][] = (data?.data || []).map((d: any) => d.embedding);
-      if (embeddings.length !== texts.length) throw new Error('Embedding count mismatch');
+      if (embeddings.length !== texts.length) {
+        throw new Error(`Embedding count mismatch: sent ${texts.length}, got ${embeddings.length}. Provider: ${provider}`);
+      }
       return { embeddings, model };
     }
 
