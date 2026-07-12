@@ -176,7 +176,7 @@ export default function AnalyzePage() {
     try {
       // Load personas from KB (category = 'persona') in parallel with retrieval
       const [retrieval, personaFilesResult] = await Promise.all([
-        retrieve(accountId, content, sourceType),
+        retrieve(accountId, `${sourceTitle}\n\n${content}`, sourceType),
         supabase
           .from('knowledge_files')
           .select('file_name, structured')

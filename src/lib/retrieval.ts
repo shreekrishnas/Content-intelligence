@@ -78,8 +78,8 @@ function getQueryWords(text: string): string[] {
   return [...new Set(
     text.toLowerCase()
       .split(/\W+/)
-      .filter(w => w.length > 4)
-      .slice(0, 80),
+      .filter(w => w.length > 2)
+      .slice(0, 120),
   )];
 }
 
@@ -245,15 +245,18 @@ export async function retrieve(
     const embedding = await embedQuery(queryText);
     if (embedding) {
       const semantic = await scoreBySemantic(accountId, embedding, constraintIds);
-      if (semantic && semantic.chunks.length > 0) {
+      if (semantic && semantic.chunks.length > 0 && semantic.topScore >= MIN_SIMILARITY) {
         chunks = semantic.chunks;
         topScore = semantic.topScore;
         retrievalMode = 'semantic';
       }
     }
 
-    // Fallback: no embedding available, RPC failed, or no embedded chunks
-    // for this account yet (topScore effectively 0 with 0 rows returned).
+    // Fallback: no embedding, RPC failed, no embedded chunks, OR semantic
+    // returned results below the similarity threshold. Keyword search is a
+    // legitimate second chance — a low cosine score doesn't mean the content
+    // is irrelevant (it often means the chunks weren't embedded yet or the
+    // query phrasing diverges from the chunk language).
     if (chunks.length === 0) {
       const keyword = await scoreByKeywords(accountId, queryText, contextIds);
       chunks = keyword.chunks;
@@ -299,12 +302,10 @@ export async function retrieve(
     }
   }
 
-  // Strict grounding gate.
-  //   Semantic mode → refuse when topScore < MIN_SIMILARITY AND no constraints.
-  //   Keyword mode  → refuse when topScore = 0 AND no constraints (unchanged).
-  const semanticEmpty = retrievalMode === 'semantic' && topScore < MIN_SIMILARITY;
-  const keywordEmpty = retrievalMode !== 'semantic' && topScore === 0;
-  const noContext = chunks.length === 0 || semanticEmpty || keywordEmpty;
+  // Grounding gate: refuse ONLY when there are truly zero chunks from any
+  // source. If the user has uploaded files, we should try to use them —
+  // the LLM's own refusal logic handles irrelevant content gracefully.
+  const noContext = chunks.length === 0 || (retrievalMode === 'keyword' && topScore === 0);
   const noConstraints = constraintChunks.length === 0;
   if (noContext && noConstraints) {
     return {
@@ -320,9 +321,7 @@ export async function retrieve(
     };
   }
 
-  // If semantic mode produced chunks but all below threshold, drop them so we
-  // don't feed the LLM garbage. Constraint chunks still carry the analysis.
-  const finalChunks = retrievalMode === 'semantic' && topScore < MIN_SIMILARITY ? [] : chunks;
+  const finalChunks = chunks;
 
   return {
     refused: false,
