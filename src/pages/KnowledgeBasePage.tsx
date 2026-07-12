@@ -225,28 +225,32 @@ export default function KnowledgeBasePage() {
         </div>
       </div>
 
-      {indexStatus && indexStatus.total > 0 && (
-        <div className="glass-card-static" style={{ padding: '14px 20px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>Semantic search index</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {rebuilding && rebuildProgress
-                ? `Embedding… ${rebuildProgress.embedded} of ${rebuildProgress.total}`
-                : indexStatus.missing === 0
-                  ? `All ${indexStatus.total} chunks embedded. Semantic retrieval active.`
-                  : `${indexStatus.embedded} of ${indexStatus.total} chunks embedded. ${indexStatus.missing} pending — keyword fallback in use for those.`}
-            </div>
-            <div style={{ marginTop: 6, height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
-              <div style={{ width: `${indexStatus.total === 0 ? 0 : Math.round(100 * indexStatus.embedded / indexStatus.total)}%`, height: '100%', background: '#10B981' }} />
-            </div>
+      <div className="glass-card-static" style={{ padding: '14px 20px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>Semantic search index</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            {rebuilding && rebuildProgress
+              ? `Embedding… ${rebuildProgress.embedded} of ${rebuildProgress.total}`
+              : indexStatus === null
+                ? 'Checking index status…'
+                : indexStatus.total === 0
+                  ? 'No chunks yet. Upload knowledge files to build a semantic index.'
+                  : indexStatus.missing === 0
+                    ? `All ${indexStatus.total} chunks embedded. Semantic retrieval active.`
+                    : `${indexStatus.embedded} of ${indexStatus.total} chunks embedded. ${indexStatus.missing} pending — keyword fallback in use for those.`}
           </div>
-          {indexStatus.missing > 0 && (
-            <button className="btn btn-secondary btn-sm" onClick={rebuildIndex} disabled={rebuilding}>
-              {rebuilding ? 'Rebuilding…' : 'Rebuild search index'}
-            </button>
+          {indexStatus && indexStatus.total > 0 && (
+            <div style={{ marginTop: 6, height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
+              <div style={{ width: `${Math.round(100 * indexStatus.embedded / indexStatus.total)}%`, height: '100%', background: '#10B981' }} />
+            </div>
           )}
         </div>
-      )}
+        {indexStatus && indexStatus.missing > 0 && (
+          <button className="btn btn-secondary btn-sm" onClick={rebuildIndex} disabled={rebuilding}>
+            {rebuilding ? 'Rebuilding…' : 'Rebuild search index'}
+          </button>
+        )}
+      </div>
 
       <div style={{ marginBottom: 16 }}>
         <button className="btn btn-primary" onClick={() => setShowUpload(true)}>Upload File</button>
