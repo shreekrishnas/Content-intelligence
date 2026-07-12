@@ -7,8 +7,11 @@
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
+-- 1024 dims accommodates both providers:
+--   Voyage AI voyage-3        (native 1024, free tier: 200M tokens)
+--   OpenAI text-embedding-3-* (reducible to 1024 via `dimensions` param)
 ALTER TABLE public.knowledge_chunks
-  ADD COLUMN IF NOT EXISTS embedding vector(1536);
+  ADD COLUMN IF NOT EXISTS embedding vector(1024);
 
 -- HNSW index on cosine distance. Only chunks with a non-null embedding
 -- are indexed automatically; queries use ORDER BY embedding <=> query.
@@ -26,7 +29,7 @@ CREATE INDEX IF NOT EXISTS knowledge_chunks_embedding_hnsw
 -- ============================================================
 CREATE OR REPLACE FUNCTION public.match_chunks(
   p_account_id uuid,
-  p_query_embedding vector(1536),
+  p_query_embedding vector(1024),
   p_match_count int DEFAULT 8,
   p_exclude_file_ids uuid[] DEFAULT '{}'::uuid[]
 )

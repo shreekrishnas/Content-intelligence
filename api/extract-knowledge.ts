@@ -12,10 +12,25 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 // ============================================================
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+// Embedding provider config — Voyage default (free 200M tokens), OpenAI optional.
+const VOYAGE_URL = 'https://api.voyageai.com/v1/embeddings';
+const VOYAGE_MODEL = 'voyage-3';
 const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings';
-const EMBED_MODEL = 'text-embedding-3-small';
+const OPENAI_MODEL = 'text-embedding-3-small';
+const TARGET_DIMS = 1024;
 const EMBED_BATCH = 100;
 const EMBED_INPUT_MAX_CHARS = 8000;
+
+type EmbedProvider = 'voyage' | 'openai';
+function pickEmbedProvider(): EmbedProvider | null {
+  const forced = (process.env.EMBED_PROVIDER || '').toLowerCase() as EmbedProvider;
+  if (forced === 'voyage' && process.env.VOYAGE_API_KEY) return 'voyage';
+  if (forced === 'openai' && process.env.OPENAI_API_KEY) return 'openai';
+  if (process.env.VOYAGE_API_KEY) return 'voyage';
+  if (process.env.OPENAI_API_KEY) return 'openai';
+  return null;
+}
 
 const SYSTEM_PROMPT = `You are a knowledge extraction engine. CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after. Your entire response must be parseable by JSON.parse().`;
 
@@ -98,38 +113,46 @@ Return JSON with this exact structure:
 }
 
 // ---------------------------------------------------------------------------
-// Batch embedding via OpenAI. Returns embeddings aligned to the input array.
+// Batch embedding — provider auto-picked (Voyage default, OpenAI optional).
+// Returns { embeddings, model } aligned to the input array.
 // ---------------------------------------------------------------------------
-async function embedBatch(texts: string[]): Promise<number[][]> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY not configured');
+async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; model: string }> {
+  const provider = pickEmbedProvider();
+  if (!provider) throw new Error('No embedding provider configured (VOYAGE_API_KEY or OPENAI_API_KEY)');
 
   const inputs = texts.map((t) => (t || '').slice(0, EMBED_INPUT_MAX_CHARS));
-  const resp = await fetch(OPENAI_EMBEDDINGS_URL, {
+  const url = provider === 'voyage' ? VOYAGE_URL : OPENAI_EMBEDDINGS_URL;
+  const model = provider === 'voyage' ? VOYAGE_MODEL : OPENAI_MODEL;
+  const apiKey = provider === 'voyage' ? process.env.VOYAGE_API_KEY : process.env.OPENAI_API_KEY;
+  const body = provider === 'voyage'
+    ? { model, input: inputs, input_type: 'document' }
+    : { model, input: inputs, dimensions: TARGET_DIMS };
+
+  const resp = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({ model: EMBED_MODEL, input: inputs }),
+    body: JSON.stringify(body),
   });
 
   if (!resp.ok) {
     let msg: string;
     try {
-      const body = await resp.json();
-      const detail = body?.error?.message || 'Unknown error';
-      if (resp.status === 401) msg = 'Invalid OpenAI API key.';
-      else if (resp.status === 429) msg = 'OpenAI rate limit — try again shortly.';
-      else msg = `Embeddings error (${resp.status}): ${detail}`;
-    } catch { msg = `Embeddings error (${resp.status}).`; }
+      const b = await resp.json();
+      const detail = b?.error?.message || b?.detail || 'Unknown error';
+      if (resp.status === 401) msg = `Invalid ${provider === 'voyage' ? 'VOYAGE_API_KEY' : 'OPENAI_API_KEY'}.`;
+      else if (resp.status === 429) msg = `${provider} rate limit — try again shortly.`;
+      else msg = `${provider} embeddings error (${resp.status}): ${detail}`;
+    } catch { msg = `${provider} embeddings error (${resp.status}).`; }
     throw new Error(msg);
   }
 
   const data = await resp.json();
   const embeddings: number[][] = (data?.data || []).map((d: any) => d.embedding);
   if (embeddings.length !== texts.length) throw new Error('Embedding count mismatch');
-  return embeddings;
+  return { embeddings, model };
 }
 
 // pgvector accepts a string literal '[1.23,4.56,...]' for vector inputs.
@@ -142,7 +165,7 @@ function toVectorLiteral(v: number[]): string {
 // Best-effort — returns { embedded_count, note } on skip.
 // ---------------------------------------------------------------------------
 async function embedFileChunks(fileId: string, accountId: string): Promise<{ embedded_count: number; note?: string }> {
-  if (!process.env.OPENAI_API_KEY) return { embedded_count: 0, note: 'OPENAI_API_KEY not set — chunks stored without embeddings; run "Rebuild search index" later.' };
+  if (!pickEmbedProvider()) return { embedded_count: 0, note: 'No embedding provider configured (VOYAGE_API_KEY or OPENAI_API_KEY) — chunks stored without embeddings; run "Rebuild search index" later.' };
 
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -165,16 +188,14 @@ async function embedFileChunks(fileId: string, accountId: string): Promise<{ emb
   let embedded = 0;
   for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
     const batch = chunks.slice(i, i + EMBED_BATCH);
-    const vectors = await embedBatch(batch.map((c: any) => c.chunk_text));
-    // Sequential per-row update — pgvector doesn't play nicely with a single
-    // bulk upsert of vectors, and the batch size (≤100) keeps this fast enough.
+    const { embeddings, model } = await embedBatch(batch.map((c: any) => c.chunk_text));
     for (let j = 0; j < batch.length; j++) {
       const row = batch[j] as any;
-      const vec = vectors[j];
+      const vec = embeddings[j];
       if (!row || !vec) continue;
       const { error: updErr } = await admin
         .from('knowledge_chunks')
-        .update({ embedding: toVectorLiteral(vec), embed_model: EMBED_MODEL })
+        .update({ embedding: toVectorLiteral(vec), embed_model: model })
         .eq('id', row.id);
       if (updErr) return { embedded_count: embedded, note: `Update failed at chunk ${row.id}: ${updErr.message}` };
       embedded++;

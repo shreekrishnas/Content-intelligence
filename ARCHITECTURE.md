@@ -28,7 +28,7 @@ Every output is **grounded in the account's knowledge base** — if the KB has n
 | Cron | Vercel Cron | Daily automated trend scans |
 | Deploy | Vercel + GitHub CI | Push-to-deploy |
 
-**Retrieval:** semantic via pgvector (`text-embedding-3-small`, 1536 dims, HNSW cosine index) with an automatic keyword-scoring fallback when no `OPENAI_API_KEY` is set or an account still has un-embedded chunks. See §7.3.
+**Retrieval:** semantic via pgvector (1024-dim vectors, HNSW cosine index). Embedding provider is auto-selected: **Voyage AI `voyage-3`** (default — 200M tokens free forever) or **OpenAI `text-embedding-3-small`** (with `dimensions: 1024`). Automatic keyword-scoring fallback when neither key is configured or an account still has un-embedded chunks. See §7.3.
 
 ---
 
@@ -274,7 +274,9 @@ Vercel Cron hits `GET /api/trend-scan` once per day (via `vercel.json crons`).
 - `OPENROUTER_API_KEY` **required** — the LLM key
 - `LLM_MODEL` (default `anthropic/claude-sonnet-4-5`)
 - `SITE_URL` — used as OpenRouter Referer header
-- `OPENAI_API_KEY` — enables semantic retrieval. Used by `/api/embed-query` (per-request query embedding), `/api/extract-knowledge` (embed chunks on upload), and `/api/backfill-embeddings`. Without it, the client falls back to keyword scoring — nothing breaks.
+- `VOYAGE_API_KEY` — enables semantic retrieval via Voyage AI (default provider, 200M tokens free forever). Used by `/api/embed-query`, `/api/extract-knowledge`, and `/api/backfill-embeddings`. Without any embedding provider set, the client falls back to keyword scoring — nothing breaks.
+- `OPENAI_API_KEY` — alternative embedding provider (`text-embedding-3-small` with `dimensions: 1024`). Either this or `VOYAGE_API_KEY` is sufficient.
+- `EMBED_PROVIDER` — optional. Forces `voyage` or `openai` when both keys are set (auto-picks Voyage otherwise).
 - `TAVILY_API_KEY` — optional; without it, trend scans fall back to LLM-suggested candidate topics
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — required by `/api/backfill-embeddings` (verifies caller role via anon key + JWT, does bulk writes via service role) and by `/api/extract-knowledge`'s chunk-embedding path. Also used by the daily trend cron. Without them, semantic retrieval still works read-side (RPC + embed-query), but chunk writes on upload and backfill are skipped.
 - `CRON_SECRET` — optional bearer token; Vercel Cron sends `Authorization: Bearer <secret>`
@@ -697,7 +699,8 @@ Apply in the Supabase SQL Editor in this order:
 6. `00006_storage_rls_fix.sql` — storage bucket RLS
 7. `00007_trends.sql` — trend_scans + trend_records + RLS
 8. `00008_source_type_guidance.sql` — adds `source_types.analysis_guidance`
-9. `00009_pgvector.sql` — enables the `vector` extension, adds `knowledge_chunks.embedding vector(1536)`, HNSW cosine index, and the `match_chunks` RPC (SECURITY INVOKER)
+9. `00009_pgvector.sql` — enables the `vector` extension, adds `knowledge_chunks.embedding vector(1024)`, HNSW cosine index, and the `match_chunks` RPC (SECURITY INVOKER)
+10. `00010_embedding_dim_1024.sql` — idempotent migration that reconciles the column dim to 1024 if an earlier `vector(1536)` version was applied; no-op on fresh installs
 
 `combined_migration.sql` in the same folder does all of this in one shot — useful for a brand-new project.
 

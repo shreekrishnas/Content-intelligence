@@ -17,42 +17,62 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 // Self-contained per the repo rule (no cross-file imports).
 // ============================================================
 
+const VOYAGE_URL = 'https://api.voyageai.com/v1/embeddings';
+const VOYAGE_MODEL = 'voyage-3';
 const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings';
-const EMBED_MODEL = 'text-embedding-3-small';
+const OPENAI_MODEL = 'text-embedding-3-small';
+const TARGET_DIMS = 1024;
 const EMBED_BATCH = 100;
 const EMBED_INPUT_MAX_CHARS = 8000;
-const MAX_PER_CALL = 500; // ceiling per HTTP call to fit inside maxDuration
+const MAX_PER_CALL = 500;
 
-async function embedBatch(texts: string[]): Promise<number[][]> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY not configured. Add it in Vercel Environment Variables to enable semantic retrieval.');
+type EmbedProvider = 'voyage' | 'openai';
+function pickEmbedProvider(): EmbedProvider | null {
+  const forced = (process.env.EMBED_PROVIDER || '').toLowerCase() as EmbedProvider;
+  if (forced === 'voyage' && process.env.VOYAGE_API_KEY) return 'voyage';
+  if (forced === 'openai' && process.env.OPENAI_API_KEY) return 'openai';
+  if (process.env.VOYAGE_API_KEY) return 'voyage';
+  if (process.env.OPENAI_API_KEY) return 'openai';
+  return null;
+}
+
+async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; model: string }> {
+  const provider = pickEmbedProvider();
+  if (!provider) throw new Error('No embedding provider configured. Set VOYAGE_API_KEY (free 200M tokens) or OPENAI_API_KEY in Vercel Environment Variables.');
 
   const inputs = texts.map((t) => (t || '').slice(0, EMBED_INPUT_MAX_CHARS));
-  const resp = await fetch(OPENAI_EMBEDDINGS_URL, {
+  const url = provider === 'voyage' ? VOYAGE_URL : OPENAI_EMBEDDINGS_URL;
+  const model = provider === 'voyage' ? VOYAGE_MODEL : OPENAI_MODEL;
+  const apiKey = provider === 'voyage' ? process.env.VOYAGE_API_KEY : process.env.OPENAI_API_KEY;
+  const body = provider === 'voyage'
+    ? { model, input: inputs, input_type: 'document' }
+    : { model, input: inputs, dimensions: TARGET_DIMS };
+
+  const resp = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({ model: EMBED_MODEL, input: inputs }),
+    body: JSON.stringify(body),
   });
 
   if (!resp.ok) {
     let msg: string;
     try {
-      const body = await resp.json();
-      const detail = body?.error?.message || 'Unknown error';
-      if (resp.status === 401) msg = 'Invalid OpenAI API key.';
-      else if (resp.status === 429) msg = 'OpenAI rate limit — try again in a moment.';
-      else msg = `Embeddings error (${resp.status}): ${detail}`;
-    } catch { msg = `Embeddings error (${resp.status}).`; }
+      const b = await resp.json();
+      const detail = b?.error?.message || b?.detail || 'Unknown error';
+      if (resp.status === 401) msg = `Invalid ${provider === 'voyage' ? 'VOYAGE_API_KEY' : 'OPENAI_API_KEY'}.`;
+      else if (resp.status === 429) msg = `${provider} rate limit — try again in a moment.`;
+      else msg = `${provider} embeddings error (${resp.status}): ${detail}`;
+    } catch { msg = `${provider} embeddings error (${resp.status}).`; }
     throw new Error(msg);
   }
 
   const data = await resp.json();
   const embeddings: number[][] = (data?.data || []).map((d: any) => d.embedding);
   if (embeddings.length !== texts.length) throw new Error('Embedding count mismatch');
-  return embeddings;
+  return { embeddings, model };
 }
 
 function toVectorLiteral(v: number[]): string {
@@ -130,17 +150,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let embedded = 0;
     for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
       const batch = chunks.slice(i, i + EMBED_BATCH);
-      const vectors = await embedBatch(batch.map((c: any) => c.chunk_text));
+      const { embeddings, model } = await embedBatch(batch.map((c: any) => c.chunk_text));
       for (let j = 0; j < batch.length; j++) {
         const row = batch[j] as any;
-        const vec = vectors[j];
+        const vec = embeddings[j];
         if (!row || !vec) continue;
         const { error: updErr } = await admin
           .from('knowledge_chunks')
-          .update({ embedding: toVectorLiteral(vec), embed_model: EMBED_MODEL })
+          .update({ embedding: toVectorLiteral(vec), embed_model: model })
           .eq('id', row.id);
         if (updErr) {
-          // Return partial progress so the client can retry.
           return res.status(200).json({
             embedded,
             remaining: totalMissing - embedded,
