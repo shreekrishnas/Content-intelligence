@@ -200,26 +200,107 @@ export const api = {
     },
 
     /**
-     * Return { total, embedded, missing } counts across all chunks in the account.
-     * Powers the "Rebuild search index" indicator on the KB page.
+     * Return counts used by the semantic-index panel.
+     *   total     = total chunks in this account
+     *   embedded  = chunks with a non-null embedding
+     *   missing   = chunks awaiting an embedding
+     *   files     = knowledge_files rows in this account (for diagnostic UI)
      */
-    async indexStatus(accountId: string): Promise<Result<{ total: number; embedded: number; missing: number }>> {
+    async indexStatus(accountId: string): Promise<Result<{ total: number; embedded: number; missing: number; files: number }>> {
       const totalRes = await supabase
         .from('knowledge_chunks')
-        .select('id', { head: true, count: 'exact' })
-        .eq('account_id', accountId);
+        .select('id', { count: 'exact' })
+        .eq('account_id', accountId)
+        .limit(1);
       if (totalRes.error) return err(pgError(totalRes.error));
 
       const missingRes = await supabase
         .from('knowledge_chunks')
-        .select('id', { head: true, count: 'exact' })
+        .select('id', { count: 'exact' })
         .eq('account_id', accountId)
-        .is('embedding', null);
+        .is('embedding', null)
+        .limit(1);
       if (missingRes.error) return err(pgError(missingRes.error));
+
+      const filesRes = await supabase
+        .from('knowledge_files')
+        .select('id', { count: 'exact' })
+        .eq('account_id', accountId)
+        .limit(1);
+      if (filesRes.error) return err(pgError(filesRes.error));
 
       const total = totalRes.count ?? 0;
       const missing = missingRes.count ?? 0;
-      return ok({ total, embedded: total - missing, missing });
+      const files = filesRes.count ?? 0;
+      return ok({ total, embedded: total - missing, missing, files });
+    },
+
+    /**
+     * Reprocess a file: parse + chunk from storage, re-insert chunks,
+     * trigger structured extraction + embedding. Used when uploads
+     * completed but their chunks never made it into the DB.
+     */
+    async reprocessFile(accountId: string, fileId: string): Promise<Result<{ chunks: number }>> {
+      const { data: fileRow, error: fetchErr } = await supabase
+        .from('knowledge_files')
+        .select('id, file_name, category, storage_url')
+        .eq('id', fileId)
+        .eq('account_id', accountId)
+        .single();
+      if (fetchErr || !fileRow) return err(pgError(fetchErr) || 'File not found');
+
+      if (!(fileRow as any).storage_url) return err('File has no storage URL — re-upload instead.');
+
+      const resp = await fetch((fileRow as any).storage_url);
+      if (!resp.ok) return err(`Failed to fetch file from storage (${resp.status})`);
+      const blob = await resp.blob();
+      const fakeFile = new File([blob], (fileRow as any).file_name);
+
+      let text: string;
+      try { text = await parseFile(fakeFile); } catch (e) {
+        return err(e instanceof Error ? e.message : 'Failed to parse file');
+      }
+      const chunks = chunkText(text);
+      if (chunks.length === 0) return err('Parsed file produced zero chunks — content may be empty.');
+
+      // Delete any orphan chunks for this file first.
+      await supabase.from('knowledge_chunks').delete().eq('file_id', fileId).eq('account_id', accountId);
+
+      const rows = chunks.map((c) => ({
+        file_id: fileId,
+        account_id: accountId,
+        chunk_text: c.content,
+        embed_model: 'pending',
+        token_count: Math.ceil(c.content.length / 4),
+        position: c.index,
+      }));
+      const { error: insertErr } = await supabase.from('knowledge_chunks').insert(rows);
+      if (insertErr) return err(pgError(insertErr));
+
+      await supabase.from('knowledge_files').update({ ingest_status: 'ready' }).eq('id', fileId);
+
+      // Fire-and-forget: structured + embeddings.
+      const sampleText = chunks.slice(0, 3).map((c) => c.content).join('\n\n');
+      fetch('/api/extract-knowledge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          file_name: (fileRow as any).file_name,
+          category: (fileRow as any).category,
+          sample_text: sampleText,
+          file_id: fileId,
+          account_id: accountId,
+        }),
+      })
+        .then((r) => r.json())
+        .then(({ structured }) => {
+          if (structured) {
+            supabase.from('knowledge_files').update({ structured }).eq('id', fileId).then(() => {});
+          }
+        })
+        .catch(() => {});
+
+      return ok({ chunks: chunks.length });
     },
 
     /**

@@ -52,9 +52,10 @@ export default function KnowledgeBasePage() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [indexStatus, setIndexStatus] = useState<{ total: number; embedded: number; missing: number } | null>(null);
+  const [indexStatus, setIndexStatus] = useState<{ total: number; embedded: number; missing: number; files: number } | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
   const [rebuildProgress, setRebuildProgress] = useState<{ embedded: number; total: number } | null>(null);
+  const [reprocessing, setReprocessing] = useState(false);
 
   const loadFiles = useCallback(async () => {
     if (!accountId) return;
@@ -71,6 +72,27 @@ export default function KnowledgeBasePage() {
   }, [accountId]);
 
   useEffect(() => { loadFiles(); loadIndexStatus(); }, [loadFiles, loadIndexStatus]);
+
+  async function reprocessAllFiles() {
+    if (!accountId || reprocessing) return;
+    setReprocessing(true);
+    let totalChunks = 0;
+    let processed = 0;
+    let failed = 0;
+    try {
+      for (const f of files) {
+        const { data, error } = await api.kb.reprocessFile(accountId, f.id);
+        if (error) { failed++; showToast(`${f.file_name}: ${error}`, 'error'); continue; }
+        totalChunks += data?.chunks || 0;
+        processed++;
+      }
+      showToast(`Reprocessed ${processed} files → ${totalChunks} chunks${failed ? ` (${failed} failed)` : ''}`, failed ? 'warn' : 'success');
+    } finally {
+      setReprocessing(false);
+      loadIndexStatus();
+      loadFiles();
+    }
+  }
 
   async function rebuildIndex() {
     if (!accountId || rebuilding) return;
@@ -231,13 +253,17 @@ export default function KnowledgeBasePage() {
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
             {rebuilding && rebuildProgress
               ? `Embedding… ${rebuildProgress.embedded} of ${rebuildProgress.total}`
-              : indexStatus === null
-                ? 'Checking index status…'
-                : indexStatus.total === 0
-                  ? 'No chunks yet. Upload knowledge files to build a semantic index.'
-                  : indexStatus.missing === 0
-                    ? `All ${indexStatus.total} chunks embedded. Semantic retrieval active.`
-                    : `${indexStatus.embedded} of ${indexStatus.total} chunks embedded. ${indexStatus.missing} pending — keyword fallback in use for those.`}
+              : reprocessing
+                ? 'Reprocessing files — re-parsing and chunking…'
+                : indexStatus === null
+                  ? 'Checking index status…'
+                  : indexStatus.total === 0 && indexStatus.files === 0
+                    ? 'No files uploaded yet. Upload knowledge files to build a semantic index.'
+                    : indexStatus.total === 0 && indexStatus.files > 0
+                      ? `${indexStatus.files} file${indexStatus.files === 1 ? '' : 's'} uploaded but no chunks found. Older uploads may have skipped chunking — click Reprocess to re-parse and index them.`
+                      : indexStatus.missing === 0
+                        ? `All ${indexStatus.total} chunks embedded. Semantic retrieval active.`
+                        : `${indexStatus.embedded} of ${indexStatus.total} chunks embedded. ${indexStatus.missing} pending — keyword fallback in use for those.`}
           </div>
           {indexStatus && indexStatus.total > 0 && (
             <div style={{ marginTop: 6, height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
@@ -245,6 +271,11 @@ export default function KnowledgeBasePage() {
             </div>
           )}
         </div>
+        {indexStatus && indexStatus.total === 0 && indexStatus.files > 0 && (
+          <button className="btn btn-primary btn-sm" onClick={reprocessAllFiles} disabled={reprocessing}>
+            {reprocessing ? 'Reprocessing…' : 'Reprocess files'}
+          </button>
+        )}
         {indexStatus && indexStatus.missing > 0 && (
           <button className="btn btn-secondary btn-sm" onClick={rebuildIndex} disabled={rebuilding}>
             {rebuilding ? 'Rebuilding…' : 'Rebuild search index'}
