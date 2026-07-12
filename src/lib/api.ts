@@ -251,9 +251,20 @@ export const api = {
 
       if (!(fileRow as any).storage_url) return err('File has no storage URL — re-upload instead.');
 
-      const resp = await fetch((fileRow as any).storage_url);
-      if (!resp.ok) return err(`Failed to fetch file from storage (${resp.status})`);
-      const blob = await resp.blob();
+      // Extract the object path AFTER the bucket name so this works for both
+      // public and signed URLs. The delete() flow uses the same pattern.
+      let path: string | undefined;
+      try {
+        const url = new URL((fileRow as any).storage_url);
+        const parts = url.pathname.split('/knowledge-files/');
+        path = parts[1] ? decodeURIComponent(parts[1].split('?')[0] ?? '') : undefined;
+      } catch { /* fall through */ }
+      if (!path) return err('Could not parse storage path from URL — re-upload instead.');
+
+      const { data: blob, error: dlErr } = await supabase.storage
+        .from('knowledge-files')
+        .download(path);
+      if (dlErr || !blob) return err(`Storage download failed: ${dlErr?.message ?? 'no data'}`);
       const fakeFile = new File([blob], (fileRow as any).file_name);
 
       let text: string;
