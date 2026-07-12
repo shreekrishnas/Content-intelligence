@@ -37,7 +37,7 @@ RETURNS TABLE (
   id uuid,
   file_id uuid,
   chunk_text text,
-  position int,
+  "position" int,
   similarity float,
   file_name text,
   category text
@@ -51,7 +51,7 @@ AS $$
     kc.id,
     kc.file_id,
     kc.chunk_text,
-    kc.position,
+    kc."position",
     (1 - (kc.embedding <=> p_query_embedding))::float AS similarity,
     kf.file_name,
     kf.category
