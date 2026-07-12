@@ -160,8 +160,10 @@ export default function KnowledgeBasePage() {
       setShowUpload(false);
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
-      showToast('File uploaded successfully');
+      const status = data?.ingest_status;
+      showToast(status === 'ready' ? 'File uploaded and chunked successfully' : status === 'failed' ? 'File uploaded but parsing failed' : 'File uploaded successfully');
       loadFiles();
+      loadIndexStatus();
     } catch (err: any) {
       showToast(err.message || 'Upload failed', 'error');
     } finally {

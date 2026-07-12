@@ -130,12 +130,12 @@ export const api = {
 
       const fileRow = row as KnowledgeFile;
 
-      parseFile(file)
-        .then(async (text) => {
-          const chunks = chunkText(text);
-          if (chunks.length === 0) return;
+      try {
+        const text = await parseFile(file);
+        const chunks = chunkText(text);
 
-          const rows = chunks.map((c) => ({
+        if (chunks.length > 0) {
+          const chunkRows = chunks.map((c) => ({
             file_id: fileRow.id,
             account_id: accountId,
             chunk_text: c.content,
@@ -144,43 +144,47 @@ export const api = {
             position: c.index,
           }));
 
-          await supabase.from('knowledge_chunks').insert(rows);
-          await supabase
-            .from('knowledge_files')
-            .update({ ingest_status: 'ready' })
-            .eq('id', fileRow.id);
+          await supabase.from('knowledge_chunks').insert(chunkRows);
+        }
 
-          // Non-blocking: extract structured metadata AND embed chunks.
-          const sampleText = chunks.slice(0, 3).map(c => c.content).join('\n\n');
-          fetch('/api/extract-knowledge', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              file_name: file.name,
-              category: metadata.category,
-              sample_text: sampleText,
-              file_id: fileRow.id,
-              account_id: accountId,
-            }),
-          })
-            .then(r => r.json())
-            .then(({ structured }) => {
-              if (structured) {
-                supabase
-                  .from('knowledge_files')
-                  .update({ structured })
-                  .eq('id', fileRow.id)
-                  .then(() => {});
-              }
-            })
-            .catch(() => {});
+        await supabase
+          .from('knowledge_files')
+          .update({ ingest_status: 'ready' })
+          .eq('id', fileRow.id);
+
+        // Non-blocking: extract structured metadata AND embed chunks.
+        const sampleText = chunks.slice(0, 3).map(c => c.content).join('\n\n');
+        fetch('/api/extract-knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            file_name: file.name,
+            category: metadata.category,
+            sample_text: sampleText,
+            file_id: fileRow.id,
+            account_id: accountId,
+          }),
         })
-        .catch(() =>
-          supabase
-            .from('knowledge_files')
-            .update({ ingest_status: 'failed' })
-            .eq('id', fileRow.id),
-        );
+          .then(r => r.json())
+          .then(({ structured }) => {
+            if (structured) {
+              supabase
+                .from('knowledge_files')
+                .update({ structured })
+                .eq('id', fileRow.id)
+                .then(() => {});
+            }
+          })
+          .catch(() => {});
+
+        fileRow.ingest_status = 'ready';
+      } catch {
+        await supabase
+          .from('knowledge_files')
+          .update({ ingest_status: 'failed' })
+          .eq('id', fileRow.id);
+        fileRow.ingest_status = 'failed';
+      }
 
       return ok(fileRow);
     },
