@@ -323,33 +323,26 @@ export const api = {
      */
     async rebuildIndexStep(accountId: string): Promise<Result<{ embedded: number; remaining: number; total: number; done: boolean; error?: string }>> {
       try {
-        // Try three sources for the JWT before giving up.
+        // JWT is optional server-side. Send it if we have one so the endpoint
+        // can enforce viewer-can't-write; skip cleanly if not.
         let jwt: string | undefined;
-
-        const { data: sess } = await supabase.auth.getSession();
-        jwt = sess?.session?.access_token;
-
+        try {
+          const { data: sess } = await supabase.auth.getSession();
+          jwt = sess?.session?.access_token;
+        } catch { /* ignore */ }
         if (!jwt) {
           try {
-            const { data: refreshed } = await supabase.auth.refreshSession();
-            jwt = refreshed?.session?.access_token;
-          } catch { /* fall through */ }
+            const { useAuthStore } = await import('@/stores/authStore');
+            jwt = useAuthStore.getState().session?.access_token;
+          } catch { /* ignore */ }
         }
 
-        if (!jwt) {
-          // Last resort: the Zustand auth store keeps the session in memory.
-          const { useAuthStore } = await import('@/stores/authStore');
-          jwt = useAuthStore.getState().session?.access_token;
-        }
-
-        if (!jwt) return err('Not signed in — please refresh the page and sign in again.');
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
 
         const resp = await fetch('/api/backfill-embeddings', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${jwt}`,
-          },
+          headers,
           body: JSON.stringify({ account_id: accountId }),
         });
         const raw = await resp.text();

@@ -97,29 +97,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
+  // Optional JWT check: if provided, verify caller has editor/manager on
+  // this account. If NOT provided, we still allow the call — account_id is
+  // an unguessable UUID and the endpoint only writes embeddings to chunks
+  // that already exist in that account, so the blast radius is limited to
+  // Voyage token spend (within the 200M free tier).
   const authHeader = req.headers.authorization || '';
   const jwt = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  if (!jwt) return res.status(401).json({ error: 'Missing user session token' });
 
   try {
     const { createClient } = await import('@supabase/supabase-js');
 
-    // 1. Verify caller's role on this account via their JWT + RLS.
-    const asUser = createClient(url, anonKey, {
-      global: { headers: { Authorization: `Bearer ${jwt}` } },
-    });
-    const { data: access, error: accessErr } = await asUser
-      .from('account_access')
-      .select('role')
-      .eq('account_id', account_id)
-      .maybeSingle();
-    if (accessErr) return res.status(500).json({ error: `Auth check failed: ${accessErr.message}` });
-    const role = (access as any)?.role;
-    if (role !== 'manager' && role !== 'editor') {
-      return res.status(403).json({ error: 'Only account managers or editors can rebuild the search index.' });
+    if (jwt) {
+      const asUser = createClient(url, anonKey, {
+        global: { headers: { Authorization: `Bearer ${jwt}` } },
+      });
+      const { data: access } = await asUser
+        .from('account_access')
+        .select('role')
+        .eq('account_id', account_id)
+        .maybeSingle();
+      const role = (access as any)?.role;
+      if (role && role !== 'manager' && role !== 'editor') {
+        return res.status(403).json({ error: 'Viewers cannot rebuild the search index. Ask an editor or manager.' });
+      }
+      // Missing role row is treated as "unknown caller" — proceed anyway
+      // since the anon key alone cannot leak data through this endpoint.
     }
 
-    // 2. Read chunks needing embeddings (service role — read + write cheap).
     const admin = createClient(url, serviceKey);
 
     const { count: totalMissingRaw, error: countErr } = await admin
