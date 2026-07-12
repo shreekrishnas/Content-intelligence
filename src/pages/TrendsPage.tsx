@@ -87,12 +87,17 @@ export default function TrendsPage() {
     if (!accountId) return;
     setScanning(true); setError(null); setNote(null);
     try {
-      const res = await api.trends.runScan({ accountLabel: account?.name, profile, mode });
+      const res = await api.trends.runScan({ accountId, accountLabel: account?.name, profile, mode });
       if (res.error) { setError(res.error); return; }
       if (res.data?.note) setNote(res.data.note);
       const topics = res.data?.topics || [];
       if (!topics.length) { setNote(res.data?.note || 'No trends qualified from this scan.'); return; }
-      await persistAndReload(res.data?.source || mode, topics);
+      if (res.data?.saved) {
+        auditLog({ accountId, action: 'trend_scan', targetType: 'trend', detail: { source: res.data?.source || mode, count: topics.length } }).catch(() => {});
+        await load();
+      } else {
+        await persistAndReload(res.data?.source || mode, topics);
+      }
       showToast(`Scan complete — ${topics.length} topics reviewed`);
     } finally { setScanning(false); }
   }

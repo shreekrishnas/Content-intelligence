@@ -702,12 +702,12 @@ export const api = {
 
     // Run a live scan on the server (collect signals + supervise). Returns the
     // supervised topics; the caller persists them via saveScan().
-    async runScan(params: { accountLabel?: string; profile: TrendProfile; mode?: 'live' | 'suggest' }): Promise<Result<{ topics: any[]; summary: any; source: string; note?: string; signals_reviewed?: number }>> {
+    async runScan(params: { accountId?: string; accountLabel?: string; profile: TrendProfile; mode?: 'live' | 'suggest' }): Promise<Result<{ topics: any[]; summary: any; source: string; note?: string; signals_reviewed?: number; saved?: boolean; saved_records?: any[] }>> {
       try {
         const response = await fetch('/api/trend-scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_label: params.accountLabel, profile: params.profile, mode: params.mode ?? 'live' }),
+          body: JSON.stringify({ account_id: params.accountId, account_label: params.accountLabel, profile: params.profile, mode: params.mode ?? 'live' }),
         });
         const rawText = await response.text();
         let data: any;

@@ -227,6 +227,7 @@ function topicToRecord(t: any): Record<string, unknown> {
 
 interface ScanBody {
   account_label?: string;
+  account_id?: string;
   profile?: DomainProfile;
   mode?: 'live' | 'suggest';
 }
@@ -248,10 +249,47 @@ async function handleManual(req: VercelRequest, res: VercelResponse) {
   const mode = body.mode === 'suggest' ? 'suggest' : 'live';
   const { signals, source, note } = await collect(profile, body.account_label, mode);
   if (!signals.length) {
-    return res.status(200).json({ success: true, topics: [], summary: null, source, note: note || 'No candidate signals were found for this profile. Add more core topics or keywords.' });
+    return res.status(200).json({ success: true, topics: [], summary: null, source, note: note || 'No candidate signals were found for this profile. Add more core topics or keywords.', saved: false });
   }
   const { topics, summary, analysis_date } = await supervise({ domain_profile: profile, signals, account_label: body.account_label });
-  return res.status(200).json({ success: true, topics, summary, analysis_date, source, signals_reviewed: signals.length, note });
+
+  // Save server-side via service role (bypasses RLS) when account_id provided.
+  let saved = false;
+  let savedRecords: unknown[] = [];
+  const accountId = body.account_id;
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (accountId && url && serviceKey) {
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const admin = createClient(url, serviceKey);
+      const counts = { domain: 0, superts: 0, mon: 0, rej: 0 };
+      topics.forEach((t: any) => {
+        const c = t.classification;
+        if (c === 'domain_trend') counts.domain++;
+        else if (c === 'supertrend_exception') counts.superts++;
+        else if (c === 'reject') counts.rej++;
+        else counts.mon++;
+      });
+      const { data: scan } = await admin.from('trend_scans').insert({
+        account_id: accountId,
+        source,
+        total_reviewed: topics.length,
+        domain_sent: counts.domain,
+        supertrends_sent: counts.superts,
+        monitored: counts.mon,
+        rejected: counts.rej,
+      }).select('id').single();
+      const rows = topics.map((t: any) => ({ ...topicToRecord(t), account_id: accountId, scan_id: (scan as any)?.id ?? null }));
+      if (rows.length) {
+        const { data: inserted } = await admin.from('trend_records').insert(rows).select();
+        savedRecords = inserted || [];
+      }
+      saved = true;
+    } catch { /* best-effort — client can retry save */ }
+  }
+
+  return res.status(200).json({ success: true, topics, summary, analysis_date, source, signals_reviewed: signals.length, note, saved, saved_records: savedRecords });
 }
 
 async function handleCron(req: VercelRequest, res: VercelResponse) {
