@@ -24,7 +24,14 @@ const OPENAI_MODEL = 'text-embedding-3-small';
 const TARGET_DIMS = 1024;
 const EMBED_BATCH = 100;
 const EMBED_INPUT_MAX_CHARS = 8000;
-const MAX_PER_CALL = 500;
+const MAX_PER_CALL = 400;
+// Voyage free tier is 3 RPM — one embed call every 20s at minimum.
+// Sleep this long between successful batches to stay under the ceiling.
+const VOYAGE_INTER_BATCH_MS = 21_000;
+// Retry ceilings on 429s.
+const MAX_RATE_LIMIT_RETRIES = 4;
+
+function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
 
 type EmbedProvider = 'voyage' | 'openai';
 function pickEmbedProvider(): EmbedProvider | null {
@@ -48,31 +55,47 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
     ? { model, input: inputs, input_type: 'document' }
     : { model, input: inputs, dimensions: TARGET_DIMS };
 
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  // Retry on 429s with exponential backoff. Free-tier Voyage is 3 RPM,
+  // so we may need to wait 20-60s between attempts.
+  for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt++) {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!resp.ok) {
+    if (resp.ok) {
+      const data = await resp.json();
+      const embeddings: number[][] = (data?.data || []).map((d: any) => d.embedding);
+      if (embeddings.length !== texts.length) throw new Error('Embedding count mismatch');
+      return { embeddings, model };
+    }
+
+    if (resp.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+      // Honour Retry-After if present (Voyage returns seconds), else exponential.
+      const retryAfter = resp.headers.get('retry-after');
+      const waitMs = retryAfter
+        ? Math.min(60_000, parseInt(retryAfter, 10) * 1000)
+        : 15_000 * Math.pow(2, attempt);
+      await sleep(waitMs);
+      continue;
+    }
+
     let msg: string;
     try {
       const b = await resp.json();
       const detail = b?.error?.message || b?.detail || 'Unknown error';
       if (resp.status === 401) msg = `Invalid ${provider === 'voyage' ? 'VOYAGE_API_KEY' : 'OPENAI_API_KEY'}.`;
-      else if (resp.status === 429) msg = `${provider} rate limit — try again in a moment.`;
+      else if (resp.status === 429) msg = `${provider} rate limit hit repeatedly — will retry on the next click.`;
       else msg = `${provider} embeddings error (${resp.status}): ${detail}`;
     } catch { msg = `${provider} embeddings error (${resp.status}).`; }
     throw new Error(msg);
   }
 
-  const data = await resp.json();
-  const embeddings: number[][] = (data?.data || []).map((d: any) => d.embedding);
-  if (embeddings.length !== texts.length) throw new Error('Embedding count mismatch');
-  return { embeddings, model };
+  throw new Error('Failed to embed after retries');
 }
 
 function toVectorLiteral(v: number[]): string {
@@ -151,7 +174,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ embedded: 0, remaining: totalMissing, total: totalMissing, done: totalMissing === 0 });
     }
 
-    // 3. Embed in batches and write back.
+    // 3. Embed in batches and write back. Throttle between batches when
+    //    using Voyage to stay under the 3 RPM free-tier ceiling.
+    const provider = pickEmbedProvider();
     let embedded = 0;
     for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
       const batch = chunks.slice(i, i + EMBED_BATCH);
@@ -174,6 +199,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           });
         }
         embedded++;
+      }
+      // Throttle before the NEXT batch (skip after the last one).
+      if (provider === 'voyage' && i + EMBED_BATCH < chunks.length) {
+        await sleep(VOYAGE_INTER_BATCH_MS);
       }
     }
 

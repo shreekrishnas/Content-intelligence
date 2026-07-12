@@ -24,34 +24,45 @@ function pickProvider(): Provider | null {
   return null;
 }
 
+function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
+
 async function embedTextVoyage(input: string): Promise<number[]> {
-  const resp = await fetch(VOYAGE_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.VOYAGE_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: VOYAGE_MODEL,
-      input: input.slice(0, MAX_INPUT_CHARS),
-      input_type: 'query',
-    }),
-  });
-  if (!resp.ok) {
+  for (let attempt = 0; attempt <= 3; attempt++) {
+    const resp = await fetch(VOYAGE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.VOYAGE_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: VOYAGE_MODEL,
+        input: input.slice(0, MAX_INPUT_CHARS),
+        input_type: 'query',
+      }),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      const embedding = data?.data?.[0]?.embedding;
+      if (!Array.isArray(embedding)) throw new Error('Empty embedding response from Voyage');
+      return embedding;
+    }
+    if (resp.status === 429 && attempt < 3) {
+      const retryAfter = resp.headers.get('retry-after');
+      const waitMs = retryAfter ? Math.min(30_000, parseInt(retryAfter, 10) * 1000) : 8_000 * Math.pow(2, attempt);
+      await sleep(waitMs);
+      continue;
+    }
     let msg: string;
     try {
       const body = await resp.json();
       const detail = body?.error?.message || body?.detail || 'Unknown error';
       if (resp.status === 401) msg = 'Invalid VOYAGE_API_KEY.';
-      else if (resp.status === 429) msg = 'Voyage rate limit — try again shortly.';
+      else if (resp.status === 429) msg = 'Voyage rate limit — try again in a minute.';
       else msg = `Voyage embeddings error (${resp.status}): ${detail}`;
     } catch { msg = `Voyage embeddings error (${resp.status}).`; }
     throw new Error(msg);
   }
-  const data = await resp.json();
-  const embedding = data?.data?.[0]?.embedding;
-  if (!Array.isArray(embedding)) throw new Error('Empty embedding response from Voyage');
-  return embedding;
+  throw new Error('Voyage embed failed after retries');
 }
 
 async function embedTextOpenAI(input: string): Promise<number[]> {

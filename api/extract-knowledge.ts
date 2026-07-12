@@ -116,6 +116,8 @@ Return JSON with this exact structure:
 // Batch embedding — provider auto-picked (Voyage default, OpenAI optional).
 // Returns { embeddings, model } aligned to the input array.
 // ---------------------------------------------------------------------------
+function embedSleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
+
 async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; model: string }> {
   const provider = pickEmbedProvider();
   if (!provider) throw new Error('No embedding provider configured (VOYAGE_API_KEY or OPENAI_API_KEY)');
@@ -128,31 +130,42 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
     ? { model, input: inputs, input_type: 'document' }
     : { model, input: inputs, dimensions: TARGET_DIMS };
 
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
+  for (let attempt = 0; attempt <= 4; attempt++) {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
 
-  if (!resp.ok) {
+    if (resp.ok) {
+      const data = await resp.json();
+      const embeddings: number[][] = (data?.data || []).map((d: any) => d.embedding);
+      if (embeddings.length !== texts.length) throw new Error('Embedding count mismatch');
+      return { embeddings, model };
+    }
+
+    if (resp.status === 429 && attempt < 4) {
+      const retryAfter = resp.headers.get('retry-after');
+      const waitMs = retryAfter ? Math.min(60_000, parseInt(retryAfter, 10) * 1000) : 15_000 * Math.pow(2, attempt);
+      await embedSleep(waitMs);
+      continue;
+    }
+
     let msg: string;
     try {
       const b = await resp.json();
       const detail = b?.error?.message || b?.detail || 'Unknown error';
       if (resp.status === 401) msg = `Invalid ${provider === 'voyage' ? 'VOYAGE_API_KEY' : 'OPENAI_API_KEY'}.`;
-      else if (resp.status === 429) msg = `${provider} rate limit — try again shortly.`;
+      else if (resp.status === 429) msg = `${provider} rate limit hit repeatedly.`;
       else msg = `${provider} embeddings error (${resp.status}): ${detail}`;
     } catch { msg = `${provider} embeddings error (${resp.status}).`; }
     throw new Error(msg);
   }
 
-  const data = await resp.json();
-  const embeddings: number[][] = (data?.data || []).map((d: any) => d.embedding);
-  if (embeddings.length !== texts.length) throw new Error('Embedding count mismatch');
-  return { embeddings, model };
+  throw new Error('embedBatch failed after retries');
 }
 
 // pgvector accepts a string literal '[1.23,4.56,...]' for vector inputs.
