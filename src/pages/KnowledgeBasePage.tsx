@@ -52,7 +52,7 @@ export default function KnowledgeBasePage() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [indexStatus, setIndexStatus] = useState<{ total: number; embedded: number; missing: number; files: number } | null>(null);
+  const [indexStatus, setIndexStatus] = useState<{ total: number; embedded: number; missing: number; skipped: number; files: number } | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
   const [rebuildProgress, setRebuildProgress] = useState<{ embedded: number; total: number } | null>(null);
   const [reprocessing, setReprocessing] = useState(false);
@@ -262,8 +262,10 @@ export default function KnowledgeBasePage() {
                     : indexStatus.total === 0 && indexStatus.files > 0
                       ? `${indexStatus.files} file${indexStatus.files === 1 ? '' : 's'} uploaded but no chunks found. Older uploads may have skipped chunking — click Reprocess to re-parse and index them.`
                       : indexStatus.missing === 0
-                        ? `All ${indexStatus.total} chunks embedded. Semantic retrieval active.`
-                        : `${indexStatus.embedded} of ${indexStatus.total} chunks embedded. ${indexStatus.missing} pending — keyword fallback in use for those.`}
+                        ? indexStatus.skipped > 0
+                          ? `${indexStatus.embedded} of ${indexStatus.total} chunks embedded. ${indexStatus.skipped} skipped (provider couldn't process). Semantic retrieval active for the embedded set.`
+                          : `All ${indexStatus.total} chunks embedded. Semantic retrieval active.`
+                        : `${indexStatus.embedded} of ${indexStatus.total} chunks embedded. ${indexStatus.missing} pending${indexStatus.skipped > 0 ? `, ${indexStatus.skipped} skipped` : ''} — keyword fallback in use for those.`}
           </div>
           {indexStatus && indexStatus.total > 0 && (
             <div style={{ marginTop: 6, height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>

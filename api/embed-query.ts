@@ -13,7 +13,10 @@ const OPENAI_MODEL = 'text-embedding-3-small';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/embeddings';
 const OPENROUTER_MODEL = process.env.OPENROUTER_EMBED_MODEL || 'openai/text-embedding-3-small';
 const TARGET_DIMS = 1024;
-const MAX_INPUT_CHARS = 8000;
+// Safe cap: OpenAI's text-embedding-3-* has an 8192-token limit; dense
+// text can approach 1 token per char, so we cap the input at 4000 chars
+// (~1000 tokens for English, ~4000 tokens worst-case).
+const MAX_INPUT_CHARS = 4000;
 
 type Provider = 'voyage' | 'openai' | 'openrouter';
 

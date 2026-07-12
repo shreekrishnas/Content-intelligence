@@ -22,7 +22,7 @@ const OPENROUTER_EMBEDDINGS_URL = 'https://openrouter.ai/api/v1/embeddings';
 const OPENROUTER_EMBED_MODEL = process.env.OPENROUTER_EMBED_MODEL || 'openai/text-embedding-3-small';
 const TARGET_DIMS = 1024;
 const EMBED_BATCH = 100;
-const EMBED_INPUT_MAX_CHARS = 8000;
+const EMBED_INPUT_MAX_CHARS = 4000; // safety margin for OpenAI's 8192-token limit
 
 type EmbedProvider = 'voyage' | 'openai' | 'openrouter';
 function pickEmbedProvider(): EmbedProvider | null {
@@ -126,7 +126,10 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
   const provider = pickEmbedProvider();
   if (!provider) throw new Error('No embedding provider configured (VOYAGE_API_KEY or OPENAI_API_KEY)');
 
-  const inputs = texts.map((t) => (t || '').slice(0, EMBED_INPUT_MAX_CHARS));
+  const inputs = texts.map((t) => {
+    const s = (t || '').slice(0, EMBED_INPUT_MAX_CHARS).trim();
+    return s.length > 0 ? s : ' ';
+  });
   const url = provider === 'voyage' ? VOYAGE_URL : provider === 'openrouter' ? OPENROUTER_EMBEDDINGS_URL : OPENAI_EMBEDDINGS_URL;
   const model = provider === 'voyage' ? VOYAGE_MODEL : provider === 'openrouter' ? OPENROUTER_EMBED_MODEL : OPENAI_MODEL;
   const apiKey = provider === 'voyage' ? process.env.VOYAGE_API_KEY : provider === 'openrouter' ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY;

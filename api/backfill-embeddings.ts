@@ -25,7 +25,7 @@ const OPENROUTER_EMBEDDINGS_URL = 'https://openrouter.ai/api/v1/embeddings';
 const OPENROUTER_EMBED_MODEL = process.env.OPENROUTER_EMBED_MODEL || 'openai/text-embedding-3-small';
 const TARGET_DIMS = 1024;
 const EMBED_BATCH = 100;
-const EMBED_INPUT_MAX_CHARS = 8000;
+const EMBED_INPUT_MAX_CHARS = 4000; // safety margin for OpenAI's 8192-token limit
 const MAX_PER_CALL = 400;
 const VOYAGE_INTER_BATCH_MS = 21_000;
 const MAX_RATE_LIMIT_RETRIES = 4;
@@ -48,7 +48,13 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
   const provider = pickEmbedProvider();
   if (!provider) throw new Error('No embedding provider configured. Set VOYAGE_API_KEY (free 200M tokens) or OPENAI_API_KEY in Vercel Environment Variables.');
 
-  const inputs = texts.map((t) => (t || '').slice(0, EMBED_INPUT_MAX_CHARS));
+  // Every input must be a non-empty string. Substitute a single space for
+  // any empty/whitespace-only chunk so the provider returns a valid (albeit
+  // useless) embedding rather than dropping the row from its response.
+  const inputs = texts.map((t) => {
+    const s = (t || '').slice(0, EMBED_INPUT_MAX_CHARS).trim();
+    return s.length > 0 ? s : ' ';
+  });
   const url = provider === 'voyage' ? VOYAGE_URL : provider === 'openrouter' ? OPENROUTER_EMBEDDINGS_URL : OPENAI_EMBEDDINGS_URL;
   const model = provider === 'voyage' ? VOYAGE_MODEL : provider === 'openrouter' ? OPENROUTER_EMBED_MODEL : OPENAI_MODEL;
   const apiKey = provider === 'voyage' ? process.env.VOYAGE_API_KEY : provider === 'openrouter' ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY;
@@ -56,14 +62,14 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
     ? { 'HTTP-Referer': process.env.SITE_URL ?? 'https://content-intelligence-ebon.vercel.app', 'X-Title': 'Content Intelligence Platform' }
     : {};
 
-  // OpenRouter's /v1/embeddings currently accepts ONE input per request
-  // (not a batch array). Send serially and collect. Fine for backfill —
-  // OpenAI charges per token, not per request, so cost is unchanged.
+  // OpenRouter's /v1/embeddings accepts one input per request. Send serially.
+  // Any single-chunk failure returns null so the caller can skip that chunk
+  // and continue — one oversized/malformed chunk shouldn't tank a whole run.
   if (provider === 'openrouter') {
-    const embeddings: number[][] = [];
+    const embeddings: Array<number[] | null> = [];
     for (const single of inputs) {
       const body = { model, input: single, dimensions: TARGET_DIMS };
-      let ok = false;
+      let placed = false;
       for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt++) {
         const resp = await fetch(url, {
           method: 'POST',
@@ -73,9 +79,12 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
         if (resp.ok) {
           const data = await resp.json();
           const emb = data?.data?.[0]?.embedding;
-          if (!Array.isArray(emb)) throw new Error(`OpenRouter returned no embedding (model ${model}). Response: ${JSON.stringify(data).slice(0, 200)}`);
-          embeddings.push(emb);
-          ok = true;
+          if (Array.isArray(emb)) {
+            embeddings.push(emb);
+          } else {
+            embeddings.push(null); // shape mismatch — skip this chunk
+          }
+          placed = true;
           break;
         }
         if (resp.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
@@ -84,19 +93,27 @@ async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; mo
           await sleep(waitMs);
           continue;
         }
-        let msg: string;
-        try {
-          const b = await resp.json();
-          const detail = b?.error?.message || b?.detail || 'Unknown error';
-          if (resp.status === 401) msg = 'Invalid OPENROUTER_API_KEY.';
-          else if (resp.status === 404) msg = `OpenRouter does not currently expose embeddings for '${model}'. Try VOYAGE_API_KEY (free) or OPENAI_API_KEY instead.`;
-          else msg = `OpenRouter embeddings error (${resp.status}): ${detail}`;
-        } catch { msg = `OpenRouter embeddings error (${resp.status}).`; }
-        throw new Error(msg);
+        // Hard error (401, 404, or oversize 400) — bail out; we can't fix
+        // this per-chunk. Throw so the caller can surface it once.
+        if (resp.status === 401 || resp.status === 404) {
+          let msg = `OpenRouter embeddings error (${resp.status}).`;
+          try {
+            const b = await resp.json();
+            const detail = b?.error?.message || b?.detail || 'Unknown error';
+            if (resp.status === 401) msg = 'Invalid OPENROUTER_API_KEY.';
+            else if (resp.status === 404) msg = `OpenRouter does not currently expose embeddings for '${model}'. Try VOYAGE_API_KEY (free) or OPENAI_API_KEY instead.`;
+            else msg = `OpenRouter embeddings error (${resp.status}): ${detail}`;
+          } catch { /* keep default */ }
+          throw new Error(msg);
+        }
+        // 400 / 5xx on a specific chunk — record null and move on.
+        embeddings.push(null);
+        placed = true;
+        break;
       }
-      if (!ok) throw new Error('OpenRouter embed failed after retries');
+      if (!placed) embeddings.push(null);
     }
-    return { embeddings, model };
+    return { embeddings, model } as { embeddings: (number[] | null)[]; model: string } as any;
   }
 
   // Voyage / OpenAI accept batched inputs.
@@ -201,11 +218,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const admin = createClient(url, serviceKey);
 
+    // Skip chunks previously marked as unembeddable (e.g. persistent
+    // provider errors on that content).
     const { count: totalMissingRaw, error: countErr } = await admin
       .from('knowledge_chunks')
       .select('id', { head: true, count: 'exact' })
       .eq('account_id', account_id)
-      .is('embedding', null);
+      .is('embedding', null)
+      .neq('embed_model', 'skipped_provider_error');
     if (countErr) return res.status(500).json({ error: `Count failed: ${countErr.message}` });
     const totalMissing = totalMissingRaw ?? 0;
 
@@ -218,6 +238,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select('id, chunk_text')
       .eq('account_id', account_id)
       .is('embedding', null)
+      .neq('embed_model', 'skipped_provider_error')
       .order('created_at', { ascending: true })
       .limit(MAX_PER_CALL);
     if (fetchErr) return res.status(500).json({ error: `Fetch failed: ${fetchErr.message}` });
@@ -225,25 +246,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ embedded: 0, remaining: totalMissing, total: totalMissing, done: totalMissing === 0 });
     }
 
-    // 3. Embed in batches and write back. Throttle between batches when
-    //    using Voyage to stay under the 3 RPM free-tier ceiling.
+    // 3. Embed in batches and write back. Throttle between Voyage batches
+    //    (free tier is 3 RPM). Individual chunks that couldn't be embedded
+    //    (e.g., single oversized chunk) are recorded as skipped so the run
+    //    doesn't abort halfway through.
     const provider = pickEmbedProvider();
     let embedded = 0;
+    let skipped = 0;
     for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
       const batch = chunks.slice(i, i + EMBED_BATCH);
       const { embeddings, model } = await embedBatch(batch.map((c: any) => c.chunk_text));
       for (let j = 0; j < batch.length; j++) {
         const row = batch[j] as any;
-        const vec = embeddings[j];
-        if (!row || !vec) continue;
+        const vec = (embeddings as any[])[j];
+        if (!row) continue;
+        if (!vec) {
+          // Mark the chunk as skipped so subsequent backfill runs don't
+          // repeatedly try (and fail) on the same content.
+          await admin
+            .from('knowledge_chunks')
+            .update({ embed_model: 'skipped_provider_error' })
+            .eq('id', row.id);
+          skipped++;
+          continue;
+        }
         const { error: updErr } = await admin
           .from('knowledge_chunks')
-          .update({ embedding: toVectorLiteral(vec), embed_model: model })
+          .update({ embedding: toVectorLiteral(vec as number[]), embed_model: model })
           .eq('id', row.id);
         if (updErr) {
           return res.status(200).json({
             embedded,
-            remaining: totalMissing - embedded,
+            skipped,
+            remaining: totalMissing - embedded - skipped,
             total: totalMissing,
             done: false,
             error: `Update failed at chunk ${row.id}: ${updErr.message}`,
@@ -252,19 +287,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         embedded++;
       }
       // Throttle before the NEXT batch (skip after the last one).
-      // Only Voyage's 3 RPM ceiling needs this — OpenAI/OpenRouter tiers
-      // are much more permissive.
+      // Only Voyage's 3 RPM ceiling needs this.
       if (provider === 'voyage' && i + EMBED_BATCH < chunks.length) {
         await sleep(VOYAGE_INTER_BATCH_MS);
       }
     }
 
-    const remaining = totalMissing - embedded;
+    // Skipped chunks won't show up in the next call (they still have NULL
+    // embedding). Report them so the client knows to stop looping.
+    const remaining = Math.max(0, totalMissing - embedded - skipped);
     return res.status(200).json({
       embedded,
+      skipped,
       remaining,
       total: totalMissing,
-      done: remaining <= 0,
+      done: remaining === 0 || (embedded === 0 && skipped > 0),
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unexpected error';

@@ -206,7 +206,7 @@ export const api = {
      *   missing   = chunks awaiting an embedding
      *   files     = knowledge_files rows in this account (for diagnostic UI)
      */
-    async indexStatus(accountId: string): Promise<Result<{ total: number; embedded: number; missing: number; files: number }>> {
+    async indexStatus(accountId: string): Promise<Result<{ total: number; embedded: number; missing: number; skipped: number; files: number }>> {
       const totalRes = await supabase
         .from('knowledge_chunks')
         .select('id', { count: 'exact' })
@@ -214,13 +214,25 @@ export const api = {
         .limit(1);
       if (totalRes.error) return err(pgError(totalRes.error));
 
+      // Chunks awaiting embedding (excludes those marked as skipped after
+      // repeated provider failures).
       const missingRes = await supabase
         .from('knowledge_chunks')
         .select('id', { count: 'exact' })
         .eq('account_id', accountId)
         .is('embedding', null)
+        .neq('embed_model', 'skipped_provider_error')
         .limit(1);
       if (missingRes.error) return err(pgError(missingRes.error));
+
+      const skippedRes = await supabase
+        .from('knowledge_chunks')
+        .select('id', { count: 'exact' })
+        .eq('account_id', accountId)
+        .is('embedding', null)
+        .eq('embed_model', 'skipped_provider_error')
+        .limit(1);
+      if (skippedRes.error) return err(pgError(skippedRes.error));
 
       const filesRes = await supabase
         .from('knowledge_files')
@@ -231,8 +243,9 @@ export const api = {
 
       const total = totalRes.count ?? 0;
       const missing = missingRes.count ?? 0;
+      const skipped = skippedRes.count ?? 0;
       const files = filesRes.count ?? 0;
-      return ok({ total, embedded: total - missing, missing, files });
+      return ok({ total, embedded: total - missing - skipped, missing, skipped, files });
     },
 
     /**
