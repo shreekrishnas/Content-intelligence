@@ -831,12 +831,12 @@ export const api = {
       return ok(undefined as void);
     },
 
-    async autoDetectProfile(url: string): Promise<Result<Partial<TrendProfile>>> {
+    async autoDetectProfile(url: string, accountName?: string): Promise<Result<Partial<TrendProfile>>> {
       try {
         const response = await fetch('/api/auto-profile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url }),
+          body: JSON.stringify({ url, account_name: accountName }),
         });
         const rawText = await response.text();
         let data: any;

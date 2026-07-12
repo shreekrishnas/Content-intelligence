@@ -86,7 +86,7 @@ export default function TrendsPage() {
       (async () => {
         setDetecting(true); setError(null);
         try {
-          const res = await api.trends.autoDetectProfile(accountUrl);
+          const res = await api.trends.autoDetectProfile(accountUrl, account?.name);
           if (res.error) { setError(res.error); return; }
           const detected = res.data || {};
           const updated: TrendProfile = {
