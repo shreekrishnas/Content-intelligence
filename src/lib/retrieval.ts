@@ -4,6 +4,7 @@ import type { KnowledgeChunk } from '@/types';
 const CONSTRAINT_CATEGORIES = (import.meta.env.VITE_CONSTRAINT_CATEGORIES || 'compliance,brand,guidelines').split(',');
 const REQUIRED_CATEGORIES = (import.meta.env.VITE_GENERATION_REQUIRED_CATEGORIES || 'brand').split(',');
 const TOP_K = parseInt(import.meta.env.VITE_RETRIEVAL_TOP_K || '8', 10);
+const MIN_SIMILARITY = parseFloat(import.meta.env.VITE_RETRIEVAL_MIN_SIMILARITY || '0.25');
 const FETCH_LIMIT = 120;
 
 export interface RetrievalChunk extends KnowledgeChunk {
@@ -32,6 +33,8 @@ export interface RetrievalResult {
     categories: Record<string, boolean>;
     missingRequired: string[];
   };
+  /** How the context chunks were selected — useful for diagnostics/UI. */
+  retrievalMode?: 'semantic' | 'keyword' | 'none';
 }
 
 export async function checkReadiness(accountId: string): Promise<{
@@ -69,6 +72,8 @@ function mapChunk(c: any): RetrievalChunk {
   };
 }
 
+// ---- Keyword fallback (existing behaviour, extracted) --------------------
+
 function getQueryWords(text: string): string[] {
   return [...new Set(
     text.toLowerCase()
@@ -78,11 +83,75 @@ function getQueryWords(text: string): string[] {
   )];
 }
 
-function scoreChunk(chunkText: string, queryWords: string[]): number {
+function scoreChunkKeywords(chunkText: string, queryWords: string[]): number {
   if (!queryWords.length) return 1;
   const lower = chunkText.toLowerCase();
   return queryWords.reduce((acc, w) => acc + (lower.includes(w) ? 1 : 0), 0);
 }
+
+async function scoreByKeywords(accountId: string, queryText: string, contextIds: string[]): Promise<{ chunks: RetrievalChunk[]; topScore: number }> {
+  if (!contextIds.length) return { chunks: [], topScore: 0 };
+  const { data } = await supabase
+    .from('knowledge_chunks')
+    .select('*, knowledge_files!inner(file_name, category)')
+    .eq('account_id', accountId)
+    .in('file_id', contextIds)
+    .order('position', { ascending: true })
+    .limit(FETCH_LIMIT);
+  const candidates = (data || []).map(mapChunk);
+  const words = getQueryWords(queryText);
+  const scored = candidates
+    .map(c => ({ chunk: c, score: scoreChunkKeywords(c.chunk_text, words) }))
+    .sort((a, b) => b.score - a.score);
+  const topScore = scored[0]?.score ?? 0;
+  const chunks = scored
+    .slice(0, TOP_K)
+    .map(s => ({ ...s.chunk, similarity: s.score }));
+  return { chunks, topScore };
+}
+
+// ---- Semantic retrieval (pgvector via RPC) --------------------------------
+
+async function embedQuery(text: string): Promise<number[] | null> {
+  try {
+    const resp = await fetch('/api/embed-query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text.slice(0, 8000) }),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return Array.isArray(data?.embedding) ? data.embedding : null;
+  } catch { return null; }
+}
+
+async function scoreBySemantic(accountId: string, queryEmbedding: number[], excludeFileIds: string[]): Promise<{ chunks: RetrievalChunk[]; topScore: number } | null> {
+  const { data, error } = await supabase.rpc('match_chunks', {
+    p_account_id: accountId,
+    p_query_embedding: queryEmbedding as any,
+    p_match_count: TOP_K,
+    p_exclude_file_ids: excludeFileIds,
+  });
+  if (error) return null;
+  const rows = (data || []) as Array<{ id: string; file_id: string; chunk_text: string; position: number | null; similarity: number; file_name: string; category: string }>;
+  const chunks: RetrievalChunk[] = rows.map((r) => ({
+    id: r.id,
+    file_id: r.file_id,
+    account_id: accountId,
+    chunk_text: r.chunk_text,
+    embed_model: 'text-embedding-3-small',
+    token_count: null,
+    position: r.position,
+    created_at: '',
+    similarity: r.similarity,
+    file_name: r.file_name,
+    category: r.category,
+  }));
+  const topScore = rows[0]?.similarity ?? 0;
+  return { chunks, topScore };
+}
+
+// ---- Main retrieve() ------------------------------------------------------
 
 export async function retrieve(
   accountId: string,
@@ -99,6 +168,7 @@ export async function retrieve(
       sourcesUsed: [],
       topScore: 0,
       readiness: { ready: false, categories: {}, missingRequired: REQUIRED_CATEGORIES },
+      retrievalMode: 'none',
     };
   }
 
@@ -115,12 +185,11 @@ export async function retrieve(
       sourcesUsed: [],
       topScore: 0,
       readiness: { ready: false, categories: {}, missingRequired: REQUIRED_CATEGORIES },
+      retrievalMode: 'none',
     };
   }
 
-  const queryWords = getQueryWords(queryText);
-
-  // Always fetch all constraint chunks (brand, compliance, guidelines)
+  // Always fetch all constraint chunks (brand, compliance, guidelines).
   const { data: constraintFiles, error: constraintFilesErr } = await supabase
     .from('knowledge_files')
     .select('id')
@@ -139,6 +208,7 @@ export async function retrieve(
       sourcesUsed: [],
       topScore: 0,
       readiness,
+      retrievalMode: 'none',
     };
   }
 
@@ -155,7 +225,6 @@ export async function retrieve(
     constraintChunks = (data || []).map(mapChunk);
   }
 
-  // Fetch context chunks — more than TOP_K, then score by relevance
   const { data: contextFiles } = await supabase
     .from('knowledge_files')
     .select('id')
@@ -167,28 +236,33 @@ export async function retrieve(
     .map((f: any) => f.id)
     .filter((id: string) => !constraintIds.includes(id));
 
+  // ---- Semantic retrieval first, keyword fallback ----------------------
   let chunks: RetrievalChunk[] = [];
   let topScore = 0;
-  if (contextIds.length > 0) {
-    const { data } = await supabase
-      .from('knowledge_chunks')
-      .select('*, knowledge_files!inner(file_name, category)')
-      .eq('account_id', accountId)
-      .in('file_id', contextIds)
-      .order('position', { ascending: true })
-      .limit(FETCH_LIMIT);
+  let retrievalMode: 'semantic' | 'keyword' | 'none' = 'none';
 
-    const candidates = (data || []).map(mapChunk);
-    const scored = candidates
-      .map(c => ({ chunk: c, score: scoreChunk(c.chunk_text, queryWords) }))
-      .sort((a, b) => b.score - a.score);
-    topScore = scored[0]?.score ?? 0;
-    chunks = scored
-      .slice(0, TOP_K)
-      .map(s => ({ ...s.chunk, similarity: s.score }));
+  if (contextIds.length > 0) {
+    const embedding = await embedQuery(queryText);
+    if (embedding) {
+      const semantic = await scoreBySemantic(accountId, embedding, constraintIds);
+      if (semantic && semantic.chunks.length > 0) {
+        chunks = semantic.chunks;
+        topScore = semantic.topScore;
+        retrievalMode = 'semantic';
+      }
+    }
+
+    // Fallback: no embedding available, RPC failed, or no embedded chunks
+    // for this account yet (topScore effectively 0 with 0 rows returned).
+    if (chunks.length === 0) {
+      const keyword = await scoreByKeywords(accountId, queryText, contextIds);
+      chunks = keyword.chunks;
+      topScore = keyword.topScore;
+      retrievalMode = keyword.chunks.length > 0 ? 'keyword' : 'none';
+    }
   }
 
-  // Fetch structured metadata for all files used
+  // Fetch structured metadata for all files used.
   const usedFileIds = [...new Set([
     ...constraintChunks.map((c: any) => c.file_id),
     ...chunks.map((c: any) => c.file_id),
@@ -225,13 +299,14 @@ export async function retrieve(
     }
   }
 
-  // Strict grounding gate: if the source topic doesn't overlap with any
-  // context KB chunk (topScore = 0) AND we have no constraint chunks
-  // to lean on either, refuse. The user asked: no relevant KB → say so
-  // rather than invent.
-  const hasAnyContext = chunks.length > 0 && topScore > 0;
-  const hasAnyConstraints = constraintChunks.length > 0;
-  if (!hasAnyContext && !hasAnyConstraints) {
+  // Strict grounding gate.
+  //   Semantic mode → refuse when topScore < MIN_SIMILARITY AND no constraints.
+  //   Keyword mode  → refuse when topScore = 0 AND no constraints (unchanged).
+  const semanticEmpty = retrievalMode === 'semantic' && topScore < MIN_SIMILARITY;
+  const keywordEmpty = retrievalMode !== 'semantic' && topScore === 0;
+  const noContext = chunks.length === 0 || semanticEmpty || keywordEmpty;
+  const noConstraints = constraintChunks.length === 0;
+  if (noContext && noConstraints) {
     return {
       refused: true,
       reason: "I don't have that idea in the knowledge base. Add relevant knowledge files (persona, brand, guidelines, or expert content) that cover this topic — I can only generate content that is grounded in your KB.",
@@ -241,8 +316,13 @@ export async function retrieve(
       sourcesUsed: [],
       topScore: 0,
       readiness,
+      retrievalMode,
     };
   }
+
+  // If semantic mode produced chunks but all below threshold, drop them so we
+  // don't feed the LLM garbage. Constraint chunks still carry the analysis.
+  const finalChunks = retrievalMode === 'semantic' && topScore < MIN_SIMILARITY ? [] : chunks;
 
   return {
     refused: false,
@@ -250,10 +330,11 @@ export async function retrieve(
       ? `Note: Missing knowledge categories (${readiness.missingRequired.join(', ')}). Results may be less grounded. Upload files in these categories for better output.`
       : undefined,
     missing: readiness.missingRequired,
-    chunks,
+    chunks: finalChunks,
     constraintChunks,
     sourcesUsed,
     topScore,
     readiness,
+    retrievalMode,
   };
 }

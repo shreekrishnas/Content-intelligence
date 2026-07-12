@@ -150,7 +150,7 @@ export const api = {
             .update({ ingest_status: 'ready' })
             .eq('id', fileRow.id);
 
-          // Non-blocking: extract structured metadata from first chunk
+          // Non-blocking: extract structured metadata AND embed chunks.
           const sampleText = chunks.slice(0, 3).map(c => c.content).join('\n\n');
           fetch('/api/extract-knowledge', {
             method: 'POST',
@@ -159,6 +159,8 @@ export const api = {
               file_name: file.name,
               category: metadata.category,
               sample_text: sampleText,
+              file_id: fileRow.id,
+              account_id: accountId,
             }),
           })
             .then(r => r.json())
@@ -195,6 +197,62 @@ export const api = {
         .eq('account_id', accountId);
       if (error) return err(pgError(error));
       return ok(undefined as void);
+    },
+
+    /**
+     * Return { total, embedded, missing } counts across all chunks in the account.
+     * Powers the "Rebuild search index" indicator on the KB page.
+     */
+    async indexStatus(accountId: string): Promise<Result<{ total: number; embedded: number; missing: number }>> {
+      const totalRes = await supabase
+        .from('knowledge_chunks')
+        .select('id', { head: true, count: 'exact' })
+        .eq('account_id', accountId);
+      if (totalRes.error) return err(pgError(totalRes.error));
+
+      const missingRes = await supabase
+        .from('knowledge_chunks')
+        .select('id', { head: true, count: 'exact' })
+        .eq('account_id', accountId)
+        .is('embedding', null);
+      if (missingRes.error) return err(pgError(missingRes.error));
+
+      const total = totalRes.count ?? 0;
+      const missing = missingRes.count ?? 0;
+      return ok({ total, embedded: total - missing, missing });
+    },
+
+    /**
+     * Backfill embeddings for chunks without one. Server processes up to 500
+     * chunks per call and returns { embedded, remaining, total, done }. Caller
+     * loops until done. Requires OPENAI_API_KEY + SUPABASE_SERVICE_ROLE_KEY
+     * on the server; without those the request 503s and the client should
+     * surface the reason.
+     */
+    async rebuildIndexStep(accountId: string): Promise<Result<{ embedded: number; remaining: number; total: number; done: boolean; error?: string }>> {
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const jwt = sess?.session?.access_token;
+        if (!jwt) return err('Not signed in');
+
+        const resp = await fetch('/api/backfill-embeddings', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${jwt}`,
+          },
+          body: JSON.stringify({ account_id: accountId }),
+        });
+        const raw = await resp.text();
+        let data: any;
+        try { data = JSON.parse(raw); } catch {
+          return err(`Server error (${resp.status}): ${raw.slice(0, 300) || 'Unexpected response format'}`);
+        }
+        if (!resp.ok || data.error && data.done !== true) return err(data.error || 'Backfill failed');
+        return ok(data);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : 'Network error during backfill');
+      }
     },
 
     async delete(accountId: string, fileId: string): Promise<Result<void>> {

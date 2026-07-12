@@ -28,7 +28,7 @@ Every output is **grounded in the account's knowledge base** — if the KB has n
 | Cron | Vercel Cron | Daily automated trend scans |
 | Deploy | Vercel + GitHub CI | Push-to-deploy |
 
-**No pgvector.** Retrieval is keyword-based scoring in JavaScript against fetched chunks (see §7). Simple, deterministic, no embeddings API cost.
+**Retrieval:** semantic via pgvector (`text-embedding-3-small`, 1536 dims, HNSW cosine index) with an automatic keyword-scoring fallback when no `OPENAI_API_KEY` is set or an account still has un-embedded chunks. See §7.3.
 
 ---
 
@@ -125,8 +125,8 @@ Powers RLS: `account_id IN (SELECT account_id FROM account_access WHERE user_id 
 **Categories:** `persona | brand | compliance | terminology | expert | guidelines | raw_notes | data | idea`. These drive retrieval (constraint chunks vs context chunks) and readiness (required categories per env config).
 
 #### `knowledge_chunks`
-`id uuid pk`, `file_id fk`, `account_id`, `chunk_text text`, `embed_model text`, `token_count int null`, `position int null`, `created_at`.
-Chunking happens client-side on upload (`src/lib/chunker.ts`). No embeddings are actually generated in this build — `embed_model` is stored as a label (e.g., `keyword`) but the "similarity" is keyword-overlap scoring done in JS at query time.
+`id uuid pk`, `file_id fk`, `account_id`, `chunk_text text`, `embed_model text` (e.g. `text-embedding-3-small`), `embedding vector(1536)` (nullable — filled by server-side embedding), `token_count int null`, `position int null`, `created_at`.
+Chunking happens client-side on upload (`src/lib/chunker.ts`). Embeddings are generated server-side by `/api/extract-knowledge` on upload (best-effort — requires `OPENAI_API_KEY`), and by `/api/backfill-embeddings` for historical chunks. Retrieval calls the SQL RPC `match_chunks(p_account_id, p_query_embedding, p_match_count, p_exclude_file_ids)` which orders by cosine distance (`<=>`) and returns similarity as `1 − distance`. RLS on the RPC is `SECURITY INVOKER`, so the caller's `account_access` still gates access. When no embedding is available for the account, retrieval automatically falls back to keyword-overlap scoring.
 
 #### `analyses`
 `id uuid pk`, `account_id`, `source_text text`, `source_type text`, `result jsonb` (the full `AnalysisResult` returned by `/api/analyze-content`), `created_by`, `created_at`.
@@ -274,8 +274,9 @@ Vercel Cron hits `GET /api/trend-scan` once per day (via `vercel.json crons`).
 - `OPENROUTER_API_KEY` **required** — the LLM key
 - `LLM_MODEL` (default `anthropic/claude-sonnet-4-5`)
 - `SITE_URL` — used as OpenRouter Referer header
+- `OPENAI_API_KEY` — enables semantic retrieval. Used by `/api/embed-query` (per-request query embedding), `/api/extract-knowledge` (embed chunks on upload), and `/api/backfill-embeddings`. Without it, the client falls back to keyword scoring — nothing breaks.
 - `TAVILY_API_KEY` — optional; without it, trend scans fall back to LLM-suggested candidate topics
-- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — only used by the cron path in `/api/trend-scan`; without them, cron short-circuits with `{skipped: true, reason}`
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — required by `/api/backfill-embeddings` (verifies caller role via anon key + JWT, does bulk writes via service role) and by `/api/extract-knowledge`'s chunk-embedding path. Also used by the daily trend cron. Without them, semantic retrieval still works read-side (RPC + embed-query), but chunk writes on upload and backfill are skipped.
 - `CRON_SECRET` — optional bearer token; Vercel Cron sends `Authorization: Bearer <secret>`
 
 ---
@@ -315,15 +316,31 @@ Each subsection follows the same pattern: user goal → data flow → API contra
 
 Called by every generation endpoint (Analyze, Studio, Ideas Lab).
 
+The interface is stable — `retrieve()` always returns `{ chunks, constraintChunks, sourcesUsed, topScore, readiness, retrievalMode }`. Only the scoring strategy differs.
+
 **Steps:**
-1. `checkReadiness(accountId)`: fetch all active `knowledge_files.category` values. Compare against `REQUIRED_CATEGORIES` (default `['brand']`). If required category missing → warn but don't refuse.
-2. Extract query keywords: `queryText.toLowerCase().split(/\W+/).filter(w => w.length > 4).slice(0, 80)`.
-3. **Constraint chunks:** always fetch every chunk from files in `CONSTRAINT_CATEGORIES` (`compliance`, `brand`, `guidelines`). No scoring — these are baseline context.
-4. **Context chunks:** fetch up to 120 chunks from all other active files. Score each: `+1 per unique query keyword that appears in the chunk`. Sort desc, keep top-8 (`VITE_RETRIEVAL_TOP_K`). Track `topScore` (the max).
-5. **Strict grounding gate:** if `topScore === 0 AND constraintChunks.length === 0` → return `{refused: true, reason: "I don't have that idea in the knowledge base..."}`. The caller UI displays this instead of results.
-6. Return `{ refused, chunks, constraintChunks, sourcesUsed, topScore, readiness }`.
+1. `checkReadiness(accountId)`: fetch all active `knowledge_files.category` values. Compare against `REQUIRED_CATEGORIES` (default `['brand']`). If a required category is missing → warn but don't refuse.
+2. **Constraint chunks:** always fetch every chunk from files in `CONSTRAINT_CATEGORIES` (`compliance`, `brand`, `guidelines`). No scoring, no filtering — these are baseline context. This behaviour is preserved from the keyword era.
+3. **Context chunks — semantic first:**
+   - Client POSTs the query text to `/api/embed-query`. Server returns a 1536-d embedding via OpenAI (`text-embedding-3-small`), sliced to 8000 chars.
+   - Client calls `supabase.rpc('match_chunks', { p_account_id, p_query_embedding, p_match_count: TOP_K, p_exclude_file_ids: constraintIds })`. The RPC returns top-K chunks by cosine similarity, joins `knowledge_files` for `file_name` + `category`, and filters to `active = true, ingest_status = 'ready'`. `SECURITY INVOKER` → RLS still applies.
+   - `topScore` is the maximum returned similarity (0..1). `retrievalMode = 'semantic'`.
+4. **Context chunks — keyword fallback:** used when any of the following are true:
+   - `/api/embed-query` returned a non-200 (missing `OPENAI_API_KEY` → 503; other errors → 5xx).
+   - The RPC returned 0 rows (means no chunks for this account have embeddings yet — a fresh migration or a new account before backfill runs).
+   - Old behaviour: fetch up to 120 chunks by `position`, score `+1 per unique query keyword ≥ 5 chars`, sort desc, keep top-K. `topScore` is the raw keyword count. `retrievalMode = 'keyword'`.
+5. **Strict grounding gate:**
+   - Semantic mode → refuse if `topScore < VITE_RETRIEVAL_MIN_SIMILARITY` (default 0.25) AND no constraint chunks.
+   - Keyword mode → refuse if `topScore === 0` AND no constraint chunks (unchanged).
+   - Refusal returns `{ refused: true, reason: "I don't have that idea in the knowledge base..." }` for the caller UI to display.
+6. Return `{ refused, chunks, constraintChunks, sourcesUsed, topScore, readiness, retrievalMode }`.
 
 **`sourcesUsed`** is a de-duplicated list of `{file_id, file_name, category, structured}` derived from the chunks — shown to the user under "Sources Used from Knowledge Hub".
+
+**Embedding lifecycle:**
+- **Upload path:** `api.kb.upload` inserts chunks with `embedding = NULL`, then calls `/api/extract-knowledge` with `{file_id, account_id}`. The server extracts structured metadata AND (if `OPENAI_API_KEY` + `SUPABASE_SERVICE_ROLE_KEY` are set) embeds all chunks for that file in batches of 100, writing back via the service role.
+- **Backfill path:** the KB page shows a status bar (`X of Y chunks embedded`) and a `Rebuild search index` button. Clicking it POSTs to `/api/backfill-embeddings` in a loop (up to 500 chunks per call) until `remaining = 0`. The endpoint verifies the caller's `account_access` role (`manager`/`editor` only) via their JWT, then uses the service role for the batch writes.
+- **Constraint chunks:** never subject to similarity filtering; they're always returned in full to the LLM as baseline context.
 
 ### 7.4 New Analysis (`/api/analyze-content` + `AnalyzePage.tsx`)
 
@@ -680,6 +697,7 @@ Apply in the Supabase SQL Editor in this order:
 6. `00006_storage_rls_fix.sql` — storage bucket RLS
 7. `00007_trends.sql` — trend_scans + trend_records + RLS
 8. `00008_source_type_guidance.sql` — adds `source_types.analysis_guidance`
+9. `00009_pgvector.sql` — enables the `vector` extension, adds `knowledge_chunks.embedding vector(1536)`, HNSW cosine index, and the `match_chunks` RPC (SECURITY INVOKER)
 
 `combined_migration.sql` in the same folder does all of this in one shot — useful for a brand-new project.
 

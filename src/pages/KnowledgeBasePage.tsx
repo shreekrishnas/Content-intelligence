@@ -52,6 +52,10 @@ export default function KnowledgeBasePage() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [indexStatus, setIndexStatus] = useState<{ total: number; embedded: number; missing: number } | null>(null);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [rebuildProgress, setRebuildProgress] = useState<{ embedded: number; total: number } | null>(null);
+
   const loadFiles = useCallback(async () => {
     if (!accountId) return;
     setLoading(true);
@@ -60,7 +64,43 @@ export default function KnowledgeBasePage() {
     setLoading(false);
   }, [accountId]);
 
-  useEffect(() => { loadFiles(); }, [loadFiles]);
+  const loadIndexStatus = useCallback(async () => {
+    if (!accountId) return;
+    const { data } = await api.kb.indexStatus(accountId);
+    if (data) setIndexStatus(data);
+  }, [accountId]);
+
+  useEffect(() => { loadFiles(); loadIndexStatus(); }, [loadFiles, loadIndexStatus]);
+
+  async function rebuildIndex() {
+    if (!accountId || rebuilding) return;
+    setRebuilding(true);
+    setRebuildProgress(null);
+    let totalEmbedded = 0;
+    let totalCount = 0;
+    try {
+      while (true) {
+        const { data, error } = await api.kb.rebuildIndexStep(accountId);
+        if (error) { showToast(error, 'error'); break; }
+        if (!data) break;
+        totalEmbedded += data.embedded;
+        totalCount = data.total || totalCount;
+        setRebuildProgress({ embedded: totalEmbedded, total: totalCount });
+        if (data.done || data.remaining <= 0) {
+          showToast(`Search index ready — embedded ${totalEmbedded} chunks`, 'success');
+          break;
+        }
+        if (data.embedded === 0) {
+          // Nothing was written in the last iteration — bail to avoid a loop.
+          showToast(data.error || 'Rebuild stalled — try again', 'warn');
+          break;
+        }
+      }
+    } finally {
+      setRebuilding(false);
+      loadIndexStatus();
+    }
+  }
 
   const filtered = catFilter === 'all' ? files : files.filter((f) => f.category === catFilter);
 
@@ -184,6 +224,29 @@ export default function KnowledgeBasePage() {
           ))}
         </div>
       </div>
+
+      {indexStatus && indexStatus.total > 0 && (
+        <div className="glass-card-static" style={{ padding: '14px 20px', marginBottom: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 2 }}>Semantic search index</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {rebuilding && rebuildProgress
+                ? `Embedding… ${rebuildProgress.embedded} of ${rebuildProgress.total}`
+                : indexStatus.missing === 0
+                  ? `All ${indexStatus.total} chunks embedded. Semantic retrieval active.`
+                  : `${indexStatus.embedded} of ${indexStatus.total} chunks embedded. ${indexStatus.missing} pending — keyword fallback in use for those.`}
+            </div>
+            <div style={{ marginTop: 6, height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
+              <div style={{ width: `${indexStatus.total === 0 ? 0 : Math.round(100 * indexStatus.embedded / indexStatus.total)}%`, height: '100%', background: '#10B981' }} />
+            </div>
+          </div>
+          {indexStatus.missing > 0 && (
+            <button className="btn btn-secondary btn-sm" onClick={rebuildIndex} disabled={rebuilding}>
+              {rebuilding ? 'Rebuilding…' : 'Rebuild search index'}
+            </button>
+          )}
+        </div>
+      )}
 
       <div style={{ marginBottom: 16 }}>
         <button className="btn btn-primary" onClick={() => setShowUpload(true)}>Upload File</button>

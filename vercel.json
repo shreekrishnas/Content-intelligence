@@ -8,7 +8,9 @@
     "api/ideas-lab.ts": { "maxDuration": 120 },
     "api/trend-supervisor.ts": { "maxDuration": 120 },
     "api/trend-scan.ts": { "maxDuration": 300 },
-    "api/extract-knowledge.ts": { "maxDuration": 60 }
+    "api/extract-knowledge.ts": { "maxDuration": 120 },
+    "api/embed-query.ts": { "maxDuration": 30 },
+    "api/backfill-embeddings.ts": { "maxDuration": 300 }
   },
   "crons": [
     { "path": "/api/trend-scan", "schedule": "0 6 * * *" }
