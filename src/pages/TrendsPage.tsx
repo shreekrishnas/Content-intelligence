@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAppStore } from '@/store';
-import { useAccount } from '@/contexts/AccountContext';
+import { useAccount, ACCOUNTS } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
 import { auditLog } from '@/lib/audit';
 import { supabaseConfigured } from '@/lib/supabase';
@@ -54,6 +54,12 @@ export default function TrendsPage() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [urlInput, setUrlInput] = useState('');
+  const autoDetectedRef = useRef(false);
+
+  const accountUrl = useMemo(() => {
+    const acc = ACCOUNTS.find((a) => a.id === accountId);
+    return acc?.url || '';
+  }, [accountId]);
 
   const load = useCallback(async () => {
     if (!accountId || !supabaseConfigured) { setLoading(false); return; }
@@ -61,16 +67,58 @@ export default function TrendsPage() {
     const [prof, recs] = await Promise.all([api.trends.getProfile(accountId), api.trends.list(accountId)]);
     if (prof.data) {
       setProfile({ ...EMPTY_PROFILE, ...prof.data, business_name: prof.data.business_name || account?.name });
-      if (prof.data.website_url) setUrlInput(prof.data.website_url);
+      setUrlInput(prof.data.website_url || accountUrl || '');
     } else {
       setProfile({ ...EMPTY_PROFILE, business_name: account?.name });
+      setUrlInput(accountUrl || '');
     }
+    autoDetectedRef.current = false;
     setRecords(recs.data || []);
     setLoading(false);
     return prof.data;
-  }, [accountId, account?.name]);
+  }, [accountId, account?.name, accountUrl]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!accountId || !accountUrl || autoDetectedRef.current || loading) return;
+    if (!supabaseConfigured) return;
+    load().then((savedProfile) => {
+      if (savedProfile?.core_topics || savedProfile?.industry) return;
+      autoDetectedRef.current = true;
+      setUrlInput(accountUrl);
+      (async () => {
+        setDetecting(true); setError(null);
+        try {
+          const res = await api.trends.autoDetectProfile(accountUrl);
+          if (res.error) { setError(res.error); return; }
+          const detected = res.data || {};
+          const updated: TrendProfile = {
+            ...EMPTY_PROFILE,
+            business_name: account?.name,
+            ...Object.fromEntries(Object.entries(detected).filter(([, v]) => v && String(v).trim())),
+            website_url: accountUrl,
+          };
+          setProfile(updated);
+          await api.trends.saveProfile(accountId, updated);
+          showToast('Domain profile auto-detected from your website');
+          setScanning(true); setNote(null);
+          const scanRes = await api.trends.runScan({ accountId, accountLabel: account?.name, profile: updated, mode: 'suggest' });
+          if (scanRes.error) { setError(scanRes.error); return; }
+          if (scanRes.data?.note) setNote(scanRes.data.note);
+          const topics = scanRes.data?.topics || [];
+          if (!topics.length) { setNote(scanRes.data?.note || 'No trends qualified.'); return; }
+          if (scanRes.data?.saved) {
+            auditLog({ accountId, action: 'trend_scan', targetType: 'trend', detail: { source: 'auto-detect', count: topics.length } }).catch(() => {});
+            await load();
+          } else {
+            await persistAndReload('auto-detect', topics);
+          }
+          showToast(`Auto-scan complete — ${topics.length} topics reviewed`);
+        } finally { setDetecting(false); setScanning(false); }
+      })();
+    });
+  }, [accountId, accountUrl, loading]);
 
   async function autoDetect(url?: string) {
     const targetUrl = url || urlInput;
@@ -314,8 +362,8 @@ export default function TrendsPage() {
         </div>
       )}
 
-      {loading ? (
-        <div className="empty-state"><p>Loading…</p></div>
+      {loading || detecting ? (
+        <div className="empty-state"><p>{detecting ? 'Analyzing your website and generating trend ideas…' : 'Loading…'}</p></div>
       ) : records.length === 0 ? (
         <div className="empty-state">
           <p style={{ fontSize: '1rem', fontWeight: 600 }}>No trends yet</p>

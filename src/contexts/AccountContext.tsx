@@ -4,11 +4,11 @@ import { useAppStore } from '@/store';
 import type { Account } from '@/types';
 
 export const ACCOUNTS = [
-  { id: '00000000-0000-0000-0000-000000000001', name: 'Right Horizons' },
-  { id: '00000000-0000-0000-0000-000000000002', name: 'Hoya Vision' },
-  { id: '00000000-0000-0000-0000-000000000003', name: 'Wipro 3D' },
-  { id: '00000000-0000-0000-0000-000000000004', name: 'Wipro Water' },
-  { id: '00000000-0000-0000-0000-000000000005', name: 'Wepsol' },
+  { id: '00000000-0000-0000-0000-000000000001', name: 'Right Horizons', url: 'https://righthorizons.com' },
+  { id: '00000000-0000-0000-0000-000000000002', name: 'Hoya Vision', url: 'https://www.hoyavision.com' },
+  { id: '00000000-0000-0000-0000-000000000003', name: 'Wipro 3D', url: 'https://www.wipro3d.com' },
+  { id: '00000000-0000-0000-0000-000000000004', name: 'Wipro Water', url: 'https://www.wiprowater.com' },
+  { id: '00000000-0000-0000-0000-000000000005', name: 'Wepsol', url: 'https://www.wepsol.com' },
 ] as const;
 
 type AccountError = 'no_account' | 'access_denied' | 'not_found' | 'not_configured' | null;
