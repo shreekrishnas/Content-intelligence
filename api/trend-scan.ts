@@ -27,7 +27,7 @@ ROUTING RULES:
 GUARDRAILS: never invent trend data, never treat popularity as relevance, never force a brand connection, never exceed max_recommendations. If a topic touches politics, health, finance, law, tragedy, or controversy, raise its risk and set needs_human_review = true.`;
 
 interface DomainProfile {
-  business_name?: string; industry?: string; products?: string; services?: string;
+  website_url?: string; business_name?: string; industry?: string; products?: string; services?: string;
   core_topics?: string; target_keywords?: string; target_locations?: string;
   target_audience?: string; business_goals?: string; content_categories?: string;
   brand_tone?: string; restricted_topics?: string; competitors?: string;

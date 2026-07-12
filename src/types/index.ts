@@ -210,6 +210,7 @@ export interface SourceType {
 
 export interface TrendProfile {
   enabled?: boolean;
+  website_url?: string;
   business_name?: string;
   industry?: string;
   products?: string;

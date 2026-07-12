@@ -830,6 +830,25 @@ export const api = {
       if (error) return err(pgError(error));
       return ok(undefined as void);
     },
+
+    async autoDetectProfile(url: string): Promise<Result<Partial<TrendProfile>>> {
+      try {
+        const response = await fetch('/api/auto-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const rawText = await response.text();
+        let data: any;
+        try { data = JSON.parse(rawText); } catch {
+          return err(`Server error (${response.status}): ${rawText.slice(0, 300) || 'Unexpected response format'}`);
+        }
+        if (!response.ok || data.error) return err(data.error || 'Auto-detect failed');
+        return ok((data.profile || {}) as Partial<TrendProfile>);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : 'Network error during auto-detect');
+      }
+    },
   },
 
   // --------------------------------------------------------------------------
