@@ -53,41 +53,47 @@ export default function TrendsPage() {
   const [filter, setFilter] = useState<string>('all');
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
-  const autoDetectedRef = useRef(false);
+  const autoDetectRanRef = useRef<string | null>(null);
 
   const accountUrl = useMemo(() => {
     const acc = ACCOUNTS.find((a) => a.id === accountId);
     return acc?.url || '';
   }, [accountId]);
 
-  const load = useCallback(async () => {
-    if (!accountId || !supabaseConfigured) { setLoading(false); return; }
-    setLoading(true);
-    const [prof, recs] = await Promise.all([api.trends.getProfile(accountId), api.trends.list(accountId)]);
-    if (prof.data) {
-      setProfile({ ...EMPTY_PROFILE, ...prof.data, business_name: prof.data.business_name || account?.name });
-    } else {
-      setProfile({ ...EMPTY_PROFILE, business_name: account?.name });
-    }
-    autoDetectedRef.current = false;
+  const loadRecords = useCallback(async () => {
+    if (!accountId || !supabaseConfigured) return;
+    const recs = await api.trends.list(accountId);
     setRecords(recs.data || []);
-    setLoading(false);
-    return prof.data;
-  }, [accountId, account?.name, accountUrl]);
-
-  useEffect(() => { load(); }, [load]);
+  }, [accountId]);
 
   useEffect(() => {
-    if (!accountId || !accountUrl || autoDetectedRef.current || loading) return;
-    if (!supabaseConfigured) return;
-    load().then((savedProfile) => {
-      if (savedProfile?.core_topics || savedProfile?.industry) return;
-      autoDetectedRef.current = true;
-      (async () => {
-        setDetecting(true); setError(null);
+    if (!accountId || !supabaseConfigured) { setLoading(false); return; }
+    let cancelled = false;
+
+    (async () => {
+      setLoading(true); setError(null);
+      const [prof, recs] = await Promise.all([api.trends.getProfile(accountId), api.trends.list(accountId)]);
+      if (cancelled) return;
+
+      const savedProfile = prof.data;
+      const currentProfile = savedProfile
+        ? { ...EMPTY_PROFILE, ...savedProfile, business_name: savedProfile.business_name || account?.name }
+        : { ...EMPTY_PROFILE, business_name: account?.name };
+      setProfile(currentProfile);
+      setRecords(recs.data || []);
+      setLoading(false);
+
+      const hasProfile = savedProfile?.core_topics || savedProfile?.industry;
+      const hasRecords = (recs.data || []).length > 0;
+      const alreadyRanForThisAccount = autoDetectRanRef.current === accountId;
+
+      if (!hasProfile && accountUrl && !alreadyRanForThisAccount) {
+        autoDetectRanRef.current = accountId;
+        setDetecting(true);
         try {
           const res = await api.trends.autoDetectProfile(accountUrl, account?.name);
-          if (res.error) { setError(res.error); return; }
+          if (cancelled) return;
+          if (res.error) { setError(res.error); setDetecting(false); return; }
           const detected = res.data || {};
           const updated: TrendProfile = {
             ...EMPTY_PROFILE,
@@ -97,24 +103,44 @@ export default function TrendsPage() {
           };
           setProfile(updated);
           await api.trends.saveProfile(accountId, updated);
-          showToast('Domain profile auto-detected from your website');
-          setScanning(true); setNote(null);
+          if (cancelled) return;
+          showToast('Domain profile auto-detected');
+
+          setScanning(true);
           const scanRes = await api.trends.runScan({ accountId, accountLabel: account?.name, profile: updated, mode: 'suggest' });
-          if (scanRes.error) { setError(scanRes.error); return; }
+          if (cancelled) return;
+          if (scanRes.error) { setError(scanRes.error); setDetecting(false); setScanning(false); return; }
           if (scanRes.data?.note) setNote(scanRes.data.note);
           const topics = scanRes.data?.topics || [];
-          if (!topics.length) { setNote(scanRes.data?.note || 'No trends qualified.'); return; }
+          if (!topics.length) {
+            setNote(scanRes.data?.note || 'No trends qualified.');
+            setDetecting(false); setScanning(false);
+            return;
+          }
           if (scanRes.data?.saved) {
             auditLog({ accountId, action: 'trend_scan', targetType: 'trend', detail: { source: 'auto-detect', count: topics.length } }).catch(() => {});
-            await load();
+            const freshRecs = await api.trends.list(accountId);
+            if (!cancelled) setRecords(freshRecs.data || []);
           } else {
-            await persistAndReload('auto-detect', topics);
+            await persistAndReloadInner(accountId, 'auto-detect', topics);
           }
-          showToast(`Auto-scan complete — ${topics.length} topics reviewed`);
-        } finally { setDetecting(false); setScanning(false); }
-      })();
-    });
-  }, [accountId, accountUrl, loading]);
+          if (!cancelled) showToast(`Auto-scan complete — ${topics.length} topics reviewed`);
+        } finally {
+          if (!cancelled) { setDetecting(false); setScanning(false); }
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [accountId, account?.name, accountUrl]);
+
+  async function persistAndReloadInner(acctId: string, source: string, topics: any[]) {
+    const { error: e } = await api.trends.saveScan(acctId, source, topics);
+    if (e) { setError(`Scanned but could not save results: ${e}. Check that migration 00007_trends.sql has been applied.`); return; }
+    auditLog({ accountId: acctId, action: 'trend_scan', targetType: 'trend', detail: { source, count: topics.length } }).catch(() => {});
+    const freshRecs = await api.trends.list(acctId);
+    setRecords(freshRecs.data || []);
+  }
 
   async function saveProfile() {
     if (!accountId) return;
@@ -124,14 +150,6 @@ export default function TrendsPage() {
     if (e) { showToast(e, 'error'); return; }
     showToast('Domain profile saved');
     setShowProfile(false);
-  }
-
-  async function persistAndReload(source: string, topics: any[]) {
-    if (!accountId) return;
-    const { error: e } = await api.trends.saveScan(accountId, source, topics);
-    if (e) { setError(`Scanned but could not save results: ${e}. Check that migration 00007_trends.sql has been applied.`); return; }
-    auditLog({ accountId, action: 'trend_scan', targetType: 'trend', detail: { source, count: topics.length } }).catch(() => {});
-    await load();
   }
 
   async function runScan(mode: 'live' | 'suggest') {
@@ -145,9 +163,9 @@ export default function TrendsPage() {
       if (!topics.length) { setNote(res.data?.note || 'No trends qualified from this scan.'); return; }
       if (res.data?.saved) {
         auditLog({ accountId, action: 'trend_scan', targetType: 'trend', detail: { source: res.data?.source || mode, count: topics.length } }).catch(() => {});
-        await load();
+        await loadRecords();
       } else {
-        await persistAndReload(res.data?.source || mode, topics);
+        await persistAndReloadInner(accountId, res.data?.source || mode, topics);
       }
       showToast(`Scan complete — ${topics.length} topics reviewed`);
     } finally { setScanning(false); }
@@ -163,7 +181,7 @@ export default function TrendsPage() {
       if (res.error) { setError(res.error); return; }
       const topics = res.data?.topics || [];
       if (!topics.length) { setNote('No trends qualified.'); return; }
-      await persistAndReload('manual', topics);
+      await persistAndReloadInner(accountId, 'manual', topics);
       setPasteText(''); setPasteOpen(false);
       showToast(`Reviewed ${signals.length} pasted topics`);
     } finally { setScanning(false); }
@@ -190,7 +208,7 @@ export default function TrendsPage() {
     if (e) { showToast(e, 'error'); return; }
     await api.trends.updateStatus(accountId, t.id, 'actioned');
     showToast('Opportunity created');
-    load();
+    loadRecords();
   }
 
   async function addToCalendar(t: TrendRecord) {
@@ -203,20 +221,20 @@ export default function TrendsPage() {
     if (e) { showToast(e, 'error'); return; }
     await api.trends.updateStatus(accountId, t.id, 'actioned');
     showToast('Added to Calendar');
-    load();
+    loadRecords();
   }
 
   async function setStatus(t: TrendRecord, status: TrendRecord['status']) {
     if (!accountId) return;
     const { error: e } = await api.trends.updateStatus(accountId, t.id, status);
     if (e) { showToast(e, 'error'); return; }
-    load();
+    loadRecords();
   }
 
   async function del(t: TrendRecord) {
     if (!accountId) return;
     await api.trends.remove(accountId, t.id);
-    load();
+    loadRecords();
   }
 
   const counts = useMemo(() => ({
@@ -254,9 +272,9 @@ export default function TrendsPage() {
 
       {/* action bar */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
-        <button className="btn btn-brand" onClick={() => runScan('live')} disabled={scanning}>{scanning ? 'Scanning…' : '⚡ Run Live Scan'}</button>
-        <button className="btn btn-secondary btn-sm" onClick={() => runScan('suggest')} disabled={scanning}>AI-suggest candidates</button>
-        <button className="btn btn-ghost btn-sm" onClick={() => setPasteOpen((v) => !v)} disabled={scanning}>Paste topics</button>
+        <button className="btn btn-brand" onClick={() => runScan('live')} disabled={scanning || detecting}>{scanning ? 'Scanning…' : '⚡ Run Live Scan'}</button>
+        <button className="btn btn-secondary btn-sm" onClick={() => runScan('suggest')} disabled={scanning || detecting}>AI-suggest candidates</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => setPasteOpen((v) => !v)} disabled={scanning || detecting}>Paste topics</button>
         <button className="btn btn-ghost btn-sm" onClick={() => setShowProfile((v) => !v)}>{showProfile ? 'Hide' : 'Domain Profile'}</button>
         {profile.enabled && <span className="badge" style={{ background: '#10B98118', color: '#10B981' }}>Daily scan on</span>}
       </div>
@@ -329,11 +347,14 @@ export default function TrendsPage() {
       )}
 
       {loading || detecting ? (
-        <div className="empty-state"><p>{detecting ? 'Analyzing your website and generating trend ideas…' : 'Loading…'}</p></div>
+        <div className="empty-state">
+          <p>{detecting ? 'Analyzing your domain and generating trend ideas…' : 'Loading…'}</p>
+          {detecting && <p style={{ marginTop: 8, fontSize: '0.78rem', opacity: 0.6 }}>Auto-detecting profile for {account?.name || 'this account'} from {accountUrl}</p>}
+        </div>
       ) : records.length === 0 ? (
         <div className="empty-state">
           <p style={{ fontSize: '1rem', fontWeight: 600 }}>No trends yet</p>
-          <p style={{ marginTop: 8, opacity: 0.7, maxWidth: 420 }}>Trends will be auto-generated based on your account's website. Run a scan or wait for auto-detection to complete.</p>
+          <p style={{ marginTop: 8, opacity: 0.7, maxWidth: 420 }}>Click "Run Live Scan" or "AI-suggest candidates" to generate trends based on your domain profile.</p>
         </div>
       ) : (
         <div className="grid grid-2" style={{ gap: '0.8rem' }}>
