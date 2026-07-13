@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAppStore } from '@/store';
-import { useAccount, ACCOUNTS } from '@/contexts/AccountContext';
+import { useAccount } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
 import { auditLog } from '@/lib/audit';
 import { supabaseConfigured } from '@/lib/supabase';
@@ -58,9 +58,8 @@ export default function TrendsPage() {
   accountRef.current = account;
 
   const accountMeta = useMemo(() => {
-    const acc = ACCOUNTS.find((a) => a.id === accountId);
-    return { url: acc?.url || '', name: acc?.name || '' };
-  }, [accountId]);
+    return { url: (account?.profile as any)?.website_url || '', name: account?.name || '' };
+  }, [account]);
 
   async function loadRecords() {
     if (!accountId || !supabaseConfigured) return;

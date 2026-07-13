@@ -1,15 +1,14 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
+import { useAuthStore } from '@/stores/authStore';
 import { useAppStore } from '@/store';
 import type { Account } from '@/types';
 
-export const ACCOUNTS = [
-  { id: '00000000-0000-0000-0000-000000000001', name: 'Right Horizons', url: 'https://righthorizons.com' },
-  { id: '00000000-0000-0000-0000-000000000002', name: 'Hoya Vision', url: 'https://www.hoyavision.com' },
-  { id: '00000000-0000-0000-0000-000000000003', name: 'Wipro 3D', url: 'https://www.wipro3d.com' },
-  { id: '00000000-0000-0000-0000-000000000004', name: 'Wipro Water', url: 'https://www.wiprowater.com' },
-  { id: '00000000-0000-0000-0000-000000000005', name: 'Wepsol', url: 'https://www.wepsol.com' },
-] as const;
+interface AccountListItem {
+  id: string;
+  name: string;
+  role: 'manager' | 'editor' | 'viewer';
+}
 
 type AccountError = 'no_account' | 'access_denied' | 'not_found' | 'not_configured' | null;
 
@@ -18,7 +17,7 @@ interface AccountContextValue {
   account: Account | null;
   loading: boolean;
   error: AccountError;
-  accounts: typeof ACCOUNTS;
+  accounts: AccountListItem[];
   switchAccount: (id: string) => void;
 }
 
@@ -27,7 +26,7 @@ const AccountContext = createContext<AccountContextValue>({
   account: null,
   loading: true,
   error: null,
-  accounts: ACCOUNTS,
+  accounts: [],
   switchAccount: () => {},
 });
 
@@ -36,19 +35,48 @@ export function useAccount() {
 }
 
 export function AccountProvider({ children }: { children: ReactNode }) {
+  const user = useAuthStore((s) => s.user);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
+  const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AccountError>(null);
+
+  const loadAccounts = useCallback(async () => {
+    if (!supabaseConfigured || !user) {
+      setLoading(false);
+      setError(supabaseConfigured ? 'no_account' : 'not_configured');
+      return [];
+    }
+
+    const { data, error: dbErr } = await supabase
+      .from('account_access')
+      .select('role, account_id, accounts(id, name)')
+      .eq('user_id', user.id);
+
+    if (dbErr || !data?.length) {
+      setError('no_account');
+      setLoading(false);
+      return [];
+    }
+
+    const list: AccountListItem[] = data.map((row: any) => ({
+      id: row.account_id,
+      name: (row.accounts as any)?.name || row.account_id,
+      role: row.role,
+    }));
+    setAccounts(list);
+    return list;
+  }, [user]);
 
   const fetchAccount = useCallback(async (id: string) => {
     setLoading(true);
     setError(null);
 
     if (!supabaseConfigured) {
-      const fallback = ACCOUNTS.find((a) => a.id === id);
       setAccountId(id);
-      setAccount(fallback ? { id: fallback.id, org_id: '00000000-0000-0000-0000-000000000001', name: fallback.name, status: 'active', profile: {}, created_at: '' } as Account : null);
+      setAccount(null);
+      setError('not_configured');
       setLoading(false);
       return;
     }
@@ -61,10 +89,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         .single();
 
       if (dbErr || !data) {
-        const fallback = ACCOUNTS.find((a) => a.id === id);
         setAccountId(id);
-        setAccount(fallback ? { id: fallback.id, org_id: '00000000-0000-0000-0000-000000000001', name: fallback.name, status: 'active', profile: {}, created_at: '' } as Account : null);
-        setError(fallback ? null : 'not_found');
+        setAccount(null);
+        setError('not_found');
         setLoading(false);
         return;
       }
@@ -87,20 +114,25 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   }, [fetchAccount]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const urlId = params.get('account_id');
-    const storedId = localStorage.getItem('ci_account_id');
-    const id = urlId || storedId || ACCOUNTS[0].id;
+    (async () => {
+      const list = await loadAccounts();
+      if (!list.length) return;
 
-    if (!storedId || urlId) {
+      const storedId = localStorage.getItem('ci_account_id');
+      const params = new URLSearchParams(window.location.search);
+      const urlId = params.get('account_id');
+
+      const preferred = urlId || storedId;
+      const hasAccess = preferred && list.some((a) => a.id === preferred);
+      const id = hasAccess ? preferred! : list[0].id;
+
       localStorage.setItem('ci_account_id', id);
-    }
-
-    fetchAccount(id);
-  }, [fetchAccount]);
+      await fetchAccount(id);
+    })();
+  }, [loadAccounts, fetchAccount]);
 
   return (
-    <AccountContext.Provider value={{ accountId, account, loading, error, accounts: ACCOUNTS, switchAccount }}>
+    <AccountContext.Provider value={{ accountId, account, loading, error, accounts, switchAccount }}>
       {children}
     </AccountContext.Provider>
   );
