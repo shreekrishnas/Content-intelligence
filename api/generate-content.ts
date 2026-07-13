@@ -3,6 +3,7 @@ import { callLLM } from './_lib/llm';
 import { extractJSON } from './_lib/json';
 import { handleOptions, sendError } from './_lib/http';
 import { requireAuth } from './_lib/auth';
+import { logUsage } from './_lib/usage';
 import type { FileContext, KnowledgeChunk } from './_lib/types';
 
 const GROUNDING_SYSTEM_PROMPT = `You are a senior content creator for a financial services brand in India. You write high-quality, publication-ready content that marketing teams can use immediately.
@@ -298,10 +299,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const maxTokens = 8192;
 
-    const { content: raw } = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
+    const { content: raw, usage } = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
       maxTokens,
       temperature: body.task === 'quality_review' ? 0.1 : 0.45,
     });
+    logUsage(auth, 'generate-content', usage);
 
     let output;
     try {

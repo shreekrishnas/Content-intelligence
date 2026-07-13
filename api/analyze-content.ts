@@ -3,6 +3,7 @@ import { callLLM } from './_lib/llm';
 import { extractJSON } from './_lib/json';
 import { handleOptions, sendError } from './_lib/http';
 import { requireAuth } from './_lib/auth';
+import { logUsage } from './_lib/usage';
 import type { FileContext } from './_lib/types';
 
 // ---- Source-archetype rules ----
@@ -333,10 +334,11 @@ Rules that make the plan usable:
 
 Output ONLY raw JSON.`;
 
-    const { content: raw } = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
+    const { content: raw, usage } = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
       maxTokens: 8192,
       temperature: 0.35,
     });
+    logUsage(auth, 'analyze-content', usage);
 
     let analysis;
     try {

@@ -3,6 +3,7 @@ import { callLLM } from './_lib/llm';
 import { extractJSON } from './_lib/json';
 import { handleOptions, sendError } from './_lib/http';
 import { requireAuth } from './_lib/auth';
+import { logUsage } from './_lib/usage';
 import type { KnowledgeChunk } from './_lib/types';
 
 // Brand-agnostic content strategist. This app is multi-account (finance,
@@ -249,7 +250,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return sendError(res, 400, 'invalid_task', `Invalid task: ${body.task}`);
     }
 
-    const { content: raw } = await callLLM(IDEAS_SYSTEM_PROMPT, userPrompt, { maxTokens, temperature });
+    const { content: raw, usage } = await callLLM(IDEAS_SYSTEM_PROMPT, userPrompt, { maxTokens, temperature });
+    logUsage(auth, 'ideas-lab', usage);
 
     let parsed: any;
     try {
