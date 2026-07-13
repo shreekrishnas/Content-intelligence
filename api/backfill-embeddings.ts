@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { embedBatch, pickEmbedProvider, toVectorLiteral } from './_lib/embedding';
 import { handleOptions, sendError } from './_lib/http';
-import { getServiceClient, getAnonClient } from './_lib/supabase';
+import { requireAuth, requireRole } from './_lib/auth';
+import { getServiceClient } from './_lib/supabase';
 
 // ============================================================
 // Backfill embeddings for chunks that were uploaded before
@@ -26,8 +27,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;
   if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'Method not allowed');
 
-  const { account_id } = (req.body || {}) as { account_id?: string };
-  if (!account_id) return sendError(res, 400, 'missing_account_id', 'account_id is required');
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
+  if (!requireRole(auth, ['manager', 'editor'])) {
+    return sendError(res, 403, 'insufficient_role', 'Viewers cannot rebuild the search index. Ask an editor or manager.');
+  }
+  const account_id = auth.accountId;
 
   let admin;
   try {
@@ -37,32 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       'Backfill requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY server env vars. Ask your admin to configure them.');
   }
 
-  // Optional JWT check: if provided, verify caller has editor/manager on
-  // this account. If NOT provided, we still allow the call — account_id is
-  // an unguessable UUID and the endpoint only writes embeddings to chunks
-  // that already exist in that account, so the blast radius is limited to
-  // Voyage token spend (within the 200M free tier).
-  const authHeader = req.headers.authorization || '';
-  const jwt = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-
   try {
-    if (jwt) {
-      const asUser = getAnonClient(jwt);
-      const { data: access } = await asUser
-        .from('account_access')
-        .select('role')
-        .eq('account_id', account_id)
-        .maybeSingle();
-      const role = (access as any)?.role;
-      if (role && role !== 'manager' && role !== 'editor') {
-        return res.status(403).json({ error: 'Viewers cannot rebuild the search index. Ask an editor or manager.' });
-      }
-      // Missing role row is treated as "unknown caller" — proceed anyway
-      // since the anon key alone cannot leak data through this endpoint.
-    }
-
-    // Skip chunks previously marked as unembeddable (e.g. persistent
-    // provider errors on that content).
     const { count: totalMissingRaw, error: countErr } = await admin
       .from('knowledge_chunks')
       .select('id', { head: true, count: 'exact' })

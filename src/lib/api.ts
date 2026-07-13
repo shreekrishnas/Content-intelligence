@@ -28,6 +28,41 @@ function pgError(e: { message?: string } | null): string {
   return e?.message ?? 'Unknown database error';
 }
 
+async function getJwt(): Promise<string | undefined> {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token;
+  } catch {
+    return undefined;
+  }
+}
+
+function getAccountId(): string {
+  return localStorage.getItem('ci_account_id') || '';
+}
+
+async function fetchAPI(
+  path: string,
+  body: Record<string, any>,
+): Promise<{ ok: boolean; status: number; data: any }> {
+  const jwt = await getJwt();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
+  const accountId = body.account_id || getAccountId();
+  if (accountId) headers['X-Account-Id'] = accountId;
+  const resp = await fetch(path, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+  const raw = await resp.text();
+  let data: any;
+  try { data = JSON.parse(raw); } catch {
+    data = { error: `Server error (${resp.status}): ${raw.slice(0, 300) || 'Unexpected response format'}` };
+  }
+  return { ok: resp.ok, status: resp.status, data };
+}
+
 export const api = {
   // --------------------------------------------------------------------------
   // Auth
@@ -154,18 +189,14 @@ export const api = {
 
         // Non-blocking: extract structured metadata AND embed chunks.
         const sampleText = chunks.slice(0, 3).map(c => c.content).join('\n\n');
-        fetch('/api/extract-knowledge', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        fetchAPI('/api/extract-knowledge', {
             file_name: file.name,
             category: metadata.category,
             sample_text: sampleText,
             file_id: fileRow.id,
             account_id: accountId,
-          }),
-        })
-          .then(r => r.json())
+          })
+          .then(({ data }) => data)
           .then(({ structured }) => {
             if (structured) {
               supabase
@@ -309,18 +340,14 @@ export const api = {
 
       // Fire-and-forget: structured + embeddings.
       const sampleText = chunks.slice(0, 3).map((c) => c.content).join('\n\n');
-      fetch('/api/extract-knowledge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      fetchAPI('/api/extract-knowledge', {
           file_name: (fileRow as any).file_name,
           category: (fileRow as any).category,
           sample_text: sampleText,
           file_id: fileId,
           account_id: accountId,
-        }),
-      })
-        .then((r) => r.json())
+        })
+        .then(({ data }) => data)
         .then(({ structured }) => {
           if (structured) {
             supabase.from('knowledge_files').update({ structured }).eq('id', fileId).then(() => {});
@@ -340,34 +367,8 @@ export const api = {
      */
     async rebuildIndexStep(accountId: string): Promise<Result<{ embedded: number; remaining: number; total: number; done: boolean; error?: string }>> {
       try {
-        // JWT is optional server-side. Send it if we have one so the endpoint
-        // can enforce viewer-can't-write; skip cleanly if not.
-        let jwt: string | undefined;
-        try {
-          const { data: sess } = await supabase.auth.getSession();
-          jwt = sess?.session?.access_token;
-        } catch { /* ignore */ }
-        if (!jwt) {
-          try {
-            const { useAuthStore } = await import('@/stores/authStore');
-            jwt = useAuthStore.getState().session?.access_token;
-          } catch { /* ignore */ }
-        }
-
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (jwt) headers['Authorization'] = `Bearer ${jwt}`;
-
-        const resp = await fetch('/api/backfill-embeddings', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({ account_id: accountId }),
-        });
-        const raw = await resp.text();
-        let data: any;
-        try { data = JSON.parse(raw); } catch {
-          return err(`Server error (${resp.status}): ${raw.slice(0, 300) || 'Unexpected response format'}`);
-        }
-        if (!resp.ok || data.error && data.done !== true) return err(data.error || 'Backfill failed');
+        const { ok: isOk, data } = await fetchAPI('/api/backfill-embeddings', { account_id: accountId });
+        if (!isOk || (data.error && data.done !== true)) return err(data.error || 'Backfill failed');
         return ok(data);
       } catch (e) {
         return err(e instanceof Error ? e.message : 'Network error during backfill');
@@ -439,32 +440,23 @@ export const api = {
       personas?: Array<{ name: string; description: string; pain_points?: string[]; goals?: string[] }>;
     }): Promise<Result<Analysis>> {
       try {
-        const response = await fetch('/api/analyze-content', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            source_text: params.sourceText.slice(0, 15000),
-            source_type: params.sourceType,
-            source_type_context: params.sourceTypeContext,
-            source_title: params.sourceTitle || 'Untitled Source',
-            source_owner: params.sourceOwner,
-            source_url: params.sourceUrl,
-            marketing_notes: params.marketingNotes,
-            personas: params.personas,
-            knowledge_chunks: params.knowledgeChunks?.slice(0, 25).map((text, i) => ({
-              id: `chunk-${i}`,
-              content: text.slice(0, 500),
-            })),
-            file_context: params.fileContext,
-            account_id: params.accountId,
-          }),
+        const { ok: isOk, data } = await fetchAPI('/api/analyze-content', {
+          source_text: params.sourceText.slice(0, 15000),
+          source_type: params.sourceType,
+          source_type_context: params.sourceTypeContext,
+          source_title: params.sourceTitle || 'Untitled Source',
+          source_owner: params.sourceOwner,
+          source_url: params.sourceUrl,
+          marketing_notes: params.marketingNotes,
+          personas: params.personas,
+          knowledge_chunks: params.knowledgeChunks?.slice(0, 25).map((text, i) => ({
+            id: `chunk-${i}`,
+            content: text.slice(0, 500),
+          })),
+          file_context: params.fileContext,
+          account_id: params.accountId,
         });
-        const rawText = await response.text();
-        let data: any;
-        try { data = JSON.parse(rawText); } catch {
-          return err(`Server error (${response.status}): ${rawText.slice(0, 300) || 'Unexpected response format'}`);
-        }
-        if (!response.ok || data.error) return err(data.error || 'Analysis failed');
+        if (!isOk || data.error) return err(data.error || 'Analysis failed');
         return ok(data as Analysis);
       } catch (e) {
         return err(e instanceof Error ? e.message : 'Network error during analysis');
@@ -577,17 +569,8 @@ export const api = {
 
     async _callGenerate(body: Record<string, any>): Promise<Result<any>> {
       try {
-        const response = await fetch('/api/generate-content', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const rawText = await response.text();
-        let data: any;
-        try { data = JSON.parse(rawText); } catch {
-          return err(`Server error (${response.status}): ${rawText.slice(0, 300) || 'Unexpected response format'}`);
-        }
-        if (!response.ok || data.error) return err(data.error || 'Generation failed');
+        const { ok: isOk, data } = await fetchAPI('/api/generate-content', body);
+        if (!isOk || data.error) return err(data.error || 'Generation failed');
         return ok(data.output);
       } catch (e) {
         return err(e instanceof Error ? e.message : 'Network error during generation');
@@ -601,22 +584,13 @@ export const api = {
   ideas: {
     async _call(body: Record<string, any>): Promise<Result<any>> {
       try {
-        const response = await fetch('/api/ideas-lab', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...body,
-            knowledge_chunks: (body.knowledge_chunks as string[] | undefined)
-              ?.slice(0, 25)
-              .map((text, i) => ({ id: `chunk-${i}`, content: String(text).slice(0, 500) })),
-          }),
+        const { ok: isOk, data } = await fetchAPI('/api/ideas-lab', {
+          ...body,
+          knowledge_chunks: (body.knowledge_chunks as string[] | undefined)
+            ?.slice(0, 25)
+            .map((text, i) => ({ id: `chunk-${i}`, content: String(text).slice(0, 500) })),
         });
-        const rawText = await response.text();
-        let data: any;
-        try { data = JSON.parse(rawText); } catch {
-          return err(`Server error (${response.status}): ${rawText.slice(0, 300) || 'Unexpected response format'}`);
-        }
-        if (!response.ok || data.error) return err(data.error || 'Idea generation failed');
+        if (!isOk || data.error) return err(data.error || 'Idea generation failed');
         return ok(data);
       } catch (e) {
         return err(e instanceof Error ? e.message : 'Network error during idea generation');
@@ -708,17 +682,13 @@ export const api = {
     // supervised topics; the caller persists them via saveScan().
     async runScan(params: { accountId?: string; accountLabel?: string; profile: TrendProfile; mode?: 'live' | 'suggest' }): Promise<Result<{ topics: any[]; summary: any; source: string; note?: string; signals_reviewed?: number; saved?: boolean; saved_records?: any[] }>> {
       try {
-        const response = await fetch('/api/trend-scan', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: params.accountId, account_label: params.accountLabel, profile: params.profile, mode: params.mode ?? 'live' }),
+        const { ok: isOk, data } = await fetchAPI('/api/trend-scan', {
+          account_id: params.accountId,
+          account_label: params.accountLabel,
+          profile: params.profile,
+          mode: params.mode ?? 'live',
         });
-        const rawText = await response.text();
-        let data: any;
-        try { data = JSON.parse(rawText); } catch {
-          return err(`Server error (${response.status}): ${rawText.slice(0, 300) || 'Unexpected response format'}`);
-        }
-        if (!response.ok || data.error) return err(data.error || 'Scan failed');
+        if (!isOk || data.error) return err(data.error || 'Scan failed');
         return ok(data);
       } catch (e) {
         return err(e instanceof Error ? e.message : 'Network error during scan');
@@ -728,17 +698,12 @@ export const api = {
     // Supervise a list of manually-pasted candidate topics.
     async superviseManual(params: { accountLabel?: string; profile: TrendProfile; signals: Array<{ topic: string; summary?: string; source?: string; url?: string }> }): Promise<Result<{ topics: any[]; summary: any }>> {
       try {
-        const response = await fetch('/api/trend-supervisor', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_label: params.accountLabel, domain_profile: params.profile, signals: params.signals }),
+        const { ok: isOk, data } = await fetchAPI('/api/trend-supervisor', {
+          account_label: params.accountLabel,
+          domain_profile: params.profile,
+          signals: params.signals,
         });
-        const rawText = await response.text();
-        let data: any;
-        try { data = JSON.parse(rawText); } catch {
-          return err(`Server error (${response.status}): ${rawText.slice(0, 300) || 'Unexpected response format'}`);
-        }
-        if (!response.ok || data.error) return err(data.error || 'Supervisor failed');
+        if (!isOk || data.error) return err(data.error || 'Supervisor failed');
         return ok(data);
       } catch (e) {
         return err(e instanceof Error ? e.message : 'Network error during supervision');
@@ -833,17 +798,8 @@ export const api = {
 
     async autoDetectProfile(url: string, accountName?: string): Promise<Result<Partial<TrendProfile>>> {
       try {
-        const response = await fetch('/api/auto-profile', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, account_name: accountName }),
-        });
-        const rawText = await response.text();
-        let data: any;
-        try { data = JSON.parse(rawText); } catch {
-          return err(`Server error (${response.status}): ${rawText.slice(0, 300) || 'Unexpected response format'}`);
-        }
-        if (!response.ok || data.error) return err(data.error || 'Auto-detect failed');
+        const { ok: isOk, data } = await fetchAPI('/api/auto-profile', { url, account_name: accountName });
+        if (!isOk || data.error) return err(data.error || 'Auto-detect failed');
         return ok((data.profile || {}) as Partial<TrendProfile>);
       } catch (e) {
         return err(e instanceof Error ? e.message : 'Network error during auto-detect');

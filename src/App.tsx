@@ -1,10 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
+import { supabaseConfigured } from './lib/supabase';
 import { AccountProvider, useAccount } from './contexts/AccountContext';
 import AppShell from './components/layout/AppShell';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/Toast';
+
+const LoginPage = lazy(() => import('./pages/LoginPage'));
 
 function ErrorScreen({ title, message }: { title: string; message: string }) {
   return (
@@ -67,8 +70,6 @@ function AccountGate() {
 
   if (loading) return <LoadingScreen />;
 
-  // When DB is not configured or no account_id, let the user through
-  // so they can explore the UI. Pages show empty states gracefully.
   if (error === 'not_configured' || error === 'no_account') {
     return <AppShell />;
   }
@@ -87,6 +88,32 @@ function AccountGate() {
   return <AppShell />;
 }
 
+function AuthGate() {
+  const user = useAuthStore((s) => s.user);
+
+  if (!supabaseConfigured) {
+    return (
+      <AccountProvider>
+        <AccountGate />
+      </AccountProvider>
+    );
+  }
+
+  if (!user) {
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <LoginPage />
+      </Suspense>
+    );
+  }
+
+  return (
+    <AccountProvider>
+      <AccountGate />
+    </AccountProvider>
+  );
+}
+
 export default function App() {
   const initialized = useAuthStore((s) => s.initialized);
   const initialize = useAuthStore((s) => s.initialize);
@@ -101,9 +128,7 @@ export default function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <ToastProvider>
-          <AccountProvider>
-            <AccountGate />
-          </AccountProvider>
+          <AuthGate />
           <div id="toastRoot" />
         </ToastProvider>
       </BrowserRouter>

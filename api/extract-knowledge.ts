@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { callLLM } from './_lib/llm';
 import { extractJSON } from './_lib/json';
 import { handleOptions, sendError } from './_lib/http';
+import { requireAuth } from './_lib/auth';
 import { embedBatch, pickEmbedProvider, toVectorLiteral } from './_lib/embedding';
 import { getServiceClient } from './_lib/supabase';
 
@@ -97,13 +98,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;
   if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'Method not allowed');
 
-  const { file_name, category, sample_text, file_id, account_id } = (req.body || {}) as {
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
+
+  const body = (req.body || {}) as {
     file_name?: string;
     category?: string;
     sample_text?: string;
     file_id?: string;
     account_id?: string;
   };
+  const { file_name, category, sample_text, file_id } = body;
+  const account_id = auth.accountId;
 
   if (!sample_text) return sendError(res, 400, 'missing_field', 'sample_text is required');
 

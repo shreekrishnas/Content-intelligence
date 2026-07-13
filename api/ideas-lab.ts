@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { callLLM } from './_lib/llm';
 import { extractJSON } from './_lib/json';
 import { handleOptions, sendError } from './_lib/http';
+import { requireAuth } from './_lib/auth';
 import type { KnowledgeChunk } from './_lib/types';
 
 // Brand-agnostic content strategist. This app is multi-account (finance,
@@ -220,6 +221,9 @@ ${schemas[type] || schemas.brief}`;
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;
   if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'Method not allowed');
+
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
 
   try {
     const body: IdeasRequest = req.body;

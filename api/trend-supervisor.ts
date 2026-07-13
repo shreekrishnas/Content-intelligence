@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { handleOptions, sendError } from './_lib/http';
+import { requireAuth } from './_lib/auth';
 import { supervise } from './_lib/trends';
 import type { DomainProfile, TrendSignal } from './_lib/types';
 
@@ -12,6 +13,9 @@ interface SupervisorRequest {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;
   if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'Method not allowed');
+
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
 
   try {
     const body: SupervisorRequest = req.body || {};

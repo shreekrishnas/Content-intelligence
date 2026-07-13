@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { callLLM } from './_lib/llm';
 import { extractJSON } from './_lib/json';
 import { handleOptions, sendError } from './_lib/http';
+import { requireAuth } from './_lib/auth';
 
 function htmlToText(html: string): string {
   let text = html;
@@ -83,6 +84,9 @@ const PROFILE_JSON_SCHEMA = `{
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;
   if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'Method not allowed');
+
+  const auth = await requireAuth(req, res);
+  if (!auth) return;
 
   try {
     const { url, account_name } = req.body || {};
