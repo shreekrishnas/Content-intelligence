@@ -1,58 +1,439 @@
 # Content Intelligence Platform — Complete End-to-End Documentation
 
+> **What is this document?** This is the single, authoritative reference for the entire Content Intelligence Platform. It covers every concept, every page, every API endpoint, every button, every LLM prompt, every database table, and every data flow — from the moment a user opens the app to the moment content is published. It is written so that a developer, an LLM, or a non-technical stakeholder can fully understand the system without looking at the source code.
+
 ---
 
 ## Table of Contents
 
-1. [Application Overview](#1-application-overview)
-2. [Technology Stack](#2-technology-stack)
-3. [Architecture & File Structure](#3-architecture--file-structure)
-4. [Design System](#4-design-system)
-5. [Database Schema](#5-database-schema)
-6. [Authentication & Account System](#6-authentication--account-system)
-7. [Navigation & Layout](#7-navigation--layout)
-8. [Section 1: New Analysis (AnalyzePage)](#8-section-1-new-analysis)
-9. [Section 2: Opportunities (OpportunitiesPage)](#9-section-2-opportunities)
-10. [Section 3: Studio (StudioPage)](#10-section-3-studio)
-11. [Section 4: Knowledge Base (KnowledgeBasePage)](#11-section-4-knowledge-base)
-12. [Section 5: Ideas Lab (IdeasLabPage)](#12-section-5-ideas-lab)
-13. [Section 6: Trends & Alerts (TrendsPage)](#13-section-6-trends--alerts)
-14. [Section 7: Calendar (CalendarPage)](#14-section-7-calendar)
-15. [Section 8: Settings (SettingsPage)](#15-section-8-settings)
-16. [Knowledge Base Retrieval System](#16-knowledge-base-retrieval-system)
-17. [Embedding System](#17-embedding-system)
-18. [Text Chunking System](#18-text-chunking-system)
-19. [File Parsing System](#19-file-parsing-system)
-20. [Source Archetype System](#20-source-archetype-system)
-21. [Weekly Anil & Rachana Content Playbook](#21-weekly-anil--rachana-content-playbook)
-22. [Cross-Page Data Flow](#22-cross-page-data-flow)
-23. [Complete API Reference](#23-complete-api-reference)
-24. [Environment Variables](#24-environment-variables)
-25. [Deployment & Infrastructure](#25-deployment--infrastructure)
+**Part I — Foundations (What is this app and why does it exist?)**
+
+1. [What is Content Intelligence?](#1-what-is-content-intelligence)
+2. [The Problem It Solves](#2-the-problem-it-solves)
+3. [Who Uses It — The Organization & Client Accounts](#3-who-uses-it--the-organization--client-accounts)
+4. [Key Concepts & Glossary](#4-key-concepts--glossary)
+5. [The Complete User Journey (End-to-End Walkthrough)](#5-the-complete-user-journey-end-to-end-walkthrough)
+6. [How the App Works — High-Level Architecture](#6-how-the-app-works--high-level-architecture)
+
+**Part II — Technical Foundation**
+
+7. [Technology Stack](#7-technology-stack)
+8. [Architecture & File Structure](#8-architecture--file-structure)
+9. [Design System](#9-design-system)
+10. [Database Schema](#10-database-schema)
+11. [Authentication & Account System](#11-authentication--account-system)
+12. [Navigation & Layout](#12-navigation--layout)
+
+**Part III — Every Page, In Depth**
+
+13. [Section 1: New Analysis (AnalyzePage)](#13-section-1-new-analysis)
+14. [Section 2: Opportunities (OpportunitiesPage)](#14-section-2-opportunities)
+15. [Section 3: Studio (StudioPage)](#15-section-3-studio)
+16. [Section 4: Knowledge Base (KnowledgeBasePage)](#16-section-4-knowledge-base)
+17. [Section 5: Ideas Lab (IdeasLabPage)](#17-section-5-ideas-lab)
+18. [Section 6: Trends & Alerts (TrendsPage)](#18-section-6-trends--alerts)
+19. [Section 7: Calendar (CalendarPage)](#19-section-7-calendar)
+20. [Section 8: Settings (SettingsPage)](#20-section-8-settings)
+
+**Part IV — Backend Systems**
+
+21. [Knowledge Base Retrieval System](#21-knowledge-base-retrieval-system)
+22. [Embedding System](#22-embedding-system)
+23. [Text Chunking System](#23-text-chunking-system)
+24. [File Parsing System](#24-file-parsing-system)
+25. [Source Archetype System](#25-source-archetype-system)
+26. [Weekly Anil & Rachana Content Playbook](#26-weekly-anil--rachana-content-playbook)
+
+**Part V — Integration & Operations**
+
+27. [Cross-Page Data Flow](#27-cross-page-data-flow)
+28. [Complete API Reference](#28-complete-api-reference)
+29. [Environment Variables](#29-environment-variables)
+30. [Deployment & Infrastructure](#30-deployment--infrastructure)
 
 ---
 
-## 1. Application Overview
-
-Content Intelligence Platform is an AI-powered content repurposing and strategy tool built for marketing teams. It takes a single source piece (video transcript, blog, webinar, interview, etc.) and produces a complete content repurposing plan — derivative content pieces, target audiences, publication-ready drafts — all grounded in the team's own knowledge base (brand voice, personas, compliance rules, terminology).
-
-### What it does, end to end:
-
-1. **Upload Knowledge Base files** — personas, brand guidelines, compliance rules, expert notes. These are chunked, embedded, and indexed for semantic retrieval.
-2. **Analyze source content** — paste a transcript or article, select source type, run AI analysis. The system extracts topics, matches personas, identifies opportunities, and creates a grounded repurposing plan.
-3. **Manage opportunities** — each analysis generates 5-8 derivative content opportunities (carousel, blog, email, video script, etc.). These enter a pipeline.
-4. **Create content in Studio** — select an opportunity, generate an AI outline, iterate with feedback, generate a full draft, run quality review, approve, and send to calendar.
-5. **Generate ideas in Ideas Lab** — brainstorm content ideas by topic/audience/format. Repurpose webinars into 15-18 pieces. Generate SEO-focused or seasonal ideas. Expand ideas into full briefs, carousel scripts, or blog outlines.
-6. **Monitor trends** — configure a domain profile, run live trend scans (via Tavily news API) or AI-suggested candidates, classify them through an AI Trend Supervisor, and route relevant trends to Ideas Lab or Opportunities.
-7. **Schedule in Calendar** — all generated content lands in a calendar for scheduling, export, and status tracking.
-
-### Who it's built for:
-
-The platform is built for **Trilliant Media**, a marketing agency managing content for 5 client accounts: Right Horizons (financial services), Hoya Vision (eye care), Wipro 3D (additive manufacturing), Wipro Water (water purification), and Wepsol (enterprise solutions).
+# PART I — FOUNDATIONS
 
 ---
 
-## 2. Technology Stack
+## 1. What is Content Intelligence?
+
+**Content Intelligence** is a web application — a single-page app (SPA) that runs in the browser at `https://content-intelligence-ebon.vercel.app`. It is an **AI-powered content repurposing and strategy platform** built for marketing teams.
+
+### In plain language:
+
+Imagine you run a marketing agency. Your client — say, a financial advisory firm — publishes a 30-minute YouTube video where their CEO explains "SIP vs Lumpsum investing." That single video is a goldmine of content, but turning it into 10-15 pieces of social media, blog, email, and carousel content takes a human team days of work.
+
+**Content Intelligence automates this entire process:**
+
+1. You paste the video transcript into the app.
+2. The AI reads it, understands the topics, matches it to your client's brand voice and target personas (which you've uploaded into a Knowledge Base), and produces a complete content repurposing plan — "here are 8 derivative pieces you should create from this source."
+3. For each piece, you can generate an outline, then a full draft, review its quality, refine it, and schedule it for publication — all within the same app.
+
+### What makes it "intelligent"?
+
+The "intelligence" comes from three things:
+
+1. **Grounding** — The AI doesn't hallucinate generic content. It is grounded in your actual brand documents, compliance rules, persona definitions, and expert notes (stored in the Knowledge Base). Every recommendation references real brand knowledge.
+2. **Contextual routing** — Different source types (a video transcript vs. a blog post vs. a weekly expert call) need different analysis approaches. The system automatically detects the source type and routes it through the right analysis archetype.
+3. **Multi-stage pipeline** — Content doesn't jump from "idea" to "published." It moves through a structured pipeline: Source → Analysis → Opportunities → Studio (Outline → Draft → Quality Review → Approval) → Calendar. Each stage has AI assistance and human checkpoints.
+
+### One sentence summary:
+
+> Content Intelligence takes a single piece of source content (transcript, article, expert call) and — using AI grounded in your brand's own knowledge base — produces a complete set of derivative content pieces, each drafted, quality-reviewed, and ready to schedule.
+
+---
+
+## 2. The Problem It Solves
+
+### The problem (without Content Intelligence):
+
+A marketing agency like Trilliant Media manages content for 5 different brands. Each brand has:
+- Its own tone, terminology, and compliance rules
+- Its own personas (e.g., "Cautious Neha" or "Dr. Amit the Optometrist")
+- Its own content calendar and publication channels
+- Its own expert thought leaders who produce raw content (videos, webinars, blog posts)
+
+**Without this tool**, the workflow looks like:
+1. Someone on the team watches a 40-minute video and manually takes notes.
+2. A content strategist brainstorms what derivative content to create.
+3. A writer drafts each piece, guessing at the brand voice.
+4. Someone else reviews for compliance (did we promise returns? did we use banned terms?).
+5. Everything is tracked in spreadsheets, Slack threads, and Google Docs.
+6. Repeat for 5 different brands.
+
+**This takes 3-5 days per source piece** and produces inconsistent quality.
+
+### The solution (with Content Intelligence):
+
+1. Paste the transcript → get a complete repurposing plan in **2 minutes**.
+2. Every recommendation is grounded in the brand's own persona docs, tone guides, and compliance rules.
+3. Generate draft content that already matches brand voice, uses correct terminology, and respects compliance.
+4. Quality review scores the draft on 8 dimensions automatically.
+5. Everything flows through a visible pipeline — nothing falls through the cracks.
+6. Switch between 5 brands with one click — each brand's Knowledge Base and settings are isolated.
+
+---
+
+## 3. Who Uses It — The Organization & Client Accounts
+
+### The Organization: Trilliant Media
+
+Content Intelligence is built for **Trilliant Media**, a marketing and content strategy agency based in India. Trilliant Media manages content production for multiple B2B and B2C brands across different industries.
+
+### The 5 Client Accounts
+
+The platform manages 5 client accounts. Each account is a completely separate workspace — its own Knowledge Base, its own analyses, its own opportunities, its own content pipeline, its own trend monitoring, and its own calendar.
+
+| # | Account Name | Industry | What They Do | Example Source Content |
+|---|-------------|----------|-------------|----------------------|
+| 1 | **Right Horizons** | Financial Services / Wealth Management | Portfolio management, mutual funds, equity research. India-focused. | CEO (Anil Rego) videos on market commentary, SIP vs Lumpsum, tax planning; weekly expert calls with Anil & Rachana. |
+| 2 | **Hoya Vision** | Eye Care / Optics | Ophthalmic lenses, coatings, lens technology. | Articles about blue light protection, progressive lenses, optometrist partnerships. |
+| 3 | **Wipro 3D** | Additive Manufacturing / 3D Printing | Industrial 3D printing for aerospace, automotive, medical. | Webinars on metal 3D printing, case studies, whitepapers. |
+| 4 | **Wipro Water** | Water Purification / Treatment | Industrial and municipal water purification systems. | Technical blogs, case studies, sustainability content. |
+| 5 | **Wepsol** | Enterprise Solutions / Technology | Enterprise software and digital transformation. | Product updates, industry trend pieces, thought leadership. |
+
+### How accounts are isolated:
+
+When a user switches from "Right Horizons" to "Hoya Vision":
+- The Knowledge Base changes — they see Hoya's brand docs, not Right Horizons'.
+- The analyses change — only Hoya's past analyses are visible.
+- The opportunities, studio content, calendar, trends — all scoped to Hoya.
+- The source types change — Hoya has different source type options than Right Horizons.
+
+This is enforced at the database level via Row-Level Security (RLS) on every table.
+
+### Who are the actual human users?
+
+The users are **Trilliant Media team members** — content strategists, writers, and managers. They are NOT the end clients (Right Horizons employees don't log into this tool). Trilliant's team uses this tool to produce content ON BEHALF of their clients.
+
+Typical user personas:
+- **Content Strategist**: Runs analyses, reviews opportunities, decides what to produce.
+- **Content Writer**: Uses Studio to generate outlines and drafts, iterates with AI feedback.
+- **Account Manager**: Switches between accounts, monitors pipeline, schedules content.
+
+---
+
+## 4. Key Concepts & Glossary
+
+Understanding these terms is essential to understanding the rest of this document:
+
+| Term | What it means | Example |
+|------|--------------|---------|
+| **Source Content** | The original raw content that will be repurposed. Could be a video transcript, blog post, webinar recording notes, expert call notes, or article. | A 2000-word transcript of Anil Rego's YouTube video about "SIP vs Lumpsum." |
+| **Source Type** | A category label for the source content that tells the AI how to analyze it. Each account has its own set of source types. | "ET Video", "Author Blog", "Weekly Anil/Rachana", "Webinar", "Trending Topic" |
+| **Analysis** | The AI's structured breakdown of source content: extracted topics, matched personas, identified opportunities, quality assessment. | An analysis might find 3 main topics, match them to 2 personas, and suggest 7 derivative content opportunities. |
+| **Opportunity** | A single recommended derivative content piece generated by an analysis. It has a title, format, target persona, angle, and priority. | "Carousel: 5 Things to Know Before Starting a SIP" — targeted at persona "Cautious Neha", format "carousel", priority "high". |
+| **Knowledge Base (KB)** | A collection of brand-specific documents uploaded by the team. These are used to ground every AI response in real brand knowledge. | Right Horizons' KB might include: "Anil Rego Persona.pdf", "Brand Tone Guide.docx", "Compliance Rules.txt", "Mutual Fund Terminology.xlsx". |
+| **KB Chunk** | A small piece of a Knowledge Base file (300-500 words) stored with a vector embedding for semantic search. When the AI needs brand context, it searches these chunks. | A chunk might contain: "Anil Rego is the Founder & CEO of Right Horizons. He has 28+ years of experience in financial services..." |
+| **Embedding** | A 1024-dimensional numeric vector that represents the meaning of a text passage. Used for semantic similarity search — "find KB chunks that are about the same topic as this query." | The text "retirement planning for young professionals" gets converted to a vector `[0.023, -0.041, 0.087, ...]` (1024 numbers). |
+| **Grounding** | The practice of making AI responses reference actual brand documents rather than generic knowledge. The AI is given relevant KB chunks as context and instructed to use them. | Instead of saying "use a professional tone," a grounded AI response says "use the conversational yet authoritative tone specified in the Right Horizons Brand Guide." |
+| **Persona** | A fictional but research-backed representation of a target audience member. Stored as KB files. The AI matches content opportunities to relevant personas. | "Cautious Neha" — 32-year-old IT professional, first-time investor, needs reassurance, prefers step-by-step guides. |
+| **Studio** | The content creation workspace where opportunities are turned into finished content through a multi-stage pipeline: Outline → Draft → Quality Review → Approval. | A writer opens an opportunity "Blog: Why SIPs Beat Lumpsum in Volatile Markets" in Studio, generates an outline, refines it, generates a full 800-word draft, runs quality review, and approves. |
+| **Quality Review** | An AI-powered scoring of a draft across 8 dimensions: language, readability, India context, brand tone, persona tone, sales pressure, jargon level, source support. Each scored 0-100. | A draft scores: Language 92, Readability 85, India Context 88, Brand Tone 78, Persona Tone 82, Sales Pressure 30 (good — low pressure), Jargon 25 (good — accessible), Source Support 90. |
+| **Archetype** | A classification of source content that determines how the AI analyzes it. There are 12 archetypes (e.g., "video_transcript", "expert_blog", "webinar_recap", "weekly_expert_reflection"). | A "Weekly Anil/Rachana" source type maps to the "weekly_expert_reflection" archetype, which triggers a specialized analysis prompt (the Content Playbook). |
+| **Trend** | An industry topic or news item identified through automated scanning. Trends are scored, classified, and routed to determine if they are worth creating content about. | "SEBI's New SIP Cancellation Rules" — classified as "domain_trend" with domain_relevance=85, trend_impact=72. |
+| **Trend Supervisor** | The AI agent that evaluates raw trend signals, deduplicates them, scores them on 4 dimensions (relevance, impact, adaptability, risk), and routes them (forward, monitor, or reject). | 20 raw news articles about mutual funds are fed to the Supervisor. It clusters them into 8 unique topics, scores each, and forwards 3 as domain trends, monitors 2, and rejects 3. |
+| **Domain Profile** | A configuration for an account that describes its industry, target keywords, audience, restricted topics, and content preferences. Used by the Trend Supervisor to decide relevance. | Right Horizons' profile: industry="financial services", keywords="mutual funds, SIP, equity", restricted="crypto, specific stock tips". |
+| **Calendar Item** | A scheduled content piece with a title, format, body, and target date. Created when content is approved in Studio. | "Blog: 5 SIP Myths Busted" — scheduled for March 15, format "blog", status "scheduled". |
+| **Serverless Function** | A backend API endpoint that runs on Vercel's infrastructure. Each function is a standalone TypeScript file in the `api/` folder. Functions are stateless and process one request at a time. | `POST /api/analyze-content` — receives source text, calls the LLM, returns a structured analysis. |
+| **OpenRouter** | A third-party API gateway that routes LLM requests to various AI models. Content Intelligence uses it to access Claude (Anthropic's AI model) without a direct Anthropic API key. | The app sends a request to OpenRouter saying "use anthropic/claude-sonnet-4-5", and OpenRouter routes it to Claude. |
+
+---
+
+## 5. The Complete User Journey (End-to-End Walkthrough)
+
+This section walks through the entire lifecycle of content — from the moment a user opens the app to the moment content is scheduled for publication. This is the "golden path" that a new user would follow.
+
+### Step 1: Open the App
+
+The user navigates to `https://content-intelligence-ebon.vercel.app` in their browser.
+
+**What they see:** A frosted-glass interface with a gradient background. On the left is a narrow sidebar (96px wide) with 8 icon tabs. At the top is a topbar showing the current section name, an account dropdown, and a theme toggle (light/dark).
+
+**Default state:** The app loads with the "Right Horizons" account selected and the "New Analysis" tab active.
+
+### Step 2: Set Up the Knowledge Base (one-time, per account)
+
+Before running any analysis, the team should upload brand documents to the Knowledge Base. This is how the AI learns about the specific brand.
+
+**Navigate:** Click the **Knowledge Base** tab (book icon) in the sidebar.
+
+**Upload files:** Click the upload area or drag files. Supported formats: PDF, DOCX, XLSX, CSV, JSON, HTML, XML, TXT, RTF.
+
+**For each file:**
+1. Select a **category** — this tells the system what kind of document it is:
+   - `persona` — audience persona definitions (e.g., "Cautious Neha.pdf")
+   - `brand` — brand tone, voice, messaging guidelines
+   - `compliance` — rules about what can/can't be said (SEBI rules, disclaimers)
+   - `terminology` — glossary, technical terms, brand-specific jargon
+   - `expert` — expert bios, thought leadership credentials
+   - `guidelines` — content creation guidelines, style rules
+   - `raw_notes` — meeting notes, call transcripts
+   - `data` — data tables, statistics, research
+   - `idea` — content ideas, brainstorm notes
+2. Select a **priority** — `critical` (always included), `high`, `standard`, `low`
+3. Click **Upload**
+
+**What happens behind the scenes when a file is uploaded:**
+1. The file is parsed (PDF → text, DOCX → text, etc.) using client-side parsers
+2. The text is split into overlapping chunks of ~500 words each
+3. Each chunk is sent to the `/api/extract-knowledge` endpoint
+4. The LLM extracts structured metadata (summary, topics, key messages)
+5. Each chunk is embedded into a 1024-dimensional vector
+6. Chunks + embeddings are stored in the `knowledge_chunks` table
+7. The file record is updated to `ingest_status: 'ready'`
+
+**Example:** Uploading "Right_Horizons_Brand_Guide.pdf" (12 pages) produces ~20 chunks, each embedded and indexed for semantic search. When the AI later needs to match brand tone, it will retrieve the most relevant chunks from this file.
+
+### Step 3: Run a Content Analysis
+
+**Navigate:** Click the **New Analysis** tab (magnifying glass icon) in the sidebar.
+
+**Fill the form:**
+1. **Select source type** — Click one of the badges at the top (e.g., "ET Video", "Author Blog", "Weekly Anil/Rachana"). This tells the AI what kind of content this is.
+2. **Source Title** — e.g., "Anil Sir on SIP vs Lumpsum" (required)
+3. **Source Owner** — e.g., "Anil Rego" (optional)
+4. **Source Content** — Paste the full transcript, article text, or URL (required)
+5. **Marketing Notes** — Any specific direction for the AI (optional)
+
+**Click "Run Analysis"**
+
+**What the user sees:** An animated 9-step progress stepper appears on the right:
+1. Reading Source → 2. Checking Knowledge Base → 3. Extracting Topics → ... → 9. Complete
+
+**What happens behind the scenes:**
+1. The app fetches relevant KB chunks (persona docs, brand guidelines, compliance rules) using semantic search
+2. It detects the source archetype (e.g., "video_transcript" or "weekly_expert_reflection")
+3. It sends everything to `POST /api/analyze-content` — the source text, KB context, archetype hints
+4. The LLM produces a structured JSON analysis: summary, topics, insights, persona matches, and 5-8 content opportunities
+5. The analysis and opportunities are saved to the database
+
+**Output:** The user sees a rich results panel showing:
+- Overall summary of the source content
+- Extracted topics with descriptions
+- Key insights and themes
+- Persona matches with relevance scores
+- 5-8 content opportunities (e.g., "Carousel: 5 SIP Myths", "Blog: Why Lumpsum Timing is a Myth")
+
+### Step 4: Review and Manage Opportunities
+
+**Navigate:** Click the **Opportunities** tab (lightbulb icon) in the sidebar.
+
+**What they see:** A pipeline board showing all opportunities across all analyses for this account, organized by status:
+- **Open** — new opportunities not yet worked on
+- **In Studio** — opportunities currently being drafted
+- **Dropped** — declined opportunities
+
+**For each opportunity card:**
+- Title, format, persona, priority badge
+- Content angle description
+- "Send to Studio" button → opens this opportunity in the Studio
+- "Drop" button → moves to dropped status
+
+### Step 5: Create Content in Studio
+
+**Navigate:** Click **"Send to Studio"** on an opportunity, or go to the **Studio** tab and select an opportunity from the dropdown.
+
+**The Studio pipeline has 4 stages:**
+
+**Stage 1 — Generate Outline:**
+- Click **"Generate Outline"**
+- The AI creates a structured outline for the content piece, grounded in KB context
+- The outline appears in a markdown editor
+- User can provide feedback and click **"Refine Outline"** to iterate
+
+**Stage 2 — Generate Draft:**
+- Click **"Generate Draft"**
+- The AI expands the outline into a full draft (800-2000 words depending on format)
+- Draft appears in markdown with rendered preview
+- User can provide feedback and click **"Regenerate with Feedback"**
+
+**Stage 3 — Quality Review:**
+- Click **"Run Quality Review"**
+- The AI scores the draft on 8 dimensions (0-100 each):
+  - Language quality, Readability, India context, Brand tone match, Persona tone match, Sales pressure (lower is better), Jargon level (lower is better), Source support
+- Results appear as a scorecard with color-coded bars
+- If scores are low, user can regenerate with specific feedback
+
+**Stage 4 — Approve & Schedule:**
+- Click **"Approve"** → status changes to "approved"
+- Click **"Send to Calendar"** → creates a calendar item with the content
+
+### Step 6: Generate Ideas (Optional Path)
+
+**Navigate:** Click the **Ideas Lab** tab (flask icon) in the sidebar.
+
+Ideas Lab is an alternative starting point. Instead of analyzing existing content, users can brainstorm new content ideas from scratch.
+
+**5 modes available:**
+1. **Brainstorm** — "Give me 10 content ideas about [topic] for [audience]"
+2. **Repurpose** — "Take this webinar and suggest 15 derivative pieces"
+3. **SEO Ideas** — "What content should we create for [keyword]?"
+4. **Seasonal** — "What timely content should we create for [month/event]?"
+5. **Expand** — "Take this idea and expand it into a full brief"
+
+Each generated idea can be sent to Opportunities as a new opportunity.
+
+### Step 7: Monitor Industry Trends (Optional Path)
+
+**Navigate:** Click the **Trends & Alerts** tab (pulse icon) in the sidebar.
+
+**Set up a Domain Profile:** Configure the account's industry, keywords, restricted topics, and risk tolerance in the trend settings panel.
+
+**Run a trend scan:**
+- **Live Scan** — searches Tavily News API for current industry news, then feeds results through the AI Trend Supervisor
+- **AI Suggest** — asks the AI to suggest trending topics without external search
+- **Auto Scan** — runs daily at 6 AM UTC via Vercel cron job
+
+**Results:** Each trend is scored on 4 dimensions and classified:
+- **Domain Trend** (green) — directly relevant, forward to action
+- **Supertrend Exception** (blue) — not core domain but high impact, with brand connection
+- **Monitor** (yellow) — watch for now
+- **Reject** (gray) — not relevant
+
+Accepted trends can be routed to Ideas Lab or Opportunities.
+
+### Step 8: Schedule Content
+
+**Navigate:** Click the **Calendar** tab (calendar icon) in the sidebar.
+
+**What they see:** A monthly calendar grid showing scheduled content items. Each item shows title, format badge, and status.
+
+**Actions:**
+- Click a date to add a new item manually
+- Items from Studio ("Send to Calendar") appear automatically
+- Click an item to view/edit details
+- Change status: scheduled → published → cancelled
+
+### Summary: The Complete Data Flow
+
+```
+Source Content (transcript, article, expert call)
+    │
+    ▼
+[New Analysis] ──AI──▶ Structured Analysis + 5-8 Opportunities
+    │                                              │
+    │                                              ▼
+    │                                    [Opportunities Pipeline]
+    │                                         │          │
+    │                                    Send to Studio  Drop
+    │                                         │
+    │                                         ▼
+    │                                    [Studio Pipeline]
+    │                                    Outline → Draft → Quality Review → Approve
+    │                                         │
+    │                                         ▼
+    │                                    [Calendar]
+    │                                    Schedule → Publish
+    │
+[Ideas Lab] ──AI──▶ Content Ideas ──▶ [Opportunities Pipeline] ──▶ same flow
+    │
+[Trends] ──AI──▶ Scored Trends ──▶ [Ideas Lab] or [Opportunities] ──▶ same flow
+```
+
+---
+
+## 6. How the App Works — High-Level Architecture
+
+### The Three Layers
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    BROWSER (Frontend)                         │
+│  React 19 SPA + Zustand state + Supabase JS client           │
+│  Runs entirely in the user's browser                         │
+│  Handles: UI, navigation, file parsing, KB chunking,         │
+│           direct Supabase reads/writes, API calls             │
+└─────────────────────┬────────────────────────────────────────┘
+                      │ HTTPS requests to /api/*
+                      ▼
+┌──────────────────────────────────────────────────────────────┐
+│                 VERCEL SERVERLESS (Backend)                    │
+│  9 independent TypeScript functions in api/                   │
+│  Each function is fully self-contained (no shared imports)    │
+│  Handles: LLM calls via OpenRouter, embedding generation,     │
+│           trend scanning via Tavily, cron jobs                 │
+└─────────────────────┬────────────────────────────────────────┘
+                      │ SQL queries + RPC calls
+                      ▼
+┌──────────────────────────────────────────────────────────────┐
+│                   SUPABASE (Database + Auth)                  │
+│  PostgreSQL + pgvector + Row-Level Security                   │
+│  Handles: Data storage, vector similarity search,             │
+│           file storage, auth, access control                  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### What runs WHERE:
+
+| Operation | Where it runs | Why |
+|-----------|--------------|-----|
+| UI rendering, page navigation | Browser | Instant responsiveness |
+| File parsing (PDF/DOCX → text) | Browser | Avoids uploading large files to server |
+| Text chunking | Browser | Same reason |
+| Reading/writing database records | Browser → Supabase directly | Supabase JS client handles auth + RLS |
+| LLM calls (analysis, content gen) | Vercel serverless | API keys must stay server-side |
+| Embedding generation | Vercel serverless | API keys must stay server-side |
+| Trend scanning (Tavily API) | Vercel serverless | API keys must stay server-side |
+| Cron jobs (daily trend scan) | Vercel serverless (triggered by Vercel cron) | Automated, no user action needed |
+
+### Why are API files self-contained?
+
+**Critical rule:** Every file in the `api/` folder must be 100% self-contained. It can only import `import type { VercelRequest, VercelResponse } from '@vercel/node'`. No imports from `src/`, no imports from other `api/` files, no shared utility files.
+
+**Why:** Vercel serverless functions are deployed as independent bundles. Each function is a separate Lambda. They cannot share code at runtime. If you try to import from `../lib/utils`, the build will fail because Vercel doesn't bundle cross-references. So every utility function (LLM calling, JSON extraction, retry logic) is copy-pasted into each API file.
+
+---
+
+# PART II — TECHNICAL FOUNDATION
+
+---
+
+---
+
+## 7. Technology Stack
 
 | Layer | Technology | Version | Purpose |
 |-------|-----------|---------|---------|
@@ -71,7 +452,7 @@ The platform is built for **Trilliant Media**, a marketing agency managing conte
 
 ---
 
-## 3. Architecture & File Structure
+## 8. Architecture & File Structure
 
 ```
 Content-intelligence/
@@ -147,7 +528,7 @@ Content-intelligence/
 
 ---
 
-## 4. Design System
+## 9. Design System
 
 The platform uses a custom glassmorphism design system with CSS custom properties for light/dark theme switching.
 
@@ -206,7 +587,7 @@ The app background is a multi-color radial gradient with 80px blur:
 
 ---
 
-## 5. Database Schema
+## 10. Database Schema
 
 ### Tables Overview
 
@@ -431,7 +812,7 @@ Trigger function on `users` INSERT. Grants `'editor'` role on all 5 accounts.
 
 ---
 
-## 6. Authentication & Account System
+## 11. Authentication & Account System
 
 ### Authentication Flow
 
@@ -476,7 +857,7 @@ The `AccountSwitcher` dropdown in the Topbar lets the user switch accounts. On s
 
 ---
 
-## 7. Navigation & Layout
+## 12. Navigation & Layout
 
 ### AppShell Structure
 
@@ -526,7 +907,13 @@ The topbar shows:
 
 ---
 
-## 8. Section 1: New Analysis
+---
+
+# PART III — EVERY PAGE, IN DEPTH
+
+---
+
+## 13. Section 1: New Analysis
 
 **Page:** `src/pages/AnalyzePage.tsx`
 **API Endpoint:** `POST /api/analyze-content`
@@ -774,7 +1161,7 @@ When analysis completes, the input form is replaced by a results view:
 
 ---
 
-## 9. Section 2: Opportunities
+## 14. Section 2: Opportunities
 
 **Page:** `src/pages/OpportunitiesPage.tsx`
 **Purpose:** Pipeline view of all content opportunities generated from analyses or trends.
@@ -825,7 +1212,7 @@ Opportunities enter this page from two sources:
 
 ---
 
-## 10. Section 3: Studio
+## 15. Section 3: Studio
 
 **Page:** `src/pages/StudioPage.tsx`
 **API Endpoint:** `POST /api/generate-content`
@@ -1013,7 +1400,7 @@ Action buttons: Copy, Download (.md), Edit Draft (revert to draft stage), Send t
 
 ---
 
-## 11. Section 4: Knowledge Base
+## 16. Section 4: Knowledge Base
 
 **Page:** `src/pages/KnowledgeBasePage.tsx`
 **API Endpoint:** `POST /api/extract-knowledge` (structured extraction + embedding)
@@ -1166,7 +1553,7 @@ CRITICAL OUTPUT RULE: respond with ONLY raw JSON.
 
 ---
 
-## 12. Section 5: Ideas Lab
+## 17. Section 5: Ideas Lab
 
 **Page:** `src/pages/IdeasLabPage.tsx`
 **API Endpoint:** `POST /api/ideas-lab`
@@ -1350,7 +1737,7 @@ When a user clicks "Ideas Lab" on a trend card in the Trends page, the trend dat
 
 ---
 
-## 13. Section 6: Trends & Alerts
+## 18. Section 6: Trends & Alerts
 
 **Page:** `src/pages/TrendsPage.tsx`
 **API Endpoints:** `POST /api/trend-scan`, `POST /api/trend-supervisor`, `POST /api/auto-profile`
@@ -1507,7 +1894,7 @@ Each trend card shows:
 
 ---
 
-## 14. Section 7: Calendar
+## 19. Section 7: Calendar
 
 **Page:** `src/pages/CalendarPage.tsx`
 **Purpose:** Schedule, track, and export all generated content.
@@ -1562,7 +1949,7 @@ Items are sorted: scheduled items first (by date ascending), then unscheduled it
 
 ---
 
-## 15. Section 8: Settings
+## 20. Section 8: Settings
 
 **Page:** `src/pages/SettingsPage.tsx`
 **Purpose:** Configure external integrations and view platform status.
@@ -1614,7 +2001,13 @@ Items are sorted: scheduled items first (by date ascending), then unscheduled it
 
 ---
 
-## 16. Knowledge Base Retrieval System
+---
+
+# PART IV — BACKEND SYSTEMS
+
+---
+
+## 21. Knowledge Base Retrieval System
 
 **File:** `src/lib/retrieval.ts`
 **Purpose:** Powers all AI operations by fetching relevant KB content for grounding.
@@ -1696,7 +2089,7 @@ retrieve(accountId, queryText, taskType)
 
 ---
 
-## 17. Embedding System
+## 22. Embedding System
 
 ### Multi-Provider Architecture
 
@@ -1730,7 +2123,7 @@ Override: `EMBED_PROVIDER` env var forces a specific provider.
 
 ---
 
-## 18. Text Chunking System
+## 23. Text Chunking System
 
 **File:** `src/lib/chunker.ts`
 
@@ -1773,7 +2166,7 @@ For a 10,000-character document:
 
 ---
 
-## 19. File Parsing System
+## 24. File Parsing System
 
 **File:** `src/lib/fileParser.ts`
 
@@ -1801,7 +2194,7 @@ For a 10,000-character document:
 
 ---
 
-## 20. Source Archetype System
+## 25. Source Archetype System
 
 **Server:** `api/analyze-content.ts` (inline)
 **Client:** `src/lib/archetype-hint.ts`
@@ -1833,7 +2226,7 @@ Each archetype defines 4 rule fields:
 
 ---
 
-## 21. Weekly Anil & Rachana Content Playbook
+## 26. Weekly Anil & Rachana Content Playbook
 
 The `weekly_expert_reflection` archetype includes a comprehensive playbook that is appended to the analysis prompt when source type matches "Weekly Anil/Rachana" patterns.
 
@@ -1866,7 +2259,13 @@ The `weekly_expert_reflection` archetype includes a comprehensive playbook that 
 
 ---
 
-## 22. Cross-Page Data Flow
+---
+
+# PART V — INTEGRATION & OPERATIONS
+
+---
+
+## 27. Cross-Page Data Flow
 
 ### Complete Content Pipeline
 
@@ -1927,7 +2326,7 @@ When switching accounts via `AccountSwitcher`:
 
 ---
 
-## 23. Complete API Reference
+## 28. Complete API Reference
 
 ### All 9 Serverless Endpoints
 
@@ -2222,7 +2621,7 @@ Client loops calling this until `done: true` or `remaining <= 0`.
 
 ---
 
-## 24. Environment Variables
+## 29. Environment Variables
 
 ### Required
 
@@ -2262,7 +2661,7 @@ Client loops calling this until `done: true` or `remaining <= 0`.
 
 ---
 
-## 25. Deployment & Infrastructure
+## 30. Deployment & Infrastructure
 
 ### Vercel Configuration (`vercel.json`)
 
@@ -2309,4 +2708,4 @@ Client loops calling this until `done: true` or `remaining <= 0`.
 
 ---
 
-*This document covers the complete Content Intelligence Platform — every page, every API endpoint, every button, every flow, every prompt, every output schema. It is designed to serve as a comprehensive reference for developers, LLMs, and stakeholders who need to understand the full system end to end.*
+*This document covers the complete Content Intelligence Platform — every page, every API endpoint, every button, every flow, every prompt, every output schema. It starts from the basics (what the app is, who uses it, the glossary) and builds up to full technical depth. It is designed to serve as a comprehensive reference for developers, LLMs, and stakeholders who need to understand the full system end to end.*
