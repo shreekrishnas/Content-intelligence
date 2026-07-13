@@ -1,11 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { callLLM } from './_lib/llm';
+import { extractJSON } from './_lib/json';
+import { handleOptions, sendError } from './_lib/http';
+import type { FileContext } from './_lib/types';
 
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MAX_RETRIES = 2;
-const INITIAL_BACKOFF_MS = 1000;
-
-// ---- Inlined source-archetype rules (previously imported from
-// ../lib/source-archetypes.ts). Inlined so Vercel definitely bundles it. ----
+// ---- Source-archetype rules ----
 
 type Archetype =
   | 'video' | 'blog' | 'webinar' | 'event' | 'trending' | 'research'
@@ -172,7 +171,7 @@ function buildSourceGuidance(ctx: SourceTypeContext): { archetype: Archetype; bl
   }
   return { archetype, block: lines.join('\n') };
 }
-// ---- End inlined archetype rules ----
+// ---- End archetype rules ----
 
 // Brand-agnostic REPURPOSING strategist with STRICT KB grounding.
 const GROUNDING_SYSTEM_PROMPT = `You are a senior content repurposing strategist. The user has ONE source piece — a video, blog, webinar, report, interview, whatever — and your job is to plan the derivative content pieces that can be created from it.
@@ -194,24 +193,9 @@ YOUR ROLE (when KB grounding is possible):
 - Every derivative piece must name the exact source moment it repurposes AND cite the KB chunk IDs that back it.
 - Respect the SOURCE TYPE's allowed formats list — do not propose formats outside that list.`;
 
-function extractJSON(text: string): unknown {
-  const stripped = text
-    .replace(/^```(?:json|javascript|js)?\s*\n?/gim, '')
-    .replace(/\n?```\s*$/gim, '')
-    .trim();
-  try { return JSON.parse(stripped); } catch { /* try brace extraction */ }
-  const s = stripped.indexOf('{');
-  const e = stripped.lastIndexOf('}');
-  if (s !== -1 && e > s) {
-    try { return JSON.parse(stripped.slice(s, e + 1)); } catch { /* fall through */ }
-  }
-  throw new Error('LLM returned a response that could not be parsed as JSON. Please try again.');
-}
-
-interface FileContext {
-  file_id: string;
-  file_name: string;
-  category: string;
+/** Extended FileContext with optional structured metadata used by this endpoint. */
+interface AnalyzeFileContext extends FileContext {
+  file_id?: string;
   structured?: Record<string, unknown>;
 }
 
@@ -224,12 +208,12 @@ interface AnalyzeRequest {
   source_url?: string;
   marketing_notes?: string;
   knowledge_chunks?: Array<{ id: string; content: string; metadata?: Record<string, unknown> }>;
-  file_context?: FileContext[];
+  file_context?: AnalyzeFileContext[];
   personas?: Array<{ name: string; description: string; pain_points?: string[]; goals?: string[] }>;
   account_id: string;
 }
 
-function buildFileContextSection(files: FileContext[]): string {
+function buildFileContextSection(files: AnalyzeFileContext[]): string {
   if (!files?.length) return '';
   const lines = files.map((f, i) => {
     const s = f.structured as any;
@@ -241,93 +225,11 @@ function buildFileContextSection(files: FileContext[]): string {
   return `\n\nKNOWLEDGE BASE FILES:\n${lines.join('\n')}`;
 }
 
-async function callLLM(
-  systemPrompt: string,
-  userPrompt: string,
-  options: { maxTokens?: number; temperature?: number } = {},
-): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    throw new Error('OPENROUTER_API_KEY is not configured. Add it in Vercel Environment Variables.');
-  }
-
-  const model = process.env.LLM_MODEL ?? 'anthropic/claude-sonnet-4-5';
-  const maxTokens = options.maxTokens ?? 4096;
-  const temperature = options.temperature ?? 0.3;
-
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (attempt > 0) {
-      const backoffMs = INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1);
-      await new Promise((resolve) => setTimeout(resolve, backoffMs));
-    }
-
-    try {
-      const response = await fetch(OPENROUTER_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': process.env.SITE_URL ?? 'https://content-intelligence-ebon.vercel.app',
-          'X-Title': 'Content Intelligence Platform',
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: maxTokens,
-          temperature,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-        }),
-      });
-
-      if (response.status === 429) {
-        lastError = new Error('Rate limit reached. Please wait a moment and try again.');
-        continue;
-      }
-      if (!response.ok) {
-        let msg: string;
-        try {
-          const body = await response.json();
-          const detail = body?.error?.message || 'Unknown error';
-          if (response.status === 401) msg = 'Invalid API key. Check your OPENROUTER_API_KEY in Vercel Environment Variables.';
-          else if (response.status === 402) msg = 'OpenRouter account has insufficient credits. Add credits at openrouter.ai.';
-          else if (response.status === 404) msg = `Model not found on OpenRouter. Set a valid LLM_MODEL in Vercel Environment Variables. Detail: ${detail}`;
-          else msg = `LLM service error (${response.status}): ${detail}`;
-        } catch {
-          msg = `LLM service error (${response.status}). Please try again.`;
-        }
-        throw new Error(msg);
-      }
-
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) throw new Error('No content in LLM response');
-      return content;
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('Rate limited')) {
-        lastError = error;
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  throw lastError ?? new Error('Failed to call LLM after retries');
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'authorization, x-client-info, apikey, content-type');
-
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
+  if (handleOptions(req, res)) return;
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Method not allowed');
   }
 
   try {
@@ -426,16 +328,16 @@ Rules that make the plan usable:
 
 Output ONLY raw JSON.`;
 
-    const result = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
+    const { content: raw } = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
       maxTokens: 8192,
       temperature: 0.35,
     });
 
     let analysis;
     try {
-      analysis = extractJSON(result);
+      analysis = extractJSON(raw);
     } catch {
-      const preview = result.slice(0, 300).replace(/\n/g, ' ');
+      const preview = raw.slice(0, 300).replace(/\n/g, ' ');
       return res.status(502).json({
         error: `Analysis failed: the model returned an unexpected response. Try with shorter content or fewer knowledge files. Preview: "${preview}..."`,
       });

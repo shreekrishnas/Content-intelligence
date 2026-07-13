@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MAX_RETRIES = 2;
-const INITIAL_BACKOFF_MS = 1000;
+import { callLLM } from './_lib/llm';
+import { extractJSON } from './_lib/json';
+import { handleOptions, sendError } from './_lib/http';
+import type { KnowledgeChunk } from './_lib/types';
 
 // Brand-agnostic content strategist. This app is multi-account (finance,
 // eyewear, water treatment, etc.), so the DNA stays generic and leans on the
@@ -17,26 +17,6 @@ HOW YOU WORK:
 - Vary format, angle, funnel stage, and audience segment across the batch — no two ideas should feel like the same idea reworded.
 - Write hooks that lead with a specific number, tension, or insight — not a vague promise.
 - Be honest about compliance: flag risky claims rather than making them.`;
-
-function extractJSON(text: string): unknown {
-  const stripped = text
-    .replace(/^```(?:json|javascript|js)?\s*\n?/gim, '')
-    .replace(/\n?```\s*$/gim, '')
-    .trim();
-  try { return JSON.parse(stripped); } catch { /* try array/object extraction */ }
-  // Try both object and array bounds
-  const candidates: Array<[number, number]> = [];
-  const ob = stripped.indexOf('{'); const cb = stripped.lastIndexOf('}');
-  if (ob !== -1 && cb > ob) candidates.push([ob, cb]);
-  const oa = stripped.indexOf('['); const ca = stripped.lastIndexOf(']');
-  if (oa !== -1 && ca > oa) candidates.push([oa, ca]);
-  for (const [s, e] of candidates) {
-    try { return JSON.parse(stripped.slice(s, e + 1)); } catch { /* next */ }
-  }
-  throw new Error('The model returned a response that could not be parsed as JSON. Please try again.');
-}
-
-interface KnowledgeChunk { id: string; content: string }
 
 interface IdeasRequest {
   task: 'generate' | 'webinar' | 'seo' | 'seasonal' | 'expand';
@@ -54,75 +34,6 @@ interface IdeasRequest {
   output_type?: 'brief' | 'carousel' | 'blog' | 'caption';
   avoid_titles?: string[];
   knowledge_chunks?: KnowledgeChunk[];
-}
-
-async function callLLM(
-  systemPrompt: string,
-  userPrompt: string,
-  options: { maxTokens?: number; temperature?: number } = {},
-): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured. Add it in Vercel Environment Variables.');
-
-  const model = process.env.LLM_MODEL ?? 'anthropic/claude-sonnet-4-5';
-  const maxTokens = options.maxTokens ?? 6000;
-  const temperature = options.temperature ?? 0.8;
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1)));
-    }
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 90000);
-      const response = await fetch(OPENROUTER_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': process.env.SITE_URL ?? 'https://content-intelligence-ebon.vercel.app',
-          'X-Title': 'Content Intelligence Platform',
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: maxTokens,
-          temperature,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (response.status === 429) { lastError = new Error('Rate limit reached. Please wait a moment and try again.'); continue; }
-      if (!response.ok) {
-        let msg: string;
-        try {
-          const body = await response.json();
-          const detail = body?.error?.message || 'Unknown error';
-          if (response.status === 401) msg = 'Invalid API key. Check your OPENROUTER_API_KEY in Vercel Environment Variables.';
-          else if (response.status === 402) msg = 'OpenRouter account has insufficient credits. Add credits at openrouter.ai.';
-          else if (response.status === 404) msg = `Model not found on OpenRouter. Set a valid LLM_MODEL in Vercel Environment Variables. Detail: ${detail}`;
-          else msg = `LLM service error (${response.status}): ${detail}`;
-        } catch {
-          msg = `LLM service error (${response.status}). Please try again.`;
-        }
-        throw new Error(msg);
-      }
-
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) throw new Error('No content in LLM response');
-      return content;
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('Rate limited')) { lastError = error; continue; }
-      throw error;
-    }
-  }
-  throw lastError ?? new Error('Failed to call LLM after retries');
 }
 
 function kbSection(chunks?: KnowledgeChunk[]): string {
@@ -307,15 +218,12 @@ ${schemas[type] || schemas.brief}`;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'authorization, x-client-info, apikey, content-type');
-
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (handleOptions(req, res)) return;
+  if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'Method not allowed');
 
   try {
     const body: IdeasRequest = req.body;
-    if (!body?.task) return res.status(400).json({ error: 'Missing required field: task.' });
+    if (!body?.task) return sendError(res, 400, 'missing_task', 'Missing required field: task.');
 
     let userPrompt: string;
     let maxTokens = 6000;
@@ -324,29 +232,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     switch (body.task) {
       case 'generate': userPrompt = buildGenerate(body); maxTokens = 5000; temperature = 0.85; break;
       case 'webinar':
-        if (!body.text?.trim()) return res.status(400).json({ error: 'Webinar repurposing requires source text.' });
+        if (!body.text?.trim()) return sendError(res, 400, 'missing_text', 'Webinar repurposing requires source text.');
         userPrompt = buildWebinar(body); maxTokens = 6000; temperature = 0.75; break;
       case 'seo':
-        if (!body.keywords?.trim()) return res.status(400).json({ error: 'SEO ideas require at least one keyword.' });
+        if (!body.keywords?.trim()) return sendError(res, 400, 'missing_keywords', 'SEO ideas require at least one keyword.');
         userPrompt = buildSeo(body); maxTokens = 7000; temperature = 0.7; break;
       case 'seasonal': userPrompt = buildSeasonal(body); maxTokens = 5000; temperature = 0.8; break;
       case 'expand':
-        if (!body.idea) return res.status(400).json({ error: 'Expand requires an idea object.' });
+        if (!body.idea) return sendError(res, 400, 'missing_idea', 'Expand requires an idea object.');
         userPrompt = buildExpand(body); maxTokens = 6000; temperature = 0.6; break;
       default:
-        return res.status(400).json({ error: `Invalid task: ${body.task}` });
+        return sendError(res, 400, 'invalid_task', `Invalid task: ${body.task}`);
     }
 
-    const result = await callLLM(IDEAS_SYSTEM_PROMPT, userPrompt, { maxTokens, temperature });
+    const { content: raw } = await callLLM(IDEAS_SYSTEM_PROMPT, userPrompt, { maxTokens, temperature });
 
     let parsed: any;
     try {
-      parsed = extractJSON(result);
+      parsed = extractJSON(raw);
     } catch {
-      const preview = result.slice(0, 300).replace(/\n/g, ' ');
-      return res.status(502).json({
-        error: `Idea generation failed: the model returned an unexpected response. Try again or shorten the input. Preview: "${preview}..."`,
-      });
+      const preview = raw.slice(0, 300).replace(/\n/g, ' ');
+      return sendError(res, 502, 'parse_error', `Idea generation failed: the model returned an unexpected response. Try again or shorten the input. Preview: "${preview}..."`);
     }
 
     if (body.task === 'expand') {
@@ -360,6 +266,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ success: true, task: body.task, ideas });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'An unexpected error occurred';
-    return res.status(500).json({ error: message });
+    return sendError(res, 500, 'internal_error', message);
   }
 }

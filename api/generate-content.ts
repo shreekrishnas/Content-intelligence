@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MAX_RETRIES = 2;
-const INITIAL_BACKOFF_MS = 1000;
+import { callLLM } from './_lib/llm';
+import { extractJSON } from './_lib/json';
+import { handleOptions, sendError } from './_lib/http';
+import type { FileContext, KnowledgeChunk } from './_lib/types';
 
 const GROUNDING_SYSTEM_PROMPT = `You are a senior content creator for a financial services brand in India. You write high-quality, publication-ready content that marketing teams can use immediately.
 
@@ -17,30 +17,9 @@ YOUR APPROACH:
 - Write in a tone that suits the target persona — not corporate jargon, not overly casual
 - Cite sources where available using [Source: <title>] or [KB: <chunk_id>], but do not block content creation on having citations`;
 
-function extractJSON(text: string): unknown {
-  const stripped = text
-    .replace(/^```(?:json|javascript|js)?\s*\n?/gim, '')
-    .replace(/\n?```\s*$/gim, '')
-    .trim();
-  try { return JSON.parse(stripped); } catch { /* try brace extraction */ }
-  const s = stripped.indexOf('{');
-  const e = stripped.lastIndexOf('}');
-  if (s !== -1 && e > s) {
-    try { return JSON.parse(stripped.slice(s, e + 1)); } catch { /* fall through */ }
-  }
-  throw new Error('LLM returned a response that could not be parsed as JSON. Please try again.');
-}
-
-interface FileContext {
-  file_id: string;
-  file_name: string;
-  category: string;
-  structured?: Record<string, unknown>;
-}
-
 interface GenerateRequest {
   task: 'outline' | 'draft' | 'regenerate' | 'quality_review';
-  file_context?: FileContext[];
+  file_context?: (FileContext & { structured?: Record<string, unknown> })[];
   opportunity: {
     title: string;
     content_angle: string;
@@ -50,7 +29,7 @@ interface GenerateRequest {
     suggested_cta?: string;
     source_context?: string;
   };
-  knowledge_chunks?: Array<{ id: string; content: string; metadata?: Record<string, unknown> }>;
+  knowledge_chunks?: (KnowledgeChunk & { metadata?: Record<string, unknown> })[];
   persona?: {
     name: string;
     description: string;
@@ -68,74 +47,6 @@ interface GenerateRequest {
   existing_content?: string;
   feedback?: string;
   source_refs?: Array<{ title: string; url?: string; excerpt?: string }>;
-}
-
-async function callLLM(
-  systemPrompt: string,
-  userPrompt: string,
-  options: { maxTokens?: number; temperature?: number } = {},
-): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY is not configured. Add it in Vercel Environment Variables.');
-
-  const model = process.env.LLM_MODEL ?? 'anthropic/claude-sonnet-4-5';
-  const maxTokens = options.maxTokens ?? 4096;
-  const temperature = options.temperature ?? 0.3;
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (attempt > 0) {
-      await new Promise((r) => setTimeout(r, INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1)));
-    }
-    try {
-      const response = await fetch(OPENROUTER_API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-          'HTTP-Referer': process.env.SITE_URL ?? 'https://content-intelligence-ebon.vercel.app',
-          'X-Title': 'Content Intelligence Platform',
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: maxTokens,
-          temperature,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-        }),
-      });
-
-      if (response.status === 429) { lastError = new Error('Rate limit reached. Please wait a moment and try again.'); continue; }
-      if (!response.ok) {
-        let msg: string;
-        try {
-          const body = await response.json();
-          const detail = body?.error?.message || 'Unknown error';
-          if (response.status === 401) msg = 'Invalid API key. Check your OPENROUTER_API_KEY in Vercel Environment Variables.';
-          else if (response.status === 402) msg = 'OpenRouter account has insufficient credits. Add credits at openrouter.ai.';
-          else if (response.status === 404) msg = `Model not found on OpenRouter. Set a valid LLM_MODEL in Vercel Environment Variables. Detail: ${detail}`;
-          else msg = `LLM service error (${response.status}): ${detail}`;
-        } catch {
-          msg = `LLM service error (${response.status}). Please try again.`;
-        }
-        throw new Error(msg);
-      }
-
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
-      if (!content) throw new Error('No content in LLM response');
-      return content;
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('Rate limited')) {
-        lastError = error;
-        continue;
-      }
-      throw error;
-    }
-  }
-  throw lastError ?? new Error('Failed to call LLM after retries');
 }
 
 function buildSourceContext(body: GenerateRequest): string {
@@ -350,26 +261,24 @@ Only flag missing citations when knowledge base sources were actually provided a
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'authorization, x-client-info, apikey, content-type');
+  if (handleOptions(req, res)) return;
 
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'Method not allowed');
 
   try {
     const body: GenerateRequest = req.body;
 
     if (!body.task || !body.opportunity) {
-      return res.status(400).json({ error: 'Missing required fields: task and opportunity are required.' });
+      return sendError(res, 400, 'missing_fields', 'Missing required fields: task and opportunity are required.');
     }
 
     const validTasks = ['outline', 'draft', 'regenerate', 'quality_review'];
     if (!validTasks.includes(body.task)) {
-      return res.status(400).json({ error: `Invalid task: ${body.task}. Must be one of: ${validTasks.join(', ')}` });
+      return sendError(res, 400, 'invalid_task', `Invalid task: ${body.task}. Must be one of: ${validTasks.join(', ')}`);
     }
 
     if ((body.task === 'regenerate' || body.task === 'quality_review') && !body.existing_content) {
-      return res.status(400).json({ error: `Task '${body.task}' requires existing_content to be provided.` });
+      return sendError(res, 400, 'missing_content', `Task '${body.task}' requires existing_content to be provided.`);
     }
 
     const context = buildSourceContext(body);
@@ -385,24 +294,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const maxTokens = 8192;
 
-    const result = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
+    const { content: raw } = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
       maxTokens,
       temperature: body.task === 'quality_review' ? 0.1 : 0.45,
     });
 
     let output;
     try {
-      output = extractJSON(result);
+      output = extractJSON(raw);
     } catch {
-      const preview = result.slice(0, 300).replace(/\n/g, ' ');
-      return res.status(502).json({
-        error: `Generation failed: the model returned an unexpected response. Try again or reduce content length. Preview: "${preview}..."`,
-      });
+      const preview = raw.slice(0, 300).replace(/\n/g, ' ');
+      return sendError(res, 502, 'parse_error', `Generation failed: the model returned an unexpected response. Try again or reduce content length. Preview: "${preview}..."`);
     }
 
     return res.status(200).json({ success: true, task: body.task, output });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'An unexpected error occurred';
-    return res.status(500).json({ error: message });
+    return sendError(res, 500, 'internal_error', message);
   }
 }

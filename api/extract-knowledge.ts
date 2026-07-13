@@ -1,64 +1,27 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { callLLM } from './_lib/llm';
+import { extractJSON } from './_lib/json';
+import { handleOptions, sendError } from './_lib/http';
+import { embedBatch, pickEmbedProvider, toVectorLiteral } from './_lib/embedding';
+import { getServiceClient } from './_lib/supabase';
 
 // ============================================================
 // Runs after every KB upload. Two jobs:
 // 1. Extract structured metadata (summary, topics, audience, etc.)
-//    via OpenRouter — unchanged from the original endpoint.
-// 2. Batch-embed the file's chunks via OpenAI embeddings and
-//    persist them with the service role (semantic retrieval).
-// Both are best-effort — if either is missing an env var or fails,
-// the other still runs.
-// Self-contained per the repo rule (no cross-file imports).
+//    via OpenRouter LLM.
+// 2. Batch-embed the file's chunks and persist them with the
+//    service role (semantic retrieval).
+// Both are best-effort — if either fails, the other still runs.
 // ============================================================
 
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-
-// Embedding provider config — Voyage default (free 200M tokens), OpenAI optional.
-const VOYAGE_URL = 'https://api.voyageai.com/v1/embeddings';
-const VOYAGE_MODEL = 'voyage-3';
-const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings';
-const OPENAI_MODEL = 'text-embedding-3-small';
-const OPENROUTER_EMBEDDINGS_URL = 'https://openrouter.ai/api/v1/embeddings';
-const OPENROUTER_EMBED_MODEL = process.env.OPENROUTER_EMBED_MODEL || 'openai/text-embedding-3-small';
-const TARGET_DIMS = 1024;
 const EMBED_BATCH = 100;
-const EMBED_INPUT_MAX_CHARS = 4000; // safety margin for OpenAI's 8192-token limit
-
-type EmbedProvider = 'voyage' | 'openai' | 'openrouter';
-function pickEmbedProvider(): EmbedProvider | null {
-  const forced = (process.env.EMBED_PROVIDER || '').toLowerCase() as EmbedProvider;
-  if (forced === 'voyage' && process.env.VOYAGE_API_KEY) return 'voyage';
-  if (forced === 'openai' && process.env.OPENAI_API_KEY) return 'openai';
-  if (forced === 'openrouter' && process.env.OPENROUTER_API_KEY) return 'openrouter';
-  if (process.env.VOYAGE_API_KEY) return 'voyage';
-  if (process.env.OPENAI_API_KEY) return 'openai';
-  if (process.env.OPENROUTER_API_KEY) return 'openrouter';
-  return null;
-}
 
 const SYSTEM_PROMPT = `You are a knowledge extraction engine. CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after. Your entire response must be parseable by JSON.parse().`;
 
-function extractJSON(text: string): unknown {
-  const stripped = text
-    .replace(/^```(?:json|javascript|js)?\s*\n?/gim, '')
-    .replace(/\n?```\s*$/gim, '')
-    .trim();
-  try { return JSON.parse(stripped); } catch { /* try brace extraction */ }
-  const s = stripped.indexOf('{');
-  const e = stripped.lastIndexOf('}');
-  if (s !== -1 && e > s) {
-    try { return JSON.parse(stripped.slice(s, e + 1)); } catch { /* fall through */ }
-  }
-  throw new Error('LLM returned a response that could not be parsed as JSON. Please try again.');
-}
-
 // ---------------------------------------------------------------------------
-// LLM structured extraction — unchanged behaviour.
+// LLM structured extraction
 // ---------------------------------------------------------------------------
 async function extractStructured(file_name: string | undefined, category: string | undefined, sample_text: string): Promise<Record<string, unknown>> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error('OPENROUTER_API_KEY not configured');
-
   const prompt = `Extract structured knowledge metadata from this content.
 
 FILE NAME: ${file_name ?? 'Unknown'}
@@ -79,140 +42,8 @@ Return JSON with this exact structure:
   "important_facts": ["key fact, statistic, or claim from content"]
 }`;
 
-  const response = await fetch(OPENROUTER_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': process.env.SITE_URL ?? 'https://content-intelligence-ebon.vercel.app',
-      'X-Title': 'Content Intelligence Platform',
-    },
-    body: JSON.stringify({
-      model: process.env.LLM_MODEL ?? 'anthropic/claude-sonnet-4-5',
-      max_tokens: 1024,
-      temperature: 0.1,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    let msg: string;
-    try {
-      const body = await response.json();
-      const detail = body?.error?.message || 'Unknown error';
-      if (response.status === 401) msg = 'Invalid API key. Check OPENROUTER_API_KEY.';
-      else if (response.status === 402) msg = 'OpenRouter account has insufficient credits.';
-      else if (response.status === 404) msg = `Model not found: ${detail}`;
-      else msg = `LLM error (${response.status}): ${detail}`;
-    } catch { msg = `LLM error (${response.status}). Please try again.`; }
-    throw new Error(msg);
-  }
-
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content ?? '';
-  return extractJSON(text) as Record<string, unknown>;
-}
-
-// ---------------------------------------------------------------------------
-// Batch embedding — provider auto-picked (Voyage default, OpenAI optional).
-// Returns { embeddings, model } aligned to the input array.
-// ---------------------------------------------------------------------------
-function embedSleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
-
-async function embedBatch(texts: string[]): Promise<{ embeddings: number[][]; model: string }> {
-  const provider = pickEmbedProvider();
-  if (!provider) throw new Error('No embedding provider configured (VOYAGE_API_KEY or OPENAI_API_KEY)');
-
-  const inputs = texts.map((t) => {
-    const s = (t || '').slice(0, EMBED_INPUT_MAX_CHARS).trim();
-    return s.length > 0 ? s : ' ';
-  });
-  const url = provider === 'voyage' ? VOYAGE_URL : provider === 'openrouter' ? OPENROUTER_EMBEDDINGS_URL : OPENAI_EMBEDDINGS_URL;
-  const model = provider === 'voyage' ? VOYAGE_MODEL : provider === 'openrouter' ? OPENROUTER_EMBED_MODEL : OPENAI_MODEL;
-  const apiKey = provider === 'voyage' ? process.env.VOYAGE_API_KEY : provider === 'openrouter' ? process.env.OPENROUTER_API_KEY : process.env.OPENAI_API_KEY;
-  const extraHeaders: Record<string, string> = provider === 'openrouter'
-    ? { 'HTTP-Referer': process.env.SITE_URL ?? 'https://content-intelligence-ebon.vercel.app', 'X-Title': 'Content Intelligence Platform' }
-    : {};
-
-  // OpenRouter's /v1/embeddings accepts only single-input requests.
-  if (provider === 'openrouter') {
-    const embeddings: number[][] = [];
-    for (const single of inputs) {
-      const body = { model, input: single, dimensions: TARGET_DIMS };
-      const resp = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}`, ...extraHeaders },
-        body: JSON.stringify(body),
-      });
-      if (!resp.ok) {
-        let msg: string;
-        try {
-          const b = await resp.json();
-          const detail = b?.error?.message || b?.detail || 'Unknown error';
-          if (resp.status === 401) msg = 'Invalid OPENROUTER_API_KEY.';
-          else if (resp.status === 404) msg = `OpenRouter does not currently expose embeddings for '${model}'.`;
-          else msg = `OpenRouter embeddings error (${resp.status}): ${detail}`;
-        } catch { msg = `OpenRouter embeddings error (${resp.status}).`; }
-        throw new Error(msg);
-      }
-      const data = await resp.json();
-      const emb = data?.data?.[0]?.embedding;
-      if (!Array.isArray(emb)) throw new Error(`OpenRouter returned no embedding for chunk. Response: ${JSON.stringify(data).slice(0, 200)}`);
-      embeddings.push(emb);
-    }
-    return { embeddings, model };
-  }
-
-  const body = provider === 'voyage'
-    ? { model, input: inputs, input_type: 'document' }
-    : { model, input: inputs, dimensions: TARGET_DIMS };
-
-  for (let attempt = 0; attempt <= 4; attempt++) {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        ...extraHeaders,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (resp.ok) {
-      const data = await resp.json();
-      const embeddings: number[][] = (data?.data || []).map((d: any) => d.embedding);
-      if (embeddings.length !== texts.length) throw new Error(`Embedding count mismatch: sent ${texts.length}, got ${embeddings.length}`);
-      return { embeddings, model };
-    }
-
-    if (resp.status === 429 && attempt < 4) {
-      const retryAfter = resp.headers.get('retry-after');
-      const waitMs = retryAfter ? Math.min(60_000, parseInt(retryAfter, 10) * 1000) : 15_000 * Math.pow(2, attempt);
-      await embedSleep(waitMs);
-      continue;
-    }
-
-    let msg: string;
-    try {
-      const b = await resp.json();
-      const detail = b?.error?.message || b?.detail || 'Unknown error';
-      if (resp.status === 401) msg = `Invalid ${provider === 'voyage' ? 'VOYAGE_API_KEY' : provider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'OPENAI_API_KEY'}.`;
-      else if (resp.status === 404 && provider === 'openrouter') msg = `OpenRouter does not currently expose embeddings for '${OPENROUTER_EMBED_MODEL}'. Try VOYAGE_API_KEY (free) or OPENAI_API_KEY instead.`;
-      else if (resp.status === 429) msg = `${provider} rate limit hit repeatedly.`;
-      else msg = `${provider} embeddings error (${resp.status}): ${detail}`;
-    } catch { msg = `${provider} embeddings error (${resp.status}).`; }
-    throw new Error(msg);
-  }
-
-  throw new Error('embedBatch failed after retries');
-}
-
-// pgvector accepts a string literal '[1.23,4.56,...]' for vector inputs.
-function toVectorLiteral(v: number[]): string {
-  return '[' + v.join(',') + ']';
+  const { content } = await callLLM(SYSTEM_PROMPT, prompt, { maxTokens: 1024, temperature: 0.1 });
+  return extractJSON(content) as Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,12 +53,12 @@ function toVectorLiteral(v: number[]): string {
 async function embedFileChunks(fileId: string, accountId: string): Promise<{ embedded_count: number; note?: string }> {
   if (!pickEmbedProvider()) return { embedded_count: 0, note: 'No embedding provider configured (VOYAGE_API_KEY or OPENAI_API_KEY) — chunks stored without embeddings; run "Rebuild search index" later.' };
 
-  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) return { embedded_count: 0, note: 'SUPABASE_SERVICE_ROLE_KEY not set — chunks stored without embeddings; run "Rebuild search index" later.' };
-
-  const { createClient } = await import('@supabase/supabase-js');
-  const admin = createClient(url, serviceKey);
+  let admin;
+  try {
+    admin = getServiceClient();
+  } catch {
+    return { embedded_count: 0, note: 'SUPABASE_SERVICE_ROLE_KEY not set — chunks stored without embeddings; run "Rebuild search index" later.' };
+  }
 
   const { data: chunks, error: fetchErr } = await admin
     .from('knowledge_chunks')
@@ -263,10 +94,8 @@ async function embedFileChunks(fileId: string, accountId: string): Promise<{ emb
 // Handler
 // ---------------------------------------------------------------------------
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'content-type');
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (handleOptions(req, res)) return;
+  if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'Method not allowed');
 
   const { file_name, category, sample_text, file_id, account_id } = (req.body || {}) as {
     file_name?: string;
@@ -276,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     account_id?: string;
   };
 
-  if (!sample_text) return res.status(400).json({ error: 'sample_text is required' });
+  if (!sample_text) return sendError(res, 400, 'missing_field', 'sample_text is required');
 
   // 1. Structured extraction (best-effort — matches the original behaviour).
   let structured: Record<string, unknown> | undefined;
@@ -303,7 +132,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // If BOTH failed, propagate an error so the client can surface it.
   if (!structured && structuredError && embed.embedded_count === 0 && embedError) {
-    return res.status(502).json({ error: `Structured: ${structuredError}. Embed: ${embedError}` });
+    return sendError(res, 502, 'dual_failure', `Structured: ${structuredError}. Embed: ${embedError}`);
   }
 
   return res.status(200).json({
