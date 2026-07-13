@@ -74,6 +74,8 @@ async function callLLM(
       await new Promise((r) => setTimeout(r, INITIAL_BACKOFF_MS * Math.pow(2, attempt - 1)));
     }
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90000);
       const response = await fetch(OPENROUTER_API_URL, {
         method: 'POST',
         headers: {
@@ -91,7 +93,9 @@ async function callLLM(
             { role: 'user', content: userPrompt },
           ],
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (response.status === 429) { lastError = new Error('Rate limit reached. Please wait a moment and try again.'); continue; }
       if (!response.ok) {
@@ -123,7 +127,8 @@ async function callLLM(
 
 function kbSection(chunks?: KnowledgeChunk[]): string {
   if (!chunks?.length) return '\nNo knowledge base files provided — use the brief and your expertise.';
-  return `\nKNOWLEDGE BASE (ground brand voice, facts, and compliance in these):\n${chunks.map((c, i) => `[KB-${i + 1}]\n${c.content}`).join('\n\n')}`;
+  const trimmed = chunks.slice(0, 10).map((c) => ({ ...c, content: c.content.slice(0, 1500) }));
+  return `\nKNOWLEDGE BASE (ground brand voice, facts, and compliance in these):\n${trimmed.map((c, i) => `[KB-${i + 1}]\n${c.content}`).join('\n\n')}`;
 }
 
 function avoidSection(titles?: string[]): string {
@@ -175,9 +180,9 @@ Idea source: ${b.source || 'Manual topic'}
 Extra direction: ${b.context || 'none'}
 ${kbSection(b.knowledge_chunks)}${avoidSection(b.avoid_titles)}
 
-Generate 8 diverse, production-ready content ideas. ${IDEA_CARD_SCHEMA}
+Generate 6 diverse, production-ready content ideas. ${IDEA_CARD_SCHEMA}
 
-Return ONLY: {"ideas": [ ...8 idea objects... ]}`;
+Return ONLY: {"ideas": [ ...6 idea objects... ]}`;
 }
 
 function buildWebinar(b: IdeasRequest): string {
@@ -317,10 +322,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let temperature = 0.8;
 
     switch (body.task) {
-      case 'generate': userPrompt = buildGenerate(body); maxTokens = 8000; temperature = 0.85; break;
+      case 'generate': userPrompt = buildGenerate(body); maxTokens = 5000; temperature = 0.85; break;
       case 'webinar':
         if (!body.text?.trim()) return res.status(400).json({ error: 'Webinar repurposing requires source text.' });
-        userPrompt = buildWebinar(body); maxTokens = 8000; temperature = 0.75; break;
+        userPrompt = buildWebinar(body); maxTokens = 6000; temperature = 0.75; break;
       case 'seo':
         if (!body.keywords?.trim()) return res.status(400).json({ error: 'SEO ideas require at least one keyword.' });
         userPrompt = buildSeo(body); maxTokens = 7000; temperature = 0.7; break;
