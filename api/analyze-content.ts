@@ -9,7 +9,7 @@ const INITIAL_BACKOFF_MS = 1000;
 
 type Archetype =
   | 'video' | 'blog' | 'webinar' | 'event' | 'trending' | 'research'
-  | 'interview' | 'launch' | 'competitor' | 'recurring' | 'generic';
+  | 'interview' | 'launch' | 'competitor' | 'recurring' | 'weekly_expert_reflection' | 'generic';
 
 interface SourceTypeContext {
   name?: string;
@@ -80,6 +80,12 @@ const ARCHETYPE_RULES: Record<Archetype, { focus: string; insight_style: string;
     format_bias: 'Newsletter fit as-is, a single hero social post, a monthly compilation carousel across editions.',
     gotchas: 'Do not repeat insights that appear in every edition — the audience has seen them. Do not manufacture urgency where the content is evergreen.',
   },
+  weekly_expert_reflection: {
+    focus: 'Identify the voice owner (Anil or Rachana). Determine the content shape: is it a single reflection built around one story/metaphor (treat as one connected idea) or a list of distinct observations (treat as multiple points). Extract the core takeaway stripped of the narrative device in one sentence BEFORE touching formats. Check if there is already a companion asset — if the original story/metaphor is being published elsewhere, downstream formats must NOT retell the story, they extract the LESSON only.',
+    insight_style: 'Separate the narrative device (puzzle, anecdote, client conversation) from the underlying investing/business point. Write the lesson in one sentence. Every insight must be the extracted lesson, NOT a retelling of the metaphor. Translate any metaphor-specific imagery into direct language. Preserve the original conversational, human sentence rhythm — short sentences, occasional fragments.',
+    format_bias: 'Primary formats (almost always use): Voice Page (near-original form, always default), Single-Image Post (only if there is one line that stands alone as a quote without needing context), Carousel (only if the takeaway breaks into 5-8 sequential standalone points — use pointers only, no story retell if story is published elsewhere). Conditional formats (exception, not routine): SEO Blog 600-700 words (only if topic is broad enough to expand with market context, not just stretching the same reflection), Q&A (only if content naturally poses and answers a question). Always schedule into the weekly Social Calendar slot. Do NOT propose Short/Reel, B-roll Video, Conversational Blog, Guide/E-book, or Lead Magnet — this source lacks the depth those formats need.',
+    gotchas: 'BIGGEST FAILURE MODE: repeating the metaphor instead of pulling the insight out of it. If the original story is being published as-is on a Voice page or LinkedIn, the carousel/single-image MUST NOT re-narrate the same story. TONE RULES: Plain Indian/British English, no jargon, no filler adjectives. Declarative headlines only, never questions ("Why the hardest part of investing is also the most rewarding" not "Is patience the key to investing?"). No em-dashes — use full stops or commas. BANNED WORDS: Revolutionize, Unlock, Boost, Harness, Elevate, Enhance, Deep Dive, Explore, Delve, Unparalleled, Game changer, Say goodbye. SEBI-compliant disclaimer required ONLY on Blog format and lead-gen-adjacent assets, NOT on single-image or carousel unless it makes a specific return/product claim. Never fabricate stats or numbers not in the source. CAROUSEL METHOD: Each slide must stand alone without needing the previous slide, be 1-2 short lines max, and move the argument forward (setup, tension, resolution, close). Working shape: 1) Hook — core claim stripped of story, 2) Common/easy behaviour, 3) Harder less obvious truth, 4) What that truth looks like in practice, 5) Why sitting through it matters, 6) Payoff/reframe, 7) Close — one memorable quotable line. Default to 6-7 slide tight version.',
+  },
   generic: {
     focus: "Follow the source type's description as the primary guide for what to extract.",
     insight_style: 'Ground every insight in a specific line from the source. Prefer specificity over volume.',
@@ -89,6 +95,7 @@ const ARCHETYPE_RULES: Record<Archetype, { focus: string; insight_style: string;
 };
 
 const ARCHETYPE_PATTERNS: Array<[Archetype, RegExp]> = [
+  ['weekly_expert_reflection', /weekly[_ -]?anil|weekly[_ -]?rachana|anil[_ -]?rachana|anil[_ -]sir|rachana[_ -]?ma'?a?m|weekly[_ -]?expert[_ -]?reflection|anil[_ -]?content|rachana[_ -]?content/i],
   ['interview', /interview|testimonial|customer[_ -]story|case[_ -]study|cx|voice[_ -]of[_ -]customer/i],
   ['webinar', /webinar|masterclass|workshop/i],
   ['event', /event|conference|summit|panel|expo|meetup|gala/i],
@@ -123,6 +130,40 @@ function buildSourceGuidance(ctx: SourceTypeContext): { archetype: Archetype; bl
   if (ctx.formats?.length) {
     lines.push('');
     lines.push(`ALLOWED OUTPUT FORMATS for opportunities (choose from these — do not invent others): ${ctx.formats.join(', ')}`);
+  }
+  if (archetype === 'weekly_expert_reflection') {
+    lines.push('');
+    lines.push('WEEKLY ANIL/RACHANA CONTENT PLAYBOOK — MANDATORY RULES:');
+    lines.push('');
+    lines.push('FORMAT ELIGIBILITY (apply strictly):');
+    lines.push('- Voice Page: PRIMARY — almost always used. Publish near-original form. Skip only if explicitly told.');
+    lines.push('- Single-Image Post: PRIMARY — use ONLY when one line stands alone as a quote/thought without context. Skip when the core idea needs setup.');
+    lines.push('- Carousel: PRIMARY — use ONLY when takeaway breaks into 5-8 sequential standalone points. If original story is published elsewhere, carousel uses straight pointers only (no story retell). Skip when content is one continuous idea that does not survive being chopped.');
+    lines.push('- SEO Blog (600-700 words): CONDITIONAL — only when topic is broad enough for market context/examples/data beyond the personal reflection. Most weeks this does NOT apply.');
+    lines.push('- Q&A: CONDITIONAL — only when content naturally poses a question and answers it. Most weeks this does NOT apply.');
+    lines.push('- Social Calendar slot: ALWAYS — schedule whatever format is chosen.');
+    lines.push('- Short/Reel, B-roll Video, Conversational Blog, Guide/E-book, Lead Magnet: NOT STANDARD — only if explicitly requested.');
+    lines.push('');
+    lines.push('RULE OF THUMB: most weeks = Voice Page + one of (Single Image OR Carousel). Blog and Q&A are the exception.');
+    lines.push('');
+    lines.push('DECISION FLOW:');
+    lines.push('1. Identify voice owner (Anil or Rachana)');
+    lines.push('2. Publish to Voice Page (near-original) — always');
+    lines.push('3. Extract one-line core lesson (separate from story device)');
+    lines.push('4. Is there one quotable standalone line? → Single-Image Post');
+    lines.push('5. Can the lesson break into 5-8 sequential points? → Carousel (pointers only, no story retell)');
+    lines.push('6. Is topic broad enough for market context beyond the reflection? → Blog (rare)');
+    lines.push('7. Schedule chosen format(s) into weekly Social Calendar slot');
+    lines.push('');
+    lines.push('CAROUSEL SLIDE STRUCTURE (when applicable):');
+    lines.push('Slide 1: Hook — core claim, stripped of story');
+    lines.push('Slide 2: The common/easy behaviour (what most people do)');
+    lines.push('Slide 3: The harder, less obvious truth');
+    lines.push('Slide 4: What that harder truth looks like in practice');
+    lines.push('Slide 5: Why sitting through that stage matters');
+    lines.push('Slide 6: The payoff / reframe');
+    lines.push('Slide 7: Close — one memorable line, quotable on its own');
+    lines.push('Default to 6-7 slides tight. Each slide: 1-2 short lines, stands alone, moves argument forward.');
   }
   if (ctx.analysis_guidance && ctx.analysis_guidance.trim()) {
     lines.push('');
