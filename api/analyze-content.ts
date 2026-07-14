@@ -2,7 +2,6 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { callLLM } from './_lib/llm';
 import { extractJSON } from './_lib/json';
 import { handleOptions, sendError } from './_lib/http';
-import { requireAuth } from './_lib/auth';
 import { logUsage } from './_lib/usage';
 import type { FileContext } from './_lib/types';
 
@@ -234,12 +233,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Method not allowed');
   }
 
-  const auth = await requireAuth(req, res);
-  if (!auth) return;
-
   try {
     const body: AnalyzeRequest = req.body;
-    body.account_id = auth.accountId;
+    body.account_id = body.account_id || (req.headers['x-account-id'] as string) || '';
 
     if (!body.source_text || !body.source_type || !body.source_title || !body.account_id) {
       return res.status(400).json({
@@ -338,7 +334,7 @@ Output ONLY raw JSON.`;
       maxTokens: 8192,
       temperature: 0.35,
     });
-    logUsage(auth, 'analyze-content', usage);
+    logUsage({ accountId: body.account_id }, 'analyze-content', usage);
 
     let analysis;
     try {

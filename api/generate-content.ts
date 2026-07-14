@@ -2,7 +2,6 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { callLLM } from './_lib/llm';
 import { extractJSON } from './_lib/json';
 import { handleOptions, sendError } from './_lib/http';
-import { requireAuth } from './_lib/auth';
 import { logUsage } from './_lib/usage';
 import type { FileContext, KnowledgeChunk } from './_lib/types';
 
@@ -267,9 +266,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'Method not allowed');
 
-  const auth = await requireAuth(req, res);
-  if (!auth) return;
-
   try {
     const body: GenerateRequest = req.body;
 
@@ -303,7 +299,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       maxTokens,
       temperature: body.task === 'quality_review' ? 0.1 : 0.45,
     });
-    logUsage(auth, 'generate-content', usage);
+    logUsage(null, 'generate-content', usage);
 
     let output;
     try {

@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { callLLM } from './_lib/llm';
 import { extractJSON } from './_lib/json';
 import { handleOptions, sendError } from './_lib/http';
-import { requireAuth } from './_lib/auth';
+import { cors } from './_lib/http';
 import { getServiceClient } from './_lib/supabase';
 import { supervise, topicToRecord } from './_lib/trends';
 import type { DomainProfile, TrendSignal } from './_lib/types';
@@ -88,8 +88,7 @@ interface ScanBody {
 }
 
 async function handleManual(req: VercelRequest, res: VercelResponse) {
-  const auth = await requireAuth(req, res);
-  if (!auth) return;
+  cors(res);
 
   const body: ScanBody = req.body || {};
   const profile = body.profile || {};
@@ -102,7 +101,7 @@ async function handleManual(req: VercelRequest, res: VercelResponse) {
 
   let saved = false;
   let savedRecords: unknown[] = [];
-  const accountId = auth.accountId;
+  const accountId = body.account_id || (req.headers['x-account-id'] as string) || '';
   if (accountId) {
     try {
       const admin = getServiceClient();

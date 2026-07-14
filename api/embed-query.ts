@@ -1,14 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { embedSingle, pickEmbedProvider } from './_lib/embedding';
 import { handleOptions, sendError } from './_lib/http';
-import { requireAuth } from './_lib/auth';
+import { cors } from './_lib/http';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;
   if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'Method not allowed');
 
-  const auth = await requireAuth(req, res);
-  if (!auth) return;
+  cors(res);
 
   try {
     const { text } = (req.body || {}) as { text?: string };

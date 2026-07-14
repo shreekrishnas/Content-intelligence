@@ -2,7 +2,6 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { callLLM } from './_lib/llm';
 import { extractJSON } from './_lib/json';
 import { handleOptions, sendError } from './_lib/http';
-import { requireAuth } from './_lib/auth';
 import { logUsage } from './_lib/usage';
 import type { KnowledgeChunk } from './_lib/types';
 
@@ -223,9 +222,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;
   if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'Method not allowed');
 
-  const auth = await requireAuth(req, res);
-  if (!auth) return;
-
   try {
     const body: IdeasRequest = req.body;
     if (!body?.task) return sendError(res, 400, 'missing_task', 'Missing required field: task.');
@@ -251,7 +247,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const { content: raw, usage } = await callLLM(IDEAS_SYSTEM_PROMPT, userPrompt, { maxTokens, temperature });
-    logUsage(auth, 'ideas-lab', usage);
+    logUsage(null, 'ideas-lab', usage);
 
     let parsed: any;
     try {

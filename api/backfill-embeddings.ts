@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { embedBatch, pickEmbedProvider, toVectorLiteral } from './_lib/embedding';
 import { handleOptions, sendError } from './_lib/http';
-import { requireAuth, requireRole } from './_lib/auth';
+import { cors } from './_lib/http';
 import { getServiceClient } from './_lib/supabase';
 
 // ============================================================
@@ -27,12 +27,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;
   if (req.method !== 'POST') return sendError(res, 405, 'method_not_allowed', 'Method not allowed');
 
-  const auth = await requireAuth(req, res);
-  if (!auth) return;
-  if (!requireRole(auth, ['manager', 'editor'])) {
-    return sendError(res, 403, 'insufficient_role', 'Viewers cannot rebuild the search index. Ask an editor or manager.');
-  }
-  const account_id = auth.accountId;
+  cors(res);
+  const account_id = (req.body as any)?.account_id || (req.headers['x-account-id'] as string) || '';
 
   let admin;
   try {

@@ -43,27 +43,44 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<AccountError>(null);
 
   const loadAccounts = useCallback(async () => {
-    if (!supabaseConfigured || !user) {
+    if (!supabaseConfigured) {
       setLoading(false);
-      setError(supabaseConfigured ? 'no_account' : 'not_configured');
+      setError('not_configured');
       return [];
     }
 
-    const { data, error: dbErr } = await supabase
-      .from('account_access')
-      .select('role, account_id, accounts(id, name)')
-      .eq('user_id', user.id);
+    if (user) {
+      const { data, error: dbErr } = await supabase
+        .from('account_access')
+        .select('role, account_id, accounts(id, name)')
+        .eq('user_id', user.id);
 
-    if (dbErr || !data?.length) {
+      if (!dbErr && data?.length) {
+        const list: AccountListItem[] = data.map((row: any) => ({
+          id: row.account_id,
+          name: (row.accounts as any)?.name || row.account_id,
+          role: row.role,
+        }));
+        setAccounts(list);
+        return list;
+      }
+    }
+
+    const { data: allAccounts, error: accErr } = await supabase
+      .from('accounts')
+      .select('id, name')
+      .limit(50);
+
+    if (accErr || !allAccounts?.length) {
       setError('no_account');
       setLoading(false);
       return [];
     }
 
-    const list: AccountListItem[] = data.map((row: any) => ({
-      id: row.account_id,
-      name: (row.accounts as any)?.name || row.account_id,
-      role: row.role,
+    const list: AccountListItem[] = allAccounts.map((row: any) => ({
+      id: row.id,
+      name: row.name || row.id,
+      role: 'manager' as const,
     }));
     setAccounts(list);
     return list;

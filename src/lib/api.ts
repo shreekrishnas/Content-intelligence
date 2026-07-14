@@ -55,9 +55,7 @@ async function fetchAPI(
     headers,
     body: JSON.stringify(body),
   });
-  if (resp.status === 401) {
-    supabase.auth.signOut().catch(() => {});
-  }
+  // Auth disabled — don't auto-signout on 401
   const raw = await resp.text();
   let data: any;
   try { data = JSON.parse(raw); } catch {

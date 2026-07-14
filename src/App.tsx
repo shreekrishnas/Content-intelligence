@@ -1,13 +1,10 @@
-import { useEffect, lazy, Suspense } from 'react';
+import { useEffect } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
-import { supabaseConfigured } from './lib/supabase';
 import { AccountProvider, useAccount } from './contexts/AccountContext';
 import AppShell from './components/layout/AppShell';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/Toast';
-
-const LoginPage = lazy(() => import('./pages/LoginPage'));
 
 function ErrorScreen({ title, message }: { title: string; message: string }) {
   return (
@@ -53,7 +50,6 @@ function ErrorScreen({ title, message }: { title: string; message: string }) {
   );
 }
 
-
 function LoadingScreen() {
   return (
     <div className="app-outer">
@@ -88,32 +84,6 @@ function AccountGate() {
   return <AppShell />;
 }
 
-function AuthGate() {
-  const user = useAuthStore((s) => s.user);
-
-  if (!supabaseConfigured) {
-    return (
-      <AccountProvider>
-        <AccountGate />
-      </AccountProvider>
-    );
-  }
-
-  if (!user) {
-    return (
-      <Suspense fallback={<LoadingScreen />}>
-        <LoginPage />
-      </Suspense>
-    );
-  }
-
-  return (
-    <AccountProvider>
-      <AccountGate />
-    </AccountProvider>
-  );
-}
-
 export default function App() {
   const initialized = useAuthStore((s) => s.initialized);
   const initialize = useAuthStore((s) => s.initialize);
@@ -128,7 +98,9 @@ export default function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <ToastProvider>
-          <AuthGate />
+          <AccountProvider>
+            <AccountGate />
+          </AccountProvider>
           <div id="toastRoot" />
         </ToastProvider>
       </BrowserRouter>
