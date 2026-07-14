@@ -40,6 +40,12 @@ export async function requireAuth(
     return null;
   }
 
+  const allowedDomain = process.env.ALLOWED_EMAIL_DOMAIN || 'trilliantdigital.com';
+  if (!user.email?.toLowerCase().endsWith(`@${allowedDomain}`)) {
+    sendError(res, 403, 'domain_not_allowed', `Only @${allowedDomain} accounts are allowed.`);
+    return null;
+  }
+
   const accountId =
     (req.body as any)?.account_id ||
     req.headers['x-account-id'] as string;

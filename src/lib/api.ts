@@ -71,32 +71,6 @@ export const api = {
   // Auth
   // --------------------------------------------------------------------------
   auth: {
-    async signUp(
-      email: string,
-      password: string,
-      name: string,
-    ): Promise<Result<{ user: any; session: any }>> {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { name } },
-      });
-      if (error) return err(error.message);
-      return ok({ user: data.user, session: data.session });
-    },
-
-    async signIn(
-      email: string,
-      password: string,
-    ): Promise<Result<{ user: any; session: any }>> {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) return err(error.message);
-      return ok({ user: data.user, session: data.session });
-    },
-
     async signOut(): Promise<Result<void>> {
       const { error } = await supabase.auth.signOut();
       if (error) return err(error.message);

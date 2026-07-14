@@ -3,6 +3,8 @@ import { supabase, supabaseConfigured } from '@/lib/supabase';
 import type { User } from '@/types';
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 
+const ALLOWED_DOMAIN = 'trilliantdigital.com';
+
 interface AuthState {
   user: User | null;
   session: Session | null;
@@ -11,8 +13,7 @@ interface AuthState {
   initialized: boolean;
 
   initialize: () => Promise<void>;
-  signUp: (email: string, password: string, name: string) => Promise<void>;
-  signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -31,6 +32,11 @@ function mapSupabaseUser(supaUser: {
     is_org_admin: meta.is_org_admin ?? false,
     created_at: supaUser.created_at,
   };
+}
+
+function isDomainAllowed(email?: string): boolean {
+  if (!email) return false;
+  return email.toLowerCase().endsWith(`@${ALLOWED_DOMAIN}`);
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -53,6 +59,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (error) throw error;
 
       if (data.session) {
+        if (!isDomainAllowed(data.session.user.email)) {
+          await supabase.auth.signOut();
+          set({ initialized: true, error: `Only @${ALLOWED_DOMAIN} accounts are allowed.` });
+          return;
+        }
         set({
           session: data.session,
           user: mapSupabaseUser(data.session.user),
@@ -68,7 +79,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     supabase.auth.onAuthStateChange(
       (_event: AuthChangeEvent, session: Session | null) => {
         if (session) {
-          set({ session, user: mapSupabaseUser(session.user) });
+          if (!isDomainAllowed(session.user.email)) {
+            supabase.auth.signOut();
+            set({ session: null, user: null, error: `Only @${ALLOWED_DOMAIN} accounts are allowed.` });
+            return;
+          }
+          set({ session, user: mapSupabaseUser(session.user), error: null });
         } else {
           set({ session: null, user: null });
         }
@@ -76,46 +92,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     );
   },
 
-  signUp: async (email, password, name) => {
+  signInWithGoogle: async () => {
     set({ loading: true, error: null });
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { data: { name } },
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          queryParams: { hd: ALLOWED_DOMAIN },
+          redirectTo: window.location.origin,
+        },
       });
       if (error) throw error;
-
-      if (data.session) {
-        set({
-          session: data.session,
-          user: mapSupabaseUser(data.session.user),
-          loading: false,
-        });
-      } else {
-        set({ loading: false, error: 'Check your email to confirm your account.' });
-      }
     } catch (err: any) {
-      set({ loading: false, error: err.message ?? 'Sign up failed' });
-    }
-  },
-
-  signIn: async (email, password) => {
-    set({ loading: true, error: null });
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (error) throw error;
-
-      set({
-        session: data.session,
-        user: mapSupabaseUser(data.session.user),
-        loading: false,
-      });
-    } catch (err: any) {
-      set({ loading: false, error: err.message ?? 'Sign in failed' });
+      set({ loading: false, error: err.message ?? 'Google sign-in failed' });
     }
   },
 
