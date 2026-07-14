@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { callLLM } from './_lib/llm';
-import { extractJSON } from './_lib/json';
-import { handleOptions, sendError } from './_lib/http';
-import { logUsage } from './_lib/usage';
-import type { KnowledgeChunk } from './_lib/types';
+import { callLLM } from './_lib/llm.js';
+import { extractJSON } from './_lib/json.js';
+import { handleOptions, sendError } from './_lib/http.js';
+import { logUsage } from './_lib/usage.js';
+import type { KnowledgeChunk } from './_lib/types.js';
 
 // Brand-agnostic content strategist. This app is multi-account (finance,
 // eyewear, water treatment, etc.), so the DNA stays generic and leans on the

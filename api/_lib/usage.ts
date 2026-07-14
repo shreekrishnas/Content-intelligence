@@ -1,4 +1,4 @@
-import type { LLMUsage } from './llm';
+import type { LLMUsage } from './llm.js';
 
 export async function logUsage(
   ctx: { accountId?: string; userId?: string } | null | undefined,
@@ -6,7 +6,7 @@ export async function logUsage(
   usage: LLMUsage,
 ): Promise<void> {
   try {
-    const { getServiceClient } = await import('./supabase');
+    const { getServiceClient } = await import('./supabase.js');
     const admin = getServiceClient();
     await admin.from('usage_ledger').insert({
       account_id: ctx?.accountId || 'anonymous',

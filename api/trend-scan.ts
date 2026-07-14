@@ -1,11 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { callLLM } from './_lib/llm';
-import { extractJSON } from './_lib/json';
-import { handleOptions, sendError } from './_lib/http';
-import { cors } from './_lib/http';
-import { getServiceClient } from './_lib/supabase';
-import { supervise, topicToRecord } from './_lib/trends';
-import type { DomainProfile, TrendSignal } from './_lib/types';
+import { callLLM } from './_lib/llm.js';
+import { extractJSON } from './_lib/json.js';
+import { handleOptions, sendError, cors } from './_lib/http.js';
+import { getServiceClient } from './_lib/supabase.js';
+import { supervise, topicToRecord } from './_lib/trends.js';
+import type { DomainProfile, TrendSignal } from './_lib/types.js';
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
 

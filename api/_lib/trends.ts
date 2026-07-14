@@ -1,6 +1,6 @@
-import { callLLM } from './llm';
-import { extractJSON } from './json';
-import type { DomainProfile, TrendSignal } from './types';
+import { callLLM } from './llm.js';
+import { extractJSON } from './json.js';
+import type { DomainProfile, TrendSignal } from './types.js';
 
 export const SUPERVISOR_SYSTEM_PROMPT = `You are an AI Trend Supervisor. You sit between raw trend signals and a content Action Layer. You do NOT forward every topic — you classify, score, filter, prioritise, and route.
 

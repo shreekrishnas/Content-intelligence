@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { cors, sendError } from './http';
+import { cors, sendError } from './http.js';
 
 export interface AuthContext {
   userId: string;

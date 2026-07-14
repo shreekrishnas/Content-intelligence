@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { embedSingle, pickEmbedProvider } from './_lib/embedding';
-import { handleOptions, sendError } from './_lib/http';
-import { cors } from './_lib/http';
+import { embedSingle, pickEmbedProvider } from './_lib/embedding.js';
+import { handleOptions, sendError, cors } from './_lib/http.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;

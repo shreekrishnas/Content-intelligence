@@ -1,8 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { handleOptions, sendError } from './_lib/http';
-import { cors } from './_lib/http';
-import { supervise } from './_lib/trends';
-import type { DomainProfile, TrendSignal } from './_lib/types';
+import { handleOptions, sendError, cors } from './_lib/http.js';
+import { supervise } from './_lib/trends.js';
+import type { DomainProfile, TrendSignal } from './_lib/types.js';
 
 interface SupervisorRequest {
   domain_profile?: DomainProfile;

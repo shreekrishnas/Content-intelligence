@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { callLLM } from './_lib/llm';
-import { extractJSON } from './_lib/json';
-import { handleOptions, sendError } from './_lib/http';
-import { logUsage } from './_lib/usage';
-import type { FileContext, KnowledgeChunk } from './_lib/types';
+import { callLLM } from './_lib/llm.js';
+import { extractJSON } from './_lib/json.js';
+import { handleOptions, sendError } from './_lib/http.js';
+import { logUsage } from './_lib/usage.js';
+import type { FileContext, KnowledgeChunk } from './_lib/types.js';
 
 const GROUNDING_SYSTEM_PROMPT = `You are a senior content creator for a financial services brand in India. You write high-quality, publication-ready content that marketing teams can use immediately.
 

@@ -1,8 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { embedBatch, pickEmbedProvider, toVectorLiteral } from './_lib/embedding';
-import { handleOptions, sendError } from './_lib/http';
-import { cors } from './_lib/http';
-import { getServiceClient } from './_lib/supabase';
+import { embedBatch, pickEmbedProvider, toVectorLiteral } from './_lib/embedding.js';
+import { handleOptions, sendError, cors } from './_lib/http.js';
+import { getServiceClient } from './_lib/supabase.js';
 
 // ============================================================
 // Backfill embeddings for chunks that were uploaded before
