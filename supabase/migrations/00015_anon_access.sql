@@ -76,6 +76,10 @@ CREATE POLICY "anon_trend_records_insert" ON trend_records FOR INSERT TO anon WI
 CREATE POLICY "anon_trend_records_update" ON trend_records FOR UPDATE TO anon USING (true);
 CREATE POLICY "anon_trend_records_delete" ON trend_records FOR DELETE TO anon USING (true);
 
--- usage_ledger
-CREATE POLICY "anon_usage_ledger_select" ON usage_ledger FOR SELECT TO anon USING (true);
-CREATE POLICY "anon_usage_ledger_insert" ON usage_ledger FOR INSERT TO anon WITH CHECK (true);
+-- usage_ledger (created in migration 00013 — only add policy if table exists)
+DO $$ BEGIN
+  IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'usage_ledger') THEN
+    CREATE POLICY "anon_usage_ledger_select" ON usage_ledger FOR SELECT TO anon USING (true);
+    CREATE POLICY "anon_usage_ledger_insert" ON usage_ledger FOR INSERT TO anon WITH CHECK (true);
+  END IF;
+END $$;
