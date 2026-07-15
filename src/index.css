@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "tailwindcss-animate";
 
 /* ================================================================== */
 /*  DESIGN SYSTEM — Content Intelligence Platform                      */
@@ -183,26 +184,7 @@ h1, h2, h3, p, div, span, label { color: inherit; }
 
 .sidebar-item svg { width: 20px; height: 20px; }
 
-.sidebar-item::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: 60px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: #1E1B4B;
-  color: #fff;
-  padding: 0.35rem 0.7rem;
-  border-radius: 0.5rem;
-  font-size: 0.72rem;
-  font-weight: 600;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity .15s ease;
-  z-index: 50;
-}
-
-.sidebar-item:hover::after { opacity: 1; }
+/* sidebar tooltips handled by Floating UI Tooltip component */
 
 /* ── 6. App content area ─────────────────────────────────────────── */
 

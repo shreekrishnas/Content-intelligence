@@ -1,4 +1,5 @@
 import { useEffect, lazy, Suspense } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useAppStore } from '@/store';
 import Atmosphere from './Atmosphere';
 import Sidebar from './Sidebar';
@@ -49,11 +50,20 @@ export default function AppShell() {
           <Sidebar activeTab={currentTab} onTabChange={setActiveTab} />
           <div className="app-content">
             <Topbar activeTab={currentTab} onToggleTheme={toggleTheme} theme={theme} />
-            <div className="app-main page-enter" key={currentTab}>
-              <Suspense fallback={<div className="empty-state"><p>Loading...</p></div>}>
-                {ActivePage && <ActivePage />}
-              </Suspense>
-            </div>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={currentTab}
+                className="app-main"
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
+              >
+                <Suspense fallback={<div className="empty-state"><p>Loading...</p></div>}>
+                  {ActivePage && <ActivePage />}
+                </Suspense>
+              </motion.div>
+            </AnimatePresence>
           </div>
         </div>
       </div>

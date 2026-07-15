@@ -56,8 +56,19 @@ function LoadingScreen() {
   return (
     <div className="app-outer">
       <div className="atmosphere" />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', position: 'relative', zIndex: 1 }}>
-        <div className="spin-dot" style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--accent-primary)' }} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', position: 'relative', zIndex: 1, gap: '0.5rem' }}>
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: 'var(--accent-primary)',
+              animation: `pulseDot 1.2s ease-in-out ${i * 0.18}s infinite`,
+            }}
+          />
+        ))}
       </div>
     </div>
   );
