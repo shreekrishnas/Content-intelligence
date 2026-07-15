@@ -16,7 +16,9 @@ export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
           onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
           signUp: () => Promise.resolve({ data: {}, error: { message: 'Supabase not configured' } }),
           signInWithPassword: () => Promise.resolve({ data: {}, error: { message: 'Supabase not configured' } }),
+          signInWithOAuth: () => Promise.resolve({ data: {}, error: { message: 'Supabase not configured' } }),
           signOut: () => Promise.resolve({ error: null }),
+          getUser: () => Promise.resolve({ data: { user: null }, error: null }),
         };
       }
       if (prop === 'from') {

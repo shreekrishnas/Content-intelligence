@@ -1,10 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { BrowserRouter } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { AccountProvider, useAccount } from './contexts/AccountContext';
 import AppShell from './components/layout/AppShell';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/Toast';
+import LoginPage from './pages/LoginPage';
+import { supabaseConfigured } from './lib/supabase';
 
 function ErrorScreen({ title, message }: { title: string; message: string }) {
   return (
@@ -61,6 +63,12 @@ function LoadingScreen() {
   );
 }
 
+function AuthGate({ children }: { children: ReactNode }) {
+  const user = useAuthStore((s) => s.user);
+  if (supabaseConfigured && !user) return <LoginPage />;
+  return <>{children}</>;
+}
+
 function AccountGate() {
   const { accountId, account, loading, error } = useAccount();
 
@@ -98,9 +106,11 @@ export default function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <ToastProvider>
-          <AccountProvider>
-            <AccountGate />
-          </AccountProvider>
+          <AuthGate>
+            <AccountProvider>
+              <AccountGate />
+            </AccountProvider>
+          </AuthGate>
           <div id="toastRoot" />
         </ToastProvider>
       </BrowserRouter>
