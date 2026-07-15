@@ -1,13 +1,13 @@
 /**
- * Content Intelligence brand mark.
+ * Content Intelligence brand mark — "Constellation".
  *
- * A twin-spark motif (large + small) — the recognizable "intelligence"
- * signal — set on a purple gradient badge. Bold enough to stay crisp
- * from 16px (favicon) up to 64px (login hero).
+ * A knowledge graph: one central intelligence node linked to three
+ * grounded source nodes. Says "AI built on your knowledge base"
+ * without the sparkle cliché.
  *
- *   <Logo />               → gradient badge + white spark (default 40px)
+ *   <Logo />               → gradient badge + white constellation (40px)
  *   <Logo size={56} />     → larger
- *   <Logo variant="mark" />→ just the spark glyph, inherits currentColor
+ *   <Logo variant="mark" />→ just the glyph, inherits currentColor
  */
 
 interface LogoProps {
@@ -18,12 +18,28 @@ interface LogoProps {
   style?: React.CSSProperties;
 }
 
-// Large spark (concave 4-point star) + small companion spark.
-const SPARK_PATH =
-  'M9.5 3 C9.5 8.1 11.9 10.5 17 10.5 C11.9 10.5 9.5 12.9 9.5 18 ' +
-  'C9.5 12.9 7.1 10.5 2 10.5 C7.1 10.5 9.5 8.1 9.5 3 Z ' +
-  'M18 1.7 C18 3.95 19.05 5 21.3 5 C19.05 5 18 6.05 18 8.3 ' +
-  'C18 6.05 16.95 5 14.7 5 C16.95 5 18 3.95 18 1.7 Z';
+const CENTER = { cx: 12, cy: 12, r: 2.8 };
+const NODES = [
+  { cx: 6.2, cy: 6.6, r: 1.9 },
+  { cx: 18.4, cy: 7.6, r: 1.9 },
+  { cx: 15.4, cy: 18.4, r: 1.9 },
+];
+
+function Constellation({ nodeFill }: { nodeFill: string }) {
+  return (
+    <>
+      <g stroke="currentColor" strokeWidth={1.7} opacity={0.85} strokeLinecap="round">
+        {NODES.map((n, i) => (
+          <line key={i} x1={CENTER.cx} y1={CENTER.cy} x2={n.cx} y2={n.cy} />
+        ))}
+      </g>
+      <circle cx={CENTER.cx} cy={CENTER.cy} r={CENTER.r} fill={nodeFill} />
+      {NODES.map((n, i) => (
+        <circle key={i} cx={n.cx} cy={n.cy} r={n.r} fill="currentColor" />
+      ))}
+    </>
+  );
+}
 
 export default function Logo({
   size = 40,
@@ -43,15 +59,14 @@ export default function Logo({
         style={style}
         aria-hidden
       >
-        <path d={SPARK_PATH} />
+        <Constellation nodeFill="currentColor" />
       </svg>
     );
   }
 
   const r = radius ?? size * 0.28;
-  const gid = `ci-logo-grad-${size}`;
-  const inset = size * 0.22;
-  const glyph = size - inset * 2;
+  const gid = `ci-node-grad-${size}`;
+  const glyph = size - size * 0.22 * 2;
 
   return (
     <span
@@ -63,8 +78,9 @@ export default function Logo({
         width: size,
         height: size,
         borderRadius: r,
-        background: `linear-gradient(140deg, #8B5CF6 0%, #7C3AED 55%, #6D28D9 100%)`,
+        background: 'linear-gradient(140deg, #8B5CF6 0%, #7C3AED 55%, #6D28D9 100%)',
         boxShadow: `0 ${size * 0.16}px ${size * 0.5}px rgba(124,58,237,0.45)`,
+        color: '#ffffff',
         flexShrink: 0,
         ...style,
       }}
@@ -77,7 +93,7 @@ export default function Logo({
             <stop offset="1" stopColor="#EDE9FE" />
           </linearGradient>
         </defs>
-        <path d={SPARK_PATH} fill={`url(#${gid})`} />
+        <Constellation nodeFill={`url(#${gid})`} />
       </svg>
     </span>
   );
