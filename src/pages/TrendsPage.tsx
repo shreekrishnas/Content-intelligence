@@ -120,29 +120,10 @@ export default function TrendsPage() {
         if (stale) return;
         showToast('Domain profile auto-detected');
 
-        // 2b: Run initial scan with detected profile
-        setScanning(true);
-        const scanRes = await api.trends.runScan({ accountId: acctId, accountLabel: acctName, profile: updated, mode: 'suggest' });
-        if (stale) return;
-
-        if (scanRes.error) { setError(scanRes.error); return; }
-        if (scanRes.data?.note) setNote(scanRes.data.note);
-
-        const topics = scanRes.data?.topics || [];
-        if (!topics.length) { setNote(scanRes.data?.note || 'No trends qualified.'); return; }
-
-        // 2c: Save scan results and load fresh records
-        if (!scanRes.data?.saved) {
-          const { error: saveErr } = await api.trends.saveScan(acctId, 'auto-detect', topics);
-          if (saveErr) { setError(`Scanned but could not save: ${saveErr}`); return; }
-        }
-        auditLog({ accountId: acctId, action: 'trend_scan', targetType: 'trend', detail: { source: 'auto-detect', count: topics.length } }).catch(() => {});
-
-        if (stale) return;
-        const freshRecs = await api.trends.list(acctId);
-        if (stale) return;
-        setRecords(freshRecs.data || []);
-        showToast(`Auto-scan complete — ${topics.length} topics reviewed`);
+        // 2b: Profile saved — do NOT auto-run AI-suggest scan.
+        // AI-suggested trends without live signal verification produce noisy results.
+        // Prompt the user to run a real Live Scan instead.
+        setNote('Domain profile detected. Click "Run Live Scan" to fetch real trending signals, or "AI-suggest candidates" for hypothesis-based ideas (lower confidence).');
       } finally {
         if (!stale) { setDetecting(false); setScanning(false); }
       }
@@ -409,7 +390,13 @@ export default function TrendsPage() {
                   <ScorePill label="Risk" value={t.risk_score} invert />
                 </div>
 
-                {t.suggested_connection && (
+                {(t as any).content_angle && (
+                  <div style={{ fontSize: '0.78rem', marginBottom: 6, padding: '6px 10px', background: 'var(--accent-primary-soft)', borderRadius: 8, borderLeft: '2px solid var(--accent-primary)' }}>
+                    <strong style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-primary)' }}>Content angle</strong>
+                    <div style={{ marginTop: 2 }}>{(t as any).content_angle}</div>
+                  </div>
+                )}
+                {t.suggested_connection && !(t as any).content_angle && (
                   <div style={{ fontSize: '0.74rem', marginBottom: 6 }}><strong>Connection:</strong> {t.suggested_connection}</div>
                 )}
                 {t.reason && <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginBottom: 8 }}>{t.reason}</div>}

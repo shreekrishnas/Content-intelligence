@@ -51,23 +51,35 @@ export function signalsBlock(signals: TrendSignal[] = []): string {
 
 export async function supervise(body: { domain_profile?: DomainProfile; signals?: TrendSignal[]; account_label?: string }) {
   const max = Math.min(body.domain_profile?.max_recommendations ?? 5, 5);
+
+  const signals = body.signals || [];
+  const isAiOnly = signals.length > 0 && signals.every((s) => s.source === 'ai-suggested');
+  const hasMixedSources = !isAiOnly && signals.some((s) => s.source === 'ai-suggested');
+
+  const sourceNote = isAiOnly
+    ? `\nSOURCE WARNING: ALL signals below are AI-generated hypotheses — not verified live data. Apply strict skepticism:\n- Subtract 15 points from every domain_relevance_score and trend_impact_score before classifying.\n- Only classify as domain_trend if adjusted scores still meet thresholds (domain_relevance >= 70, trend_impact >= 55).\n- Prefer monitor over domain_trend when evidence is thin.\n- Confidence scores should reflect the lack of verification (cap at 70 unless the topic is unambiguously timely).`
+    : hasMixedSources
+    ? `\nSOURCE NOTE: Some signals are AI-generated hypotheses (marked source: ai-suggested). Score these more conservatively than verified live signals.`
+    : '';
+
   const prompt = `TODAY: ${new Date().toISOString().slice(0, 10)}
 ACCOUNT: ${body.account_label || body.domain_profile?.business_name || 'General'}
 
 DOMAIN PROFILE:
 ${profileBlock(body.domain_profile)}
-
+${sourceNote}
 RAW TREND SIGNALS (cluster duplicates — many overlap, be aggressive about merging):
-${signalsBlock(body.signals)}
+${signalsBlock(signals)}
 
 TASK: Supervise strictly. Deduplicate aggressively. Classify every clustered topic.
 - Max ${max} topics may be classified as domain_trend or supertrend_exception combined.
-- Max 3 topics may be classified as monitor (only genuinely promising ones).
+- Max 3 topics may be classified as monitor (only genuinely promising, time-bound ones).
 - Do NOT include rejected topics in the topics array — count them in summary only.
-- Aim for quality over quantity: 3 strong topics beats 15 mediocre ones.
+- Reject generic, evergreen, and non-time-bound topics without hesitation.
+- Aim for quality: 2 strong domain_trend items beats 8 mediocre ones.
 
 Return ONLY this JSON (no extra fields, no markdown):
-{"analysis_date":"YYYY-MM-DD","summary":{"total_topics_reviewed":0,"domain_trends_sent":0,"supertrends_sent":0,"topics_monitored":0,"topics_rejected":0},"topics":[{"topic":"","summary":"","classification":"domain_trend|supertrend_exception|monitor","domain_relevance_score":0,"trend_impact_score":0,"adaptability_score":0,"risk_score":0,"confidence_score":0,"priority":"high|medium|low","trend_stage":"emerging|growing|peak|declining","estimated_lifespan":"","recommended_route":"","recommended_formats":[],"suggested_connection":"","related_keywords":[],"needs_human_review":false,"reason":""}]}`;
+{"analysis_date":"YYYY-MM-DD","summary":{"total_topics_reviewed":0,"domain_trends_sent":0,"supertrends_sent":0,"topics_monitored":0,"topics_rejected":0},"topics":[{"topic":"","summary":"","classification":"domain_trend|supertrend_exception|monitor","domain_relevance_score":0,"trend_impact_score":0,"adaptability_score":0,"risk_score":0,"confidence_score":0,"priority":"high|medium|low","trend_stage":"emerging|growing|peak|declining","estimated_lifespan":"","recommended_route":"","recommended_formats":[],"suggested_connection":"","content_angle":"One specific content piece this brand should make","related_keywords":[],"needs_human_review":false,"reason":""}]}`;
   const { content: raw } = await callLLM(SUPERVISOR_SYSTEM_PROMPT, prompt, { maxTokens: 3000, temperature: 0.2 });
   const parsed: any = extractJSON(raw);
   const topics = Array.isArray(parsed) ? parsed : (parsed.topics || []);
@@ -96,6 +108,8 @@ export function topicToRecord(t: any): Record<string, unknown> {
     suggested_connection: String(t.suggested_connection || ''),
     recommended_formats: Array.isArray(t.recommended_formats) ? t.recommended_formats : [],
     related_keywords: Array.isArray(t.related_keywords) ? t.related_keywords : [],
+    content_angle: String(t.content_angle || ''),
+    needs_human_review: !!t.needs_human_review,
     status,
   };
 }

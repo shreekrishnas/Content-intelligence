@@ -53,20 +53,38 @@ async function collectTavilySignals(profile: DomainProfile): Promise<TrendSignal
 }
 
 async function suggestCandidateSignals(profile: DomainProfile, accountLabel?: string): Promise<TrendSignal[]> {
-  const sys = `You propose candidate topics for a trend supervisor to investigate. These are HYPOTHESES, not confirmed trends. Output ONLY raw JSON.`;
+  const today = new Date().toISOString().slice(0, 10);
+  const month = new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+
+  const sys = `You are a trend scout. You ONLY propose topics where something concrete and verifiable is happening RIGHT NOW — not evergreen topics, not hypotheticals. Output ONLY raw JSON. Be selective: 6 sharp candidates beat 12 vague ones.`;
+
   const user = `Business: ${accountLabel || profile.business_name || 'General'}
 Industry: ${profile.industry || 'unknown'}
-Core topics: ${profile.core_topics || ''}
-Target keywords: ${profile.target_keywords || ''}
-Audience: ${profile.target_audience || ''}
-Locations: ${profile.target_locations || ''}
+Core topics: ${profile.core_topics || '(not specified)'}
+Target keywords: ${profile.target_keywords || '(not specified)'}
+Audience: ${profile.target_audience || '(not specified)'}
+Locations: ${profile.target_locations || 'India'}
+Today's date: ${today} (${month})
 
-Propose 12 candidate topics that MIGHT be trending or timely for this business right now (${new Date().toISOString().slice(0, 10)}). Mix on-domain topics with 2-3 broader cultural/seasonal "supertrend" candidates.
-Return ONLY: {"candidates":[{"topic":"","summary":"why it might matter now"}]}`;
-  const { content: raw } = await callLLM(sys, user, { maxTokens: 2000, temperature: 0.8 });
+Propose exactly 6 candidate topics. Each MUST meet ALL of these criteria:
+1. Something that is happening or being discussed THIS MONTH specifically — not an evergreen topic
+2. Has a clear, specific event, announcement, regulatory change, market movement, or seasonal moment driving it
+3. Has a credible connection to the brand's industry AND audience — not just the broad industry
+4. Is narrow enough to write ONE concrete content piece about — not "digital payments growth"
+
+For each, state: the specific trigger event (what happened), why it matters to this audience NOW, and one content angle.
+
+Return ONLY: {"candidates":[{"topic":"Specific narrow topic","trigger":"The specific event or data point driving this right now","relevance":"Why this audience cares this month","content_angle":"One concrete content piece this brand could make"}]}`;
+
+  const { content: raw } = await callLLM(sys, user, { maxTokens: 1500, temperature: 0.4 });
   const parsed: any = extractJSON(raw);
   const list = Array.isArray(parsed) ? parsed : (parsed.candidates || parsed.topics || []);
-  return list.map((c: any) => ({ topic: c.topic, summary: c.summary, source: 'ai-suggested' }));
+  return list.slice(0, 6).map((c: any) => ({
+    topic: c.topic,
+    summary: `Trigger: ${c.trigger || 'unknown'}. Relevance: ${c.relevance || ''}. Angle: ${c.content_angle || ''}`,
+    source: 'ai-suggested',
+    score: 0.5, // mark as medium-confidence for supervisor pre-filter
+  }));
 }
 
 async function collect(profile: DomainProfile, accountLabel: string | undefined, mode: 'live' | 'suggest'): Promise<{ signals: TrendSignal[]; source: string; note?: string }> {
