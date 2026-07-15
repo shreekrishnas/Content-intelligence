@@ -1,3 +1,5 @@
+import Logo from '@/components/Logo';
+
 interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
@@ -86,11 +88,7 @@ const tabs = [
 export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   return (
     <div className="sidebar">
-      <div className="logo-mark">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 2l1.8 5.6L19 9.5l-5.2 1.9L12 17l-1.8-5.6L5 9.5l5.2-1.9L12 2z" />
-        </svg>
-      </div>
+      <Logo size={44} radius={13} style={{ marginBottom: 10 }} />
       {tabs.map((tab) => (
         <div
           key={tab.id}

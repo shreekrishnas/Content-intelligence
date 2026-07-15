@@ -1,4 +1,5 @@
 import { useAuthStore } from '@/stores/authStore';
+import Logo from '@/components/Logo';
 
 export default function LoginPage() {
   const { signInWithGoogle, loading, error } = useAuthStore();
@@ -9,35 +10,37 @@ export default function LoginPage() {
       <aside className="login-brand">
         <div className="login-brand__mesh" />
         <div className="login-brand__grain" />
+        <div className="login-brand__glow" />
 
         <div className="login-brand__inner">
           <div className="login-brand__top">
-            <div className="login-logo">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-              </svg>
-            </div>
+            <Logo size={38} radius={11} />
             <span className="login-logo__word">Content Intelligence</span>
           </div>
 
           <div className="login-brand__hero">
+            <div className="login-eyebrow">AI CONTENT STRATEGY PLATFORM</div>
             <h1 className="login-brand__headline">
               Turn every source into<br />a content strategy.
             </h1>
             <p className="login-brand__sub">
               Analyze transcripts, surface opportunities, generate on-brand drafts,
-              and track trends — all grounded in your knowledge base.
+              and track live trends — every step grounded in your knowledge base.
             </p>
 
             <ul className="login-brand__features">
-              <li><Dot /> AI analysis that reads, understands & routes</li>
-              <li><Dot /> Grounded generation from your brand knowledge</li>
-              <li><Dot /> Live trend supervision across every account</li>
+              <li><Check /> AI analysis that reads, understands &amp; routes</li>
+              <li><Check /> Grounded generation from your brand knowledge</li>
+              <li><Check /> Live trend supervision across every account</li>
             </ul>
           </div>
 
-          <div className="login-brand__foot">
-            © {new Date().getFullYear()} Trilliant Digital · Internal Platform
+          <div className="login-brand__stats">
+            <Stat value="9" label="AI agents" />
+            <span className="login-stat__div" />
+            <Stat value="5" label="Accounts" />
+            <span className="login-stat__div" />
+            <Stat value="100%" label="KB-grounded" />
           </div>
         </div>
       </aside>
@@ -45,10 +48,8 @@ export default function LoginPage() {
       {/* ─────────────────────────  RIGHT · SIGN IN  ───────────────────────── */}
       <main className="login-panel">
         <div className="login-card">
-          <div className="login-logo login-logo--mobile">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" />
-            </svg>
+          <div className="login-card__brandline">
+            <Logo size={46} radius={13} />
           </div>
 
           <h2 className="login-card__title">Welcome back</h2>
@@ -89,6 +90,10 @@ export default function LoginPage() {
             </svg>
             <span>Restricted to <strong>@trilliantdigital.com</strong> accounts</span>
           </div>
+
+          <div className="login-card__foot">
+            © {new Date().getFullYear()} Trilliant Digital · Internal Platform
+          </div>
         </div>
       </main>
 
@@ -97,13 +102,22 @@ export default function LoginPage() {
   );
 }
 
-function Dot() {
+function Check() {
   return (
     <span className="login-feat-check">
       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="20 6 9 17 4 12" />
       </svg>
     </span>
+  );
+}
+
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="login-stat">
+      <div className="login-stat__value">{value}</div>
+      <div className="login-stat__label">{label}</div>
+    </div>
   );
 }
 
@@ -137,27 +151,35 @@ const CSS = `
   background-size: 3px 3px;
   mask-image: radial-gradient(80% 80% at 50% 40%, #000 0%, transparent 100%);
 }
+.login-brand__glow {
+  position: absolute; width: 420px; height: 420px; border-radius: 50%;
+  top: 30%; left: 45%; pointer-events: none;
+  background: radial-gradient(circle, rgba(167,139,250,0.28) 0%, transparent 65%);
+  filter: blur(30px);
+  animation: login-float 9s ease-in-out infinite;
+}
+@keyframes login-float {
+  0%,100% { transform: translate(0,0); }
+  50% { transform: translate(-24px,-30px); }
+}
 .login-brand__inner {
   position: relative; z-index: 1;
   display: flex; flex-direction: column;
   padding: 3.25rem 3.5rem;
   width: 100%;
+  animation: login-rise 0.6s cubic-bezier(0.16,1,0.3,1) both;
 }
-.login-brand__top {
-  display: flex; align-items: center; gap: 0.75rem;
-}
-.login-logo {
-  width: 40px; height: 40px; border-radius: 0.75rem; flex-shrink: 0;
-  background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%);
-  display: inline-flex; align-items: center; justify-content: center;
-  box-shadow: 0 6px 20px rgba(124,58,237,0.5);
-}
+.login-brand__top { display: flex; align-items: center; gap: 0.75rem; }
 .login-logo__word {
   color: #fff; font-weight: 650; font-size: 1.02rem; letter-spacing: -0.02em;
 }
-.login-brand__hero { margin-top: auto; margin-bottom: auto; padding: 2rem 0; }
+.login-brand__hero { margin-top: auto; margin-bottom: auto; padding: 2.25rem 0; }
+.login-eyebrow {
+  display: inline-block; color: #c4b5fd; font-size: 0.7rem; font-weight: 700;
+  letter-spacing: 0.16em; margin-bottom: 1.1rem;
+}
 .login-brand__headline {
-  color: #fff; font-size: 2.55rem; line-height: 1.12; font-weight: 700;
+  color: #fff; font-size: 2.6rem; line-height: 1.12; font-weight: 700;
   letter-spacing: -0.035em; margin: 0 0 1.25rem;
 }
 .login-brand__sub {
@@ -178,9 +200,17 @@ const CSS = `
   background: rgba(139,92,246,0.22); color: #c4b5fd;
   border: 1px solid rgba(139,92,246,0.35);
 }
-.login-brand__foot {
-  color: rgba(255,255,255,0.32); font-size: 0.78rem; letter-spacing: 0.01em;
+.login-brand__stats {
+  display: flex; align-items: center; gap: 1.5rem;
+  padding-top: 1.75rem; border-top: 1px solid rgba(255,255,255,0.09);
 }
+.login-stat__value {
+  color: #fff; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1;
+}
+.login-stat__label {
+  color: rgba(255,255,255,0.42); font-size: 0.74rem; margin-top: 0.3rem; font-weight: 500;
+}
+.login-stat__div { width: 1px; height: 34px; background: rgba(255,255,255,0.1); }
 
 /* ── RIGHT / SIGN IN ──────────────────────────────────────── */
 .login-panel {
@@ -193,10 +223,11 @@ const CSS = `
 }
 .login-card {
   width: 100%; max-width: 380px;
+  animation: login-rise 0.6s cubic-bezier(0.16,1,0.3,1) 0.08s both;
 }
-.login-logo--mobile { display: none; margin-bottom: 1.75rem; }
+.login-card__brandline { margin-bottom: 1.75rem; }
 .login-card__title {
-  font-size: 1.7rem; font-weight: 700; letter-spacing: -0.03em;
+  font-size: 1.72rem; font-weight: 700; letter-spacing: -0.03em;
   color: #1e1b4b; margin: 0 0 0.4rem;
 }
 .login-card__desc {
@@ -212,8 +243,8 @@ const CSS = `
 
 .login-google {
   display: flex; align-items: center; justify-content: center; gap: 0.7rem;
-  width: 100%; padding: 0.85rem 1.25rem;
-  border-radius: 0.8rem; border: 1.5px solid #e5e7eb; background: #fff;
+  width: 100%; padding: 0.9rem 1.25rem;
+  border-radius: 0.85rem; border: 1.5px solid #e5e7eb; background: #fff;
   color: #1f2937; font-size: 0.95rem; font-weight: 600; letter-spacing: -0.01em;
   cursor: pointer; outline: none;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.06s ease;
@@ -221,7 +252,7 @@ const CSS = `
 }
 .login-google:hover:not(:disabled) {
   border-color: #7c3aed;
-  box-shadow: 0 4px 16px rgba(124,58,237,0.14);
+  box-shadow: 0 6px 20px rgba(124,58,237,0.16);
 }
 .login-google:active:not(:disabled) { transform: translateY(1px); }
 .login-google:disabled { opacity: 0.65; cursor: wait; }
@@ -235,14 +266,23 @@ const CSS = `
   color: #9ca3af; font-size: 0.78rem;
 }
 .login-note strong { color: #6b7280; font-weight: 600; }
+.login-card__foot {
+  text-align: center; margin-top: 1.25rem;
+  color: #c4c4cf; font-size: 0.72rem;
+}
+
+@keyframes login-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 /* ── RESPONSIVE ───────────────────────────────────────────── */
-@media (max-width: 860px) {
+@media (max-width: 900px) {
   .login-root { grid-template-columns: 1fr; }
   .login-brand { display: none; }
-  .login-logo--mobile {
-    display: inline-flex; width: 44px; height: 44px; border-radius: 0.85rem;
-  }
   .login-panel { padding: 1.5rem; }
+}
+@media (min-width: 901px) {
+  .login-card__brandline { display: none; }
 }
 `;

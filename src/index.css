@@ -144,18 +144,6 @@ h1, h2, h3, p, div, span, label { color: inherit; }
   gap: 0.5rem;
 }
 
-.logo-mark {
-  width: 44px;
-  height: 44px;
-  border-radius: 0.875rem;
-  background: linear-gradient(135deg, #6366F1, #7C3AED);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 1rem;
-  flex-shrink: 0;
-}
-
 .sidebar-item {
   width: 48px;
   height: 48px;
