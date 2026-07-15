@@ -9,8 +9,8 @@ export async function logUsage(
     const { getServiceClient } = await import('./supabase.js');
     const admin = getServiceClient();
     await admin.from('usage_ledger').insert({
-      account_id: ctx?.accountId || 'anonymous',
-      user_id: ctx?.userId || 'anonymous',
+      account_id: ctx?.accountId || null,
+      user_id: ctx?.userId || null,
       endpoint,
       input_tokens: usage.input_tokens,
       output_tokens: usage.output_tokens,

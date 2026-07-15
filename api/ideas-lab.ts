@@ -227,21 +227,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!body?.task) return sendError(res, 400, 'missing_task', 'Missing required field: task.');
 
     let userPrompt: string;
-    let maxTokens = 6000;
+    let maxTokens = 3500;
     let temperature = 0.8;
 
     switch (body.task) {
-      case 'generate': userPrompt = buildGenerate(body); maxTokens = 5000; temperature = 0.85; break;
+      case 'generate': userPrompt = buildGenerate(body); maxTokens = 3000; temperature = 0.85; break;
       case 'webinar':
         if (!body.text?.trim()) return sendError(res, 400, 'missing_text', 'Webinar repurposing requires source text.');
-        userPrompt = buildWebinar(body); maxTokens = 6000; temperature = 0.75; break;
+        userPrompt = buildWebinar(body); maxTokens = 3500; temperature = 0.75; break;
       case 'seo':
         if (!body.keywords?.trim()) return sendError(res, 400, 'missing_keywords', 'SEO ideas require at least one keyword.');
-        userPrompt = buildSeo(body); maxTokens = 7000; temperature = 0.7; break;
-      case 'seasonal': userPrompt = buildSeasonal(body); maxTokens = 5000; temperature = 0.8; break;
+        userPrompt = buildSeo(body); maxTokens = 3500; temperature = 0.7; break;
+      case 'seasonal': userPrompt = buildSeasonal(body); maxTokens = 3000; temperature = 0.8; break;
       case 'expand':
         if (!body.idea) return sendError(res, 400, 'missing_idea', 'Expand requires an idea object.');
-        userPrompt = buildExpand(body); maxTokens = 6000; temperature = 0.6; break;
+        userPrompt = buildExpand(body); maxTokens = 3500; temperature = 0.6; break;
       default:
         return sendError(res, 400, 'invalid_task', `Invalid task: ${body.task}`);
     }
