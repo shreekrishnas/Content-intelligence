@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import EmptyState from '@/components/ui/EmptyState';
+import { RowSkeleton } from '@/components/ui/Skeleton';
 import { useAccount } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
 import { auditLog } from '@/lib/audit';
@@ -205,7 +207,9 @@ export default function KnowledgeBasePage() {
       <div>
         <p className="eyebrow">Knowledge Management</p>
         <h1 className="page-title">Knowledge Base</h1>
-        <div className="empty-state"><p>Loading...</p></div>
+        <div className="glass-card-static" style={{ padding: 0, marginTop: 16 }}>
+          {[1,2,3,4].map(i => <RowSkeleton key={i} />)}
+        </div>
       </div>
     );
   }
@@ -293,9 +297,11 @@ export default function KnowledgeBasePage() {
 
       <div className="glass-card-static" style={{ padding: 0 }}>
         {filtered.length === 0 ? (
-          <div className="empty-state" style={{ padding: 32 }}>
-            <p>{files.length === 0 ? 'No knowledge files yet. Upload files to get started.' : 'No files in this category.'}</p>
-          </div>
+          <EmptyState
+            icon="knowledge"
+            title={files.length === 0 ? 'No knowledge files yet' : 'No files in this category'}
+            description={files.length === 0 ? 'Upload PDFs, Word docs, or text files to ground the AI in your brand knowledge.' : 'Switch categories or upload a file in this category.'}
+          />
         ) : (
           filtered.map((file, i) => {
             const pc = PRIORITY_COLORS[file.priority] || '#9CA3AF';

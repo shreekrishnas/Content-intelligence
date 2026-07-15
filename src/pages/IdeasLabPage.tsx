@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import EmptyState from '@/components/ui/EmptyState';
 import { useAppStore } from '@/store';
 import { useAccount } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
@@ -593,9 +594,11 @@ export default function IdeasLabPage() {
       )}
 
       {!loading && activeIdeas.length === 0 && (
-        <div className="empty-state">
-          <p>{subTab === 'library' ? 'No saved ideas yet. Save ideas from any tab to build your library.' : 'No ideas yet. Fill the brief above and generate.'}</p>
-        </div>
+        <EmptyState
+          icon="ideas"
+          title={subTab === 'library' ? 'Your library is empty' : 'No ideas yet'}
+          description={subTab === 'library' ? 'Save ideas from any tab to build your reusable library.' : 'Fill in the brief above and hit Generate to create ideas.'}
+        />
       )}
 
       {filtered.length > 0 && (

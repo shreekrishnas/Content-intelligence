@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import EmptyState from '@/components/ui/EmptyState';
+import { CardSkeleton } from '@/components/ui/Skeleton';
 import { useAppStore } from '@/store';
 import { useAccount } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
@@ -88,7 +90,9 @@ export default function OpportunitiesPage() {
       <div>
         <p className="eyebrow">Content Pipeline</p>
         <h1 className="page-title">Opportunities</h1>
-        <div className="empty-state"><p>Loading...</p></div>
+        <div className="grid grid-3" style={{ marginTop: 16 }}>
+          {[1,2,3,4,5,6].map(i => <CardSkeleton key={i} />)}
+        </div>
       </div>
     );
   }
@@ -118,9 +122,11 @@ export default function OpportunitiesPage() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="empty-state">
-          <p>{opportunities.length === 0 ? 'No opportunities yet. Run an analysis to generate opportunities.' : 'No opportunities match the current filter.'}</p>
-        </div>
+        <EmptyState
+          icon="opportunities"
+          title={opportunities.length === 0 ? 'No opportunities yet' : 'No matches'}
+          description={opportunities.length === 0 ? 'Run an analysis to generate content opportunities from your sources.' : 'No opportunities match the current filter. Try adjusting or clearing it.'}
+        />
       ) : (
         <div className="grid grid-3">
           {filtered.map((opp) => {
