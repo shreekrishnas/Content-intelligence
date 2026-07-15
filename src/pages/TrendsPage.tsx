@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import EmptyState from '@/components/ui/EmptyState';
 import { useAppStore } from '@/store';
 import { useAccount } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
@@ -50,7 +51,7 @@ export default function TrendsPage() {
   const [detecting, setDetecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [filter, setFilter] = useState<string>('all');
+  const [filter, setFilter] = useState<string>('actionable');
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const autoDetectRanRef = useRef<Set<string>>(new Set());
@@ -249,17 +250,23 @@ export default function TrendsPage() {
   }
 
   const counts = useMemo(() => ({
-    all: records.length,
+    actionable: records.filter((r) => r.classification === 'domain_trend' || r.classification === 'supertrend_exception').length,
     domain_trend: records.filter((r) => r.classification === 'domain_trend').length,
     supertrend_exception: records.filter((r) => r.classification === 'supertrend_exception').length,
     monitor: records.filter((r) => r.classification === 'monitor').length,
-    reject: records.filter((r) => r.classification === 'reject').length,
     actioned: records.filter((r) => r.status === 'actioned').length,
   }), [records]);
 
-  const filtered = filter === 'all' ? records
-    : filter === 'actioned' ? records.filter((r) => r.status === 'actioned')
-    : records.filter((r) => r.classification === filter);
+  const sortByScore = (a: any, b: any) =>
+    (b.domain_relevance_score + b.trend_impact_score) - (a.domain_relevance_score + a.trend_impact_score);
+
+  const filtered = useMemo(() => {
+    let base: typeof records;
+    if (filter === 'actionable') base = records.filter((r) => r.classification === 'domain_trend' || r.classification === 'supertrend_exception');
+    else if (filter === 'actioned') base = records.filter((r) => r.status === 'actioned');
+    else base = records.filter((r) => r.classification === filter);
+    return [...base].sort(sortByScore);
+  }, [records, filter]);
 
   function setField<K extends keyof TrendProfile>(k: K, v: TrendProfile[K]) { setProfile((p) => ({ ...p, [k]: v })); }
 
@@ -345,11 +352,10 @@ export default function TrendsPage() {
       {records.length > 0 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
           {[
-            { k: 'all', label: `All (${counts.all})` },
+            { k: 'actionable', label: `Strong (${counts.actionable})` },
             { k: 'domain_trend', label: `Domain (${counts.domain_trend})` },
             { k: 'supertrend_exception', label: `Supertrend (${counts.supertrend_exception})` },
-            { k: 'monitor', label: `Monitor (${counts.monitor})` },
-            { k: 'reject', label: `Rejected (${counts.reject})` },
+            { k: 'monitor', label: `Watch (${counts.monitor})` },
             { k: 'actioned', label: `Actioned (${counts.actioned})` },
           ].map((f) => (
             <button key={f.k} className="badge" style={{ cursor: 'pointer', background: filter === f.k ? 'var(--accent-primary)' : undefined, color: filter === f.k ? '#fff' : undefined }} onClick={() => setFilter(f.k)}>{f.label}</button>
@@ -363,10 +369,17 @@ export default function TrendsPage() {
           {detecting && <p style={{ marginTop: 8, fontSize: '0.78rem', opacity: 0.6 }}>Auto-detecting profile for {accountMeta.name} from {accountMeta.url}</p>}
         </div>
       ) : records.length === 0 ? (
-        <div className="empty-state">
-          <p style={{ fontSize: '1rem', fontWeight: 600 }}>No trends yet</p>
-          <p style={{ marginTop: 8, opacity: 0.7, maxWidth: 420 }}>Click "Run Live Scan" or "AI-suggest candidates" to generate trends based on your domain profile.</p>
-        </div>
+        <EmptyState
+          icon="trends"
+          title="No trends yet"
+          description='Click "Run Live Scan" or "AI-suggest candidates" to find strong, actionable trends for your domain.'
+        />
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon="search"
+          title="No results in this filter"
+          description="The supervisor didn't find strong trends in this category. Try 'Watch' or run a fresh scan."
+        />
       ) : (
         <div className="grid grid-2" style={{ gap: '0.8rem' }}>
           {filtered.map((t) => {
@@ -380,7 +393,10 @@ export default function TrendsPage() {
                   <span className="badge" style={{ fontSize: '0.6rem', background: pc + '18', color: pc }}>{t.priority}</span>
                   <span className="badge" style={{ fontSize: '0.6rem' }}>{t.trend_stage}</span>
                   {t.status === 'actioned' && <span className="badge" style={{ fontSize: '0.6rem', background: '#10B98118', color: '#10B981' }}>Actioned</span>}
-                  <span style={{ marginLeft: 'auto', fontSize: '0.62rem', color: 'var(--text-muted)' }}>conf {t.confidence_score}</span>
+                  {t.needs_human_review && <span className="badge" style={{ fontSize: '0.6rem', background: '#F59E0B18', color: '#F59E0B' }}>Review</span>}
+                  <span style={{ marginLeft: 'auto', fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                    score {Math.round((t.domain_relevance_score + t.trend_impact_score) / 2)}
+                  </span>
                 </div>
 
                 <div style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: 4, lineHeight: 1.3 }}>{t.topic}</div>

@@ -250,6 +250,7 @@ export interface TrendRecord {
   recommended_formats: string[];
   related_keywords: string[];
   source_signals: Array<{ title?: string; url?: string; source?: string }>;
+  needs_human_review?: boolean;
   status: "new" | "accepted" | "monitoring" | "rejected" | "actioned";
   created_at: string;
 }

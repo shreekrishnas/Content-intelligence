@@ -2,24 +2,27 @@ import { callLLM } from './llm.js';
 import { extractJSON } from './json.js';
 import type { DomainProfile, TrendSignal } from './types.js';
 
-export const SUPERVISOR_SYSTEM_PROMPT = `You are an AI Trend Supervisor. You sit between raw trend signals and a content Action Layer. You do NOT forward every topic — you classify, score, filter, prioritise, and route.
+export const SUPERVISOR_SYSTEM_PROMPT = `You are an AI Trend Supervisor. You sit between raw trend signals and a content Action Layer. You are a strict gatekeeper — most signals should be rejected. Only forward the few that are genuinely strong.
 
 CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after. Your entire response must be parseable by JSON.parse().
 
 YOUR JOB:
 - Deduplicate and cluster signals that describe the same underlying topic into ONE record.
-- Score each topic on four independent 0-100 scales: domain_relevance, trend_impact, adaptability, and risk (higher = more dangerous).
+- Score each clustered topic on four independent 0-100 scales: domain_relevance, trend_impact, adaptability, and risk (higher = more dangerous).
 - Classify each into exactly one of: domain_trend, supertrend_exception, monitor, reject.
 - Assign priority, trend_stage, estimated_lifespan, and a confidence_score (0-100).
-- Write a clear, specific reason for every decision.
+- Write a specific, concrete reason for every classification.
+- Be ruthless: if in doubt, reject. A lean, high-quality output beats a bloated one.
 
-ROUTING RULES:
-- domain_trend: domain_relevance >= 60 AND trend_impact >= 40 AND risk <= 60.
-- supertrend_exception: domain_relevance < 60 AND trend_impact >= 90 AND adaptability >= 65 AND risk <= 40. Only with a natural brand connection.
-- monitor: relevant-but-weak, emerging, or incomplete evidence.
-- reject: low impact AND low relevance, or too risky/outdated/forced/duplicate.
+ROUTING RULES (all conditions must be met — not suggestions, requirements):
+- domain_trend: domain_relevance >= 70 AND trend_impact >= 55 AND risk <= 55. Must have a clear, direct content angle for this brand.
+- supertrend_exception: domain_relevance < 70 AND trend_impact >= 85 AND adaptability >= 70 AND risk <= 35. Only when there is an obvious, natural brand connection — do not force it.
+- monitor: genuinely emerging signal with real potential but insufficient evidence yet. Maximum 3 monitor items — pick only the most promising.
+- reject: everything else. When topics overlap, keep the strongest and reject duplicates. Reject anything generic, speculative, off-brand, risky, or outdated.
 
-GUARDRAILS: never invent trend data, never treat popularity as relevance, never force a brand connection, never exceed max_recommendations. If a topic touches politics, health, finance, law, tragedy, or controversy, raise its risk and set needs_human_review = true.`;
+OUTPUT RULE: Do NOT include rejected topics in the topics array. Only include domain_trend, supertrend_exception, and monitor items. Count rejections in the summary only.
+
+GUARDRAILS: never invent trend data, never treat virality as domain relevance, never force a brand connection, never exceed max_recommendations for domain_trend + supertrend combined. If a topic touches politics, health, finance, law, tragedy, or controversy, raise its risk and set needs_human_review = true.`;
 
 export function profileBlock(p: DomainProfile = {}): string {
   const rows: Array<[string, unknown]> = [
@@ -34,7 +37,7 @@ export function profileBlock(p: DomainProfile = {}): string {
 
 export function signalsBlock(signals: TrendSignal[] = []): string {
   if (!signals.length) return '(no signals)';
-  return signals.slice(0, 60).map((s, i) => {
+  return signals.slice(0, 30).map((s, i) => {
     const parts = [
       `[${i + 1}] ${s.topic || s.title || 'Untitled'}`,
       s.source ? `source: ${s.source}` : '',
@@ -47,21 +50,25 @@ export function signalsBlock(signals: TrendSignal[] = []): string {
 }
 
 export async function supervise(body: { domain_profile?: DomainProfile; signals?: TrendSignal[]; account_label?: string }) {
-  const max = body.domain_profile?.max_recommendations ?? 8;
+  const max = Math.min(body.domain_profile?.max_recommendations ?? 5, 5);
   const prompt = `TODAY: ${new Date().toISOString().slice(0, 10)}
 ACCOUNT: ${body.account_label || body.domain_profile?.business_name || 'General'}
 
 DOMAIN PROFILE:
 ${profileBlock(body.domain_profile)}
 
-RAW TREND SIGNALS (cluster duplicates before scoring):
+RAW TREND SIGNALS (cluster duplicates — many overlap, be aggressive about merging):
 ${signalsBlock(body.signals)}
 
-Supervise. Deduplicate, score, classify, route. Send at most ${max} topics to action.
+TASK: Supervise strictly. Deduplicate aggressively. Classify every clustered topic.
+- Max ${max} topics may be classified as domain_trend or supertrend_exception combined.
+- Max 3 topics may be classified as monitor (only genuinely promising ones).
+- Do NOT include rejected topics in the topics array — count them in summary only.
+- Aim for quality over quantity: 3 strong topics beats 15 mediocre ones.
 
-Return ONLY this JSON:
-{"analysis_date":"YYYY-MM-DD","summary":{"total_topics_reviewed":0,"domain_trends_sent":0,"supertrends_sent":0,"topics_monitored":0,"topics_rejected":0},"topics":[{"topic":"","summary":"","classification":"domain_trend|supertrend_exception|monitor|reject","domain_relevance_score":0,"trend_impact_score":0,"adaptability_score":0,"risk_score":0,"confidence_score":0,"priority":"","trend_stage":"","estimated_lifespan":"","recommended_route":"","recommended_formats":[],"suggested_connection":"","related_keywords":[],"needs_human_review":false,"reason":""}]}`;
-  const { content: raw } = await callLLM(SUPERVISOR_SYSTEM_PROMPT, prompt, { maxTokens: 8000, temperature: 0.3 });
+Return ONLY this JSON (no extra fields, no markdown):
+{"analysis_date":"YYYY-MM-DD","summary":{"total_topics_reviewed":0,"domain_trends_sent":0,"supertrends_sent":0,"topics_monitored":0,"topics_rejected":0},"topics":[{"topic":"","summary":"","classification":"domain_trend|supertrend_exception|monitor","domain_relevance_score":0,"trend_impact_score":0,"adaptability_score":0,"risk_score":0,"confidence_score":0,"priority":"high|medium|low","trend_stage":"emerging|growing|peak|declining","estimated_lifespan":"","recommended_route":"","recommended_formats":[],"suggested_connection":"","related_keywords":[],"needs_human_review":false,"reason":""}]}`;
+  const { content: raw } = await callLLM(SUPERVISOR_SYSTEM_PROMPT, prompt, { maxTokens: 3000, temperature: 0.2 });
   const parsed: any = extractJSON(raw);
   const topics = Array.isArray(parsed) ? parsed : (parsed.topics || []);
   return { topics, summary: parsed?.summary ?? null, analysis_date: parsed?.analysis_date };

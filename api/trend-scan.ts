@@ -39,6 +39,7 @@ async function collectTavilySignals(profile: DomainProfile): Promise<TrendSignal
         const url: string = r.url || '';
         const dedupeKey = url || r.title;
         if (!dedupeKey || seen.has(dedupeKey)) continue;
+        if (typeof r.score === 'number' && r.score < 0.35) continue;
         seen.add(dedupeKey);
         signals.push({
           title: r.title, content: r.content, url,
