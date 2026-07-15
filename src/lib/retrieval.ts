@@ -221,7 +221,8 @@ export async function retrieve(
       .select('*, knowledge_files!inner(file_name, category)')
       .eq('account_id', accountId)
       .in('file_id', constraintIds)
-      .order('position', { ascending: true });
+      .order('position', { ascending: true })
+      .limit(30);
     constraintChunks = (data || []).map(mapChunk);
   }
 
@@ -243,25 +244,34 @@ export async function retrieve(
 
   if (contextIds.length > 0) {
     const embedding = await embedQuery(queryText);
+    let semanticResult: { chunks: RetrievalChunk[]; topScore: number } | null = null;
     if (embedding) {
-      const semantic = await scoreBySemantic(accountId, embedding, constraintIds);
-      if (semantic && semantic.chunks.length > 0 && semantic.topScore >= MIN_SIMILARITY) {
-        chunks = semantic.chunks;
-        topScore = semantic.topScore;
+      semanticResult = await scoreBySemantic(accountId, embedding, constraintIds);
+      if (semanticResult && semanticResult.chunks.length > 0 && semanticResult.topScore >= MIN_SIMILARITY) {
+        chunks = semanticResult.chunks;
+        topScore = semanticResult.topScore;
         retrievalMode = 'semantic';
       }
     }
 
-    // Fallback: no embedding, RPC failed, no embedded chunks, OR semantic
-    // returned results below the similarity threshold. Keyword search is a
-    // legitimate second chance — a low cosine score doesn't mean the content
-    // is irrelevant (it often means the chunks weren't embedded yet or the
-    // query phrasing diverges from the chunk language).
+    // Fallback: keyword search when semantic is absent, failed, or below threshold.
+    // If keyword also finds nothing (topScore === 0), prefer any semantic results
+    // we had over an empty response — below-threshold semantic is still better than nothing.
     if (chunks.length === 0) {
       const keyword = await scoreByKeywords(accountId, queryText, contextIds);
-      chunks = keyword.chunks;
-      topScore = keyword.topScore;
-      retrievalMode = keyword.chunks.length > 0 ? 'keyword' : 'none';
+      if (keyword.chunks.length > 0 && keyword.topScore > 0) {
+        chunks = keyword.chunks;
+        topScore = keyword.topScore;
+        retrievalMode = 'keyword';
+      } else if (semanticResult?.chunks.length) {
+        chunks = semanticResult.chunks;
+        topScore = semanticResult.topScore;
+        retrievalMode = 'semantic';
+      } else {
+        chunks = keyword.chunks;
+        topScore = keyword.topScore;
+        retrievalMode = keyword.chunks.length > 0 ? 'keyword' : 'none';
+      }
     }
   }
 
@@ -302,10 +312,9 @@ export async function retrieve(
     }
   }
 
-  // Grounding gate: refuse ONLY when there are truly zero chunks from any
-  // source. If the user has uploaded files, we should try to use them —
-  // the LLM's own refusal logic handles irrelevant content gracefully.
-  const noContext = chunks.length === 0 || (retrievalMode === 'keyword' && topScore === 0);
+  // Grounding gate: refuse only when there are truly no chunks from any source.
+  // The LLM handles irrelevant context gracefully — an empty response is worse.
+  const noContext = chunks.length === 0;
   const noConstraints = constraintChunks.length === 0;
   if (noContext && noConstraints) {
     return {
