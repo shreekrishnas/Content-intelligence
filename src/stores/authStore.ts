@@ -62,6 +62,7 @@ function mapSupabaseUser(supaUser: {
     name: meta.name ?? meta.full_name ?? null,
     email: supaUser.email ?? '',
     is_org_admin: meta.is_org_admin ?? false,
+    td_role: meta.td_role ?? null,
     created_at: supaUser.created_at,
   };
 }
