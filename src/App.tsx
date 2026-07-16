@@ -85,8 +85,17 @@ function AccountGate() {
 
   if (loading) return <LoadingScreen />;
 
-  if (error === 'not_configured' || error === 'no_account') {
+  if (error === 'not_configured') {
     return <AppShell />;
+  }
+
+  if (error === 'no_account') {
+    return (
+      <ErrorScreen
+        title="No Accounts Assigned"
+        message="Your profile has no client accounts linked yet. This usually resolves after your first sign-in — try refreshing. If the issue persists, contact your administrator."
+      />
+    );
   }
 
   if (error === 'access_denied' || error === 'not_found') {

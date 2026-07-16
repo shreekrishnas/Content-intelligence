@@ -10,6 +10,10 @@ interface TopbarProps {
 }
 
 const tabMeta: Record<string, { title: string; subtitle: string }> = {
+  admin: {
+    title: 'Admin Panel',
+    subtitle: 'Team assignments, client accounts, and access management.',
+  },
   analyze: {
     title: 'New Analysis',
     subtitle: 'Give the agent a source — it reads, understands and routes before recommending anything.',
@@ -44,9 +48,19 @@ const tabMeta: Record<string, { title: string; subtitle: string }> = {
   },
 };
 
+const ROLE_COLORS: Record<string, string> = {
+  td_management: '#8B5CF6',
+  pod_head: '#2563EB',
+  manager: '#059669',
+  executive: '#D97706',
+  designer: '#DB2777',
+  intern: '#6B7280',
+};
+
 function AccountSwitcher() {
-  const { account, accounts, switchAccount } = useAccount();
+  const { account, accounts, isAdmin, switchAccount } = useAccount();
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -57,10 +71,16 @@ function AccountSwitcher() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
 
+  const filtered = search
+    ? accounts.filter(a => a.name.toLowerCase().includes(search.toLowerCase()))
+    : accounts;
+
+  const showSearch = accounts.length > 8;
+
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => { setOpen(!open); setSearch(''); }}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -74,15 +94,18 @@ function AccountSwitcher() {
           fontWeight: 600,
           cursor: 'pointer',
           whiteSpace: 'nowrap',
+          maxWidth: 220,
         }}
       >
         <span style={{
           width: 8, height: 8, borderRadius: '50%',
-          background: 'var(--status-success)', flexShrink: 0,
+          background: isAdmin ? '#8B5CF6' : 'var(--status-success)', flexShrink: 0,
         }} />
-        {account?.name || 'Select Account'}
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 160 }}>
+          {account?.name || 'Select Account'}
+        </span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-          style={{ transform: open ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s ease' }}>
+          style={{ flexShrink: 0, transform: open ? 'rotate(180deg)' : undefined, transition: 'transform 0.15s ease' }}>
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
@@ -92,14 +115,17 @@ function AccountSwitcher() {
           position: 'absolute',
           top: 'calc(100% + 4px)',
           right: 0,
-          minWidth: 200,
+          minWidth: 240,
+          maxWidth: 300,
           background: 'var(--surface-card)',
           border: '1px solid var(--border)',
           borderRadius: 10,
           boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
           zIndex: 100,
-          overflow: 'hidden',
           backdropFilter: 'blur(20px)',
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: 420,
         }}>
           <div style={{
             padding: '8px 12px',
@@ -109,45 +135,78 @@ function AccountSwitcher() {
             letterSpacing: '0.06em',
             color: 'var(--text-muted)',
             borderBottom: '1px solid var(--border)',
+            flexShrink: 0,
           }}>
-            Switch Account
+            {isAdmin ? `All Accounts (${accounts.length})` : 'Switch Account'}
           </div>
-          {accounts.map((acc) => {
-            const isActive = acc.id === account?.id;
-            return (
-              <button
-                key={acc.id}
-                onClick={() => { switchAccount(acc.id); setOpen(false); }}
+
+          {showSearch && (
+            <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <input
+                autoFocus
+                placeholder="Search accounts…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                onClick={e => e.stopPropagation()}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
                   width: '100%',
-                  padding: '10px 12px',
-                  border: 'none',
-                  background: isActive ? 'var(--accent-primary)' : 'transparent',
-                  color: isActive ? '#fff' : 'var(--text-primary)',
-                  fontSize: '0.8rem',
-                  fontWeight: isActive ? 600 : 400,
-                  cursor: 'pointer',
-                  textAlign: 'left',
+                  padding: '5px 8px',
+                  borderRadius: 6,
+                  border: '1px solid var(--border)',
+                  background: 'var(--surface-hover)',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.76rem',
+                  outline: 'none',
                 }}
-                onMouseEnter={(e) => {
-                  if (!isActive) (e.target as HTMLElement).style.background = 'var(--surface-hover)';
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) (e.target as HTMLElement).style.background = 'transparent';
-                }}
-              >
-                <span style={{
-                  width: 6, height: 6, borderRadius: '50%',
-                  background: isActive ? '#fff' : 'var(--text-muted)',
-                  flexShrink: 0, opacity: isActive ? 1 : 0.4,
-                }} />
-                {acc.name}
-              </button>
-            );
-          })}
+              />
+            </div>
+          )}
+
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {filtered.length === 0 && (
+              <div style={{ padding: '12px', fontSize: '0.76rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                No accounts found
+              </div>
+            )}
+            {filtered.map((acc) => {
+              const isActive = acc.id === account?.id;
+              return (
+                <button
+                  key={acc.id}
+                  onClick={() => { switchAccount(acc.id); setOpen(false); setSearch(''); }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    width: '100%',
+                    padding: '9px 12px',
+                    border: 'none',
+                    background: isActive ? 'var(--accent-primary)' : 'transparent',
+                    color: isActive ? '#fff' : 'var(--text-primary)',
+                    fontSize: '0.79rem',
+                    fontWeight: isActive ? 600 : 400,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) (e.currentTarget as HTMLElement).style.background = 'transparent';
+                  }}
+                >
+                  <span style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: isActive ? '#fff' : 'var(--text-muted)',
+                    flexShrink: 0, opacity: isActive ? 1 : 0.4,
+                  }} />
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {acc.name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -158,6 +217,8 @@ export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps)
   const meta = tabMeta[activeTab] ?? { title: activeTab, subtitle: '' };
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
+  const { userRole, isAdmin } = useAccount();
+  const roleColor = ROLE_COLORS[userRole || ''] || 'var(--text-muted)';
 
   return (
     <div className="topbar">
@@ -190,9 +251,19 @@ export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps)
       <div className="topbar-right">
         <AccountSwitcher />
         {user && (
-          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            {user.name || user.email}
-          </span>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+              {user.name || user.email?.split('@')[0]}
+            </span>
+            {(userRole || isAdmin) && (
+              <span style={{
+                fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.05em',
+                color: roleColor, textTransform: 'capitalize',
+              }}>
+                {isAdmin && !userRole ? 'Admin' : (userRole || '').replace('_', ' ')}
+              </span>
+            )}
+          </div>
         )}
         <div className="icon-btn" onClick={onToggleTheme} title="Toggle theme">
           {theme === 'dark' ? (

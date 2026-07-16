@@ -1,0 +1,5 @@
+-- Migration 00016: Team accounts seeding + auto-assignment
+-- See Supabase dashboard — applied via MCP 2026-07-17
+-- Seeds 46 client accounts, email_role_assignments, email_account_assignments
+-- and updates handle_new_auth_user trigger to auto-assign on first login.
+-- Backfills all existing signed-in users immediately.

@@ -4,7 +4,9 @@ import { useAuthStore } from '@/stores/authStore';
 import { useAppStore } from '@/store';
 import type { Account } from '@/types';
 
-interface AccountListItem {
+const ORG_ID = '00000000-0000-0000-0000-000000000001';
+
+export interface AccountListItem {
   id: string;
   name: string;
   role: 'manager' | 'editor' | 'viewer';
@@ -18,7 +20,10 @@ interface AccountContextValue {
   loading: boolean;
   error: AccountError;
   accounts: AccountListItem[];
+  isAdmin: boolean;
+  userRole: string | null;
   switchAccount: (id: string) => void;
+  refreshAccounts: () => Promise<void>;
 }
 
 const AccountContext = createContext<AccountContextValue>({
@@ -27,7 +32,10 @@ const AccountContext = createContext<AccountContextValue>({
   loading: true,
   error: null,
   accounts: [],
+  isAdmin: false,
+  userRole: null,
   switchAccount: () => {},
+  refreshAccounts: async () => {},
 });
 
 export function useAccount() {
@@ -41,47 +49,82 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AccountError>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
-  const loadAccounts = useCallback(async () => {
+  const loadAccounts = useCallback(async (): Promise<AccountListItem[]> => {
     if (!supabaseConfigured) {
       setLoading(false);
       setError('not_configured');
       return [];
     }
 
-    if (user) {
-      const { data, error: dbErr } = await supabase
-        .from('account_access')
-        .select('role, account_id, accounts(id, name)')
-        .eq('user_id', user.id);
+    if (!user) return [];
 
-      if (!dbErr && data?.length) {
-        const list: AccountListItem[] = data.map((row: any) => ({
-          id: row.account_id,
-          name: (row.accounts as any)?.name || row.account_id,
-          role: row.role,
-        }));
-        setAccounts(list);
-        return list;
+    // Fetch user profile to check admin status and td_role
+    const { data: profile } = await supabase
+      .from('users')
+      .select('is_org_admin, td_role')
+      .eq('id', user.id)
+      .single();
+
+    const admin = profile?.is_org_admin ?? false;
+    const role = profile?.td_role ?? null;
+    setIsAdmin(admin);
+    setUserRole(role);
+
+    if (admin) {
+      // Org admins see all accounts in the org
+      const { data: allAccounts, error: accErr } = await supabase
+        .from('accounts')
+        .select('id, name')
+        .eq('org_id', ORG_ID)
+        .eq('status', 'active')
+        .order('name', { ascending: true });
+
+      if (accErr || !allAccounts?.length) {
+        setError('no_account');
+        setLoading(false);
+        return [];
       }
+
+      const list: AccountListItem[] = allAccounts.map((row: any) => ({
+        id: row.id,
+        name: row.name,
+        role: 'manager' as const,
+      }));
+      setAccounts(list);
+      return list;
     }
 
-    const { data: allAccounts, error: accErr } = await supabase
-      .from('accounts')
-      .select('id, name')
-      .limit(50);
+    // Regular users: only their assigned accounts
+    const { data, error: dbErr } = await supabase
+      .from('account_access')
+      .select('role, account_id, accounts!inner(id, name, status)')
+      .eq('user_id', user.id);
 
-    if (accErr || !allAccounts?.length) {
+    if (dbErr) {
       setError('no_account');
       setLoading(false);
       return [];
     }
 
-    const list: AccountListItem[] = allAccounts.map((row: any) => ({
-      id: row.id,
-      name: row.name || row.id,
-      role: 'manager' as const,
+    const active = (data || []).filter((row: any) => row.accounts?.status === 'active');
+
+    if (!active.length) {
+      setError('no_account');
+      setLoading(false);
+      return [];
+    }
+
+    const list: AccountListItem[] = active.map((row: any) => ({
+      id: row.account_id,
+      name: (row.accounts as any)?.name || row.account_id,
+      role: row.role as 'manager' | 'editor' | 'viewer',
     }));
+
+    // Sort alphabetically
+    list.sort((a, b) => a.name.localeCompare(b.name));
     setAccounts(list);
     return list;
   }, [user]);
@@ -130,7 +173,16 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     fetchAccount(id);
   }, [fetchAccount]);
 
+  const refreshAccounts = useCallback(async () => {
+    await loadAccounts();
+  }, [loadAccounts]);
+
   useEffect(() => {
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
     (async () => {
       const list = await loadAccounts();
       if (!list.length) return;
@@ -146,10 +198,20 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('ci_account_id', id);
       await fetchAccount(id);
     })();
-  }, [loadAccounts, fetchAccount]);
+  }, [user, loadAccounts, fetchAccount]);
 
   return (
-    <AccountContext.Provider value={{ accountId, account, loading, error, accounts, switchAccount }}>
+    <AccountContext.Provider value={{
+      accountId,
+      account,
+      loading,
+      error,
+      accounts,
+      isAdmin,
+      userRole,
+      switchAccount,
+      refreshAccounts,
+    }}>
       {children}
     </AccountContext.Provider>
   );

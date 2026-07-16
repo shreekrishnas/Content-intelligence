@@ -5,6 +5,7 @@ import Tooltip from '@/components/ui/Tooltip';
 interface SidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
+  isAdmin?: boolean;
 }
 
 const tabs = [
@@ -87,7 +88,7 @@ const tabs = [
   },
 ];
 
-export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
+export default function Sidebar({ activeTab, onTabChange, isAdmin }: SidebarProps) {
   return (
     <div className="sidebar">
       <Logo size={44} radius={13} style={{ marginBottom: 10 }} />
@@ -105,6 +106,32 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
           </motion.div>
         </Tooltip>
       ))}
+
+      {/* Admin tab — only for admins, pinned at bottom */}
+      {isAdmin && (
+        <Tooltip content="Admin Panel" placement="right">
+          <motion.div
+            className={`sidebar-item${activeTab === 'admin' ? " active" : ""}`}
+            onClick={() => onTabChange('admin')}
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: tabs.length * 0.045, duration: 0.22, ease: 'easeOut' }}
+            whileTap={{ scale: 0.92 }}
+            style={{
+              marginTop: 'auto',
+              color: activeTab === 'admin' ? undefined : '#8B5CF6',
+              opacity: activeTab === 'admin' ? 1 : 0.7,
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+          </motion.div>
+        </Tooltip>
+      )}
     </div>
   );
 }

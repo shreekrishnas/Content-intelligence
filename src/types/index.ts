@@ -23,6 +23,7 @@ export interface User {
   name: string | null;
   email: string;
   is_org_admin: boolean;
+  td_role: string | null;
   created_at: string;
 }
 
