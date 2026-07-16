@@ -1,0 +1,6 @@
+-- Migration 00018: Account-scoped storage RLS
+-- Applied via MCP 2026-07-17
+-- Replaces loose bucket-only storage policies with folder-scoped ones.
+-- Path structure: knowledge-files/{accountId}/{timestamp}_{filename}
+-- Users can only read/write files inside their own account's folder.
+-- Service role (used by API server) bypasses RLS so server-side uploads still work.
