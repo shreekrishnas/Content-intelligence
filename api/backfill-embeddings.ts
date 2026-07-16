@@ -71,41 +71,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const provider = pickEmbedProvider();
     let embedded = 0;
     let skipped = 0;
+    const PARALLEL = 10;
     for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
       const batch = chunks.slice(i, i + EMBED_BATCH);
       const { embeddings, model } = await embedBatch(batch.map((c: any) => c.chunk_text));
-      for (let j = 0; j < batch.length; j++) {
-        const row = batch[j] as any;
-        const vec = (embeddings as any[])[j];
-        if (!row) continue;
-        if (!vec) {
-          // Mark the chunk as skipped so subsequent backfill runs don't
-          // repeatedly try (and fail) on the same content.
-          await admin
+
+      for (let j = 0; j < batch.length; j += PARALLEL) {
+        const sub = batch.slice(j, j + PARALLEL);
+        const results = await Promise.all(sub.map(async (row: any, k: number) => {
+          if (!row) return 'skip';
+          const vec = (embeddings as any[])[j + k];
+          if (!vec) {
+            await admin.from('knowledge_chunks').update({ embed_model: 'skipped_provider_error' }).eq('id', row.id);
+            return 'skipped';
+          }
+          const { error } = await admin
             .from('knowledge_chunks')
-            .update({ embed_model: 'skipped_provider_error' })
+            .update({ embedding: toVectorLiteral(vec as number[]), embed_model: model })
             .eq('id', row.id);
-          skipped++;
-          continue;
+          return error ? `err:${error.message}` : 'ok';
+        }));
+
+        for (const r of results) {
+          if (!r || r === 'skip') continue;
+          if (r === 'skipped') { skipped++; }
+          else if (r === 'ok') { embedded++; }
+          else {
+            return res.status(200).json({ embedded, skipped, remaining: totalMissing - embedded - skipped, total: totalMissing, done: false, error: r.replace('err:', '') });
+          }
         }
-        const { error: updErr } = await admin
-          .from('knowledge_chunks')
-          .update({ embedding: toVectorLiteral(vec as number[]), embed_model: model })
-          .eq('id', row.id);
-        if (updErr) {
-          return res.status(200).json({
-            embedded,
-            skipped,
-            remaining: totalMissing - embedded - skipped,
-            total: totalMissing,
-            done: false,
-            error: `Update failed at chunk ${row.id}: ${updErr.message}`,
-          });
-        }
-        embedded++;
       }
-      // Throttle before the NEXT batch (skip after the last one).
-      // Only Voyage's 3 RPM ceiling needs this.
+
       if (provider === 'voyage' && i + EMBED_BATCH < chunks.length) {
         await new Promise((r) => setTimeout(r, VOYAGE_INTER_BATCH_MS));
       }

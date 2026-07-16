@@ -114,11 +114,15 @@ async function scoreByKeywords(accountId: string, queryText: string, contextIds:
 
 async function embedQuery(text: string): Promise<number[] | null> {
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
     const resp = await fetch('/api/embed-query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: text.slice(0, 8000) }),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
     if (!resp.ok) return null;
     const data = await resp.json();
     return Array.isArray(data?.embedding) ? data.embedding : null;
@@ -139,7 +143,7 @@ async function scoreBySemantic(accountId: string, queryEmbedding: number[], excl
     file_id: r.file_id,
     account_id: accountId,
     chunk_text: r.chunk_text,
-    embed_model: 'text-embedding-3-small',
+    embed_model: import.meta.env.VITE_EMBED_MODEL || 'text-embedding-3-large',
     token_count: null,
     position: r.position,
     created_at: '',
@@ -222,7 +226,7 @@ export async function retrieve(
       .eq('account_id', accountId)
       .in('file_id', constraintIds)
       .order('position', { ascending: true })
-      .limit(30);
+      .limit(200);
     constraintChunks = (data || []).map(mapChunk);
   }
 

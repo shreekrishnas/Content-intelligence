@@ -9,6 +9,14 @@ const MAX_RATE_LIMIT_RETRIES = 4;
 
 function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
 
+/** Ensure vector is exactly TARGET_DIMS. Truncates oversized (e.g. large model without
+ *  dimension reduction), pads undersized with zeros. Prevents DB dimension mismatch errors. */
+function normalizeDims(vec: number[]): number[] {
+  if (vec.length === TARGET_DIMS) return vec;
+  if (vec.length > TARGET_DIMS) return vec.slice(0, TARGET_DIMS);
+  return [...vec, ...new Array(TARGET_DIMS - vec.length).fill(0)];
+}
+
 export type EmbedProvider = 'voyage' | 'openai' | 'openrouter';
 
 export function pickEmbedProvider(): EmbedProvider | null {
@@ -40,14 +48,14 @@ export async function embedSingle(text: string, inputType: 'query' | 'document' 
   const model = getEmbedModel(provider);
 
   if (provider === 'voyage') {
-    const embedding = await embedVoyageSingle(input, inputType);
+    const embedding = normalizeDims(await embedVoyageSingle(input, inputType));
     return { embedding, model, provider };
   }
   if (provider === 'openai') {
-    const embedding = await embedOpenAISingle(input);
+    const embedding = normalizeDims(await embedOpenAISingle(input));
     return { embedding, model, provider };
   }
-  const embedding = await embedOpenRouterSingle(input);
+  const embedding = normalizeDims(await embedOpenRouterSingle(input));
   return { embedding, model, provider };
 }
 
@@ -166,7 +174,7 @@ export async function embedBatch(texts: string[]): Promise<{ embeddings: (number
         if (resp.ok) {
           const data = await resp.json();
           const emb = data?.data?.[0]?.embedding;
-          embeddings.push(Array.isArray(emb) ? emb : null);
+          embeddings.push(Array.isArray(emb) ? normalizeDims(emb) : null);
           placed = true;
           break;
         }
@@ -207,7 +215,7 @@ export async function embedBatch(texts: string[]): Promise<{ embeddings: (number
     });
     if (resp.ok) {
       const data = await resp.json();
-      const embeddings: number[][] = (data?.data || []).map((d: any) => d.embedding);
+      const embeddings: number[][] = (data?.data || []).map((d: any) => normalizeDims(d.embedding));
       if (embeddings.length !== texts.length) {
         throw new Error(`Embedding count mismatch: sent ${texts.length}, got ${embeddings.length}. Provider: ${provider}`);
       }

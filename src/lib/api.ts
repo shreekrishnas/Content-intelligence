@@ -149,12 +149,17 @@ export const api = {
             file_id: fileRow.id,
             account_id: accountId,
             chunk_text: c.content,
-            embed_model: 'none',
+            embed_model: 'pending',
             token_count: Math.ceil(c.content.length / 4),
             position: c.index,
           }));
 
-          await supabase.from('knowledge_chunks').insert(chunkRows);
+          const { error: chunkInsertErr } = await supabase.from('knowledge_chunks').insert(chunkRows);
+          if (chunkInsertErr) {
+            await supabase.from('knowledge_files').update({ ingest_status: 'failed' }).eq('id', fileRow.id);
+            fileRow.ingest_status = 'failed';
+            return ok(fileRow);
+          }
         }
 
         await supabase

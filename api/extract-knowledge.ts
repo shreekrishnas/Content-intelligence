@@ -51,7 +51,7 @@ Return JSON with this exact structure:
 // Best-effort — returns { embedded_count, note } on skip.
 // ---------------------------------------------------------------------------
 async function embedFileChunks(fileId: string, accountId: string): Promise<{ embedded_count: number; note?: string }> {
-  if (!pickEmbedProvider()) return { embedded_count: 0, note: 'No embedding provider configured (VOYAGE_API_KEY or OPENAI_API_KEY) — chunks stored without embeddings; run "Rebuild search index" later.' };
+  if (!pickEmbedProvider()) return { embedded_count: 0, note: 'No embedding provider configured (set VOYAGE_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY+EMBED_PROVIDER=openrouter in Vercel) — chunks stored without embeddings; run "Rebuild search index" later.' };
 
   let admin;
   try {
@@ -72,19 +72,26 @@ async function embedFileChunks(fileId: string, accountId: string): Promise<{ emb
   if (!chunks || !chunks.length) return { embedded_count: 0 };
 
   let embedded = 0;
+  const PARALLEL = 10; // concurrent DB writes per batch
   for (let i = 0; i < chunks.length; i += EMBED_BATCH) {
     const batch = chunks.slice(i, i + EMBED_BATCH);
     const { embeddings, model } = await embedBatch(batch.map((c: any) => c.chunk_text));
-    for (let j = 0; j < batch.length; j++) {
-      const row = batch[j] as any;
-      const vec = embeddings[j];
-      if (!row || !vec) continue;
-      const { error: updErr } = await admin
-        .from('knowledge_chunks')
-        .update({ embedding: toVectorLiteral(vec), embed_model: model })
-        .eq('id', row.id);
-      if (updErr) return { embedded_count: embedded, note: `Update failed at chunk ${row.id}: ${updErr.message}` };
-      embedded++;
+
+    // Run DB updates in parallel sub-batches — far faster than sequential.
+    for (let j = 0; j < batch.length; j += PARALLEL) {
+      const sub = batch.slice(j, j + PARALLEL);
+      const results = await Promise.all(sub.map(async (row: any, k: number) => {
+        const vec = embeddings[j + k];
+        if (!row || !vec) return null;
+        const { error } = await admin
+          .from('knowledge_chunks')
+          .update({ embedding: toVectorLiteral(vec), embed_model: model })
+          .eq('id', row.id);
+        return error ? error.message : 'ok';
+      }));
+      const fail = results.find(r => r && r !== 'ok');
+      if (fail) return { embedded_count: embedded, note: `Update failed: ${fail}` };
+      embedded += results.filter(r => r === 'ok').length;
     }
   }
   return { embedded_count: embedded };

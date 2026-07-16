@@ -93,7 +93,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (data.session) {
         if (!isDomainAllowed(data.session.user.email)) {
           await supabase.auth.signOut();
-          clearLoginTime();
+          clearLastSeen();
           set({ initialized: true, error: `Only @${ALLOWED_DOMAIN} accounts are allowed.` });
           return;
         }
