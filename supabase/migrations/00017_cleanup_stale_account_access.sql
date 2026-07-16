@@ -1,0 +1,5 @@
+-- Migration 00017: Remove stale account_access rows + archive old test account
+-- Applied via MCP 2026-07-17
+-- Deletes any account_access row for non-admin users that has no matching
+-- email_account_assignments entry, ensuring users see only their assigned accounts.
+-- Archives the pre-migration test account "Hoya Vision" (id: 00000000-...0002).
