@@ -7,6 +7,7 @@ import { retrieve } from '@/lib/retrieval';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
 import type { SourceType } from '@/types';
 import { archetypeHint } from '@/lib/archetype-hint';
+import { motion, AnimatePresence } from 'motion/react';
 
 const ACTIVITY_LABELS = [
   'Reading Source',
@@ -20,6 +21,10 @@ const ACTIVITY_LABELS = [
   'Complete',
 ];
 
+// ── Conversation steps ──────────────────────────────────────────────────────
+type Step = 'source_type' | 'title' | 'owner' | 'input_mode' | 'content' | 'notes' | 'ready';
+
+// ── Small components ─────────────────────────────────────────────────────────
 function StatCard({ label, value, color }: { label: string; value: string | number; color: string }) {
   return (
     <div className="glass-card-static" style={{ position: 'relative', overflow: 'hidden', padding: '0.9rem 1rem' }}>
@@ -27,6 +32,69 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
       <div style={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>{label}</div>
       <div style={{ fontSize: '1.5rem', fontWeight: 800, fontFamily: 'Fraunces, Georgia, serif' }}>{String(value)}</div>
     </div>
+  );
+}
+
+function AgentAvatar() {
+  return (
+    <div style={{
+      width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+      background: 'linear-gradient(135deg, var(--accent-primary), #a855f7)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M12 8v4l3 3" />
+      </svg>
+    </div>
+  );
+}
+
+function AgentBubble({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22, delay }}
+      style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}
+    >
+      <AgentAvatar />
+      <div style={{
+        background: 'var(--surface-card)',
+        border: '1px solid var(--border)',
+        borderRadius: '0 14px 14px 14px',
+        padding: '0.7rem 1rem',
+        fontSize: '0.85rem',
+        lineHeight: 1.6,
+        color: 'var(--text-primary)',
+        maxWidth: 540,
+      }}>
+        {children}
+      </div>
+    </motion.div>
+  );
+}
+
+function UserBubble({ children }: { children: React.ReactNode }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: 12 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.18 }}
+      style={{ display: 'flex', justifyContent: 'flex-end' }}
+    >
+      <div style={{
+        background: 'linear-gradient(135deg, var(--accent-primary), #a855f7)',
+        borderRadius: '14px 0 14px 14px',
+        padding: '0.55rem 1rem',
+        fontSize: '0.84rem',
+        color: '#fff',
+        fontWeight: 500,
+        maxWidth: 480,
+      }}>
+        {children}
+      </div>
+    </motion.div>
   );
 }
 
@@ -38,10 +106,7 @@ function AddSourceTypeModal({ onClose, onSave }: { onClose: () => void; onSave: 
 
   const handleSave = () => {
     if (!name.trim() || !description.trim()) return;
-    const formats = formatsText
-      .split(',')
-      .map((f) => f.trim())
-      .filter(Boolean);
+    const formats = formatsText.split(',').map((f) => f.trim()).filter(Boolean);
     onSave(name.trim(), description.trim(), formats.length > 0 ? formats : ['Blog', 'Single Image', 'Carousel'], guidance.trim());
   };
 
@@ -56,18 +121,16 @@ function AddSourceTypeModal({ onClose, onSave }: { onClose: () => void; onSave: 
         </div>
         <div className="field" style={{ marginBottom: '0.8rem' }}>
           <label className="field-label">Description</label>
-          <textarea className="glass-textarea" rows={3} placeholder="Describe what this source type is so the AI can understand it. e.g. 'Audio podcast episodes discussing industry trends and expert interviews.'" value={description} onChange={(e) => setDescription(e.target.value)} />
-          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>The AI infers an archetype (video / blog / webinar / etc.) from the name — this description sharpens the interpretation.</div>
+          <textarea className="glass-textarea" rows={3} placeholder="Describe what this source type is..." value={description} onChange={(e) => setDescription(e.target.value)} />
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>The AI infers an archetype from the name — this description sharpens the interpretation.</div>
         </div>
         <div className="field" style={{ marginBottom: '0.8rem' }}>
           <label className="field-label">Output Formats (comma-separated)</label>
           <input className="glass-input" type="text" placeholder="Blog, Carousel, Single Image" value={formatsText} onChange={(e) => setFormatsText(e.target.value)} />
-          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>The AI will only propose repurposed pieces from this list. Leave empty for defaults.</div>
         </div>
         <div className="field" style={{ marginBottom: '1rem' }}>
           <label className="field-label">Analysis Guidance (optional)</label>
-          <textarea className="glass-textarea" rows={3} placeholder="Override the archetype defaults. e.g. 'Ignore the intro/outro. Focus on the guest's answers, not the host's questions. Always suggest 2 short-form clips per major point.'" value={guidance} onChange={(e) => setGuidance(e.target.value)} />
-          <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Any specifics you want the AI to follow when repurposing this type of source. Takes priority over the built-in defaults.</div>
+          <textarea className="glass-textarea" rows={3} placeholder="Any specifics the AI should follow when repurposing this source type..." value={guidance} onChange={(e) => setGuidance(e.target.value)} />
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
           <button className="btn btn-sm" onClick={onClose} style={{ opacity: 0.7 }}>Cancel</button>
@@ -78,17 +141,21 @@ function AddSourceTypeModal({ onClose, onSave }: { onClose: () => void; onSave: 
   );
 }
 
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function AnalyzePage() {
   const { accountId } = useAccount();
   const setActiveTab = useAppStore((s) => s.setActiveTab);
+  const setActiveStudioOpp = useAppStore((s) => s.setActiveStudioOpp);
 
+  // Source types
   const [sourceTypes, setSourceTypes] = useState<SourceType[]>([]);
   const [loadingTypes, setLoadingTypes] = useState(false);
-  const [sourceType, setSourceType] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-
   const [confirmDeleteType, setConfirmDeleteType] = useState<SourceType | null>(null);
 
+  // Conversation state
+  const [step, setStep] = useState<Step>('source_type');
+  const [sourceType, setSourceType] = useState('');
   const [inputMode, setInputMode] = useState<'text' | 'url'>('text');
   const [sourceTitle, setSourceTitle] = useState('');
   const [sourceOwner, setSourceOwner] = useState('');
@@ -96,35 +163,65 @@ export default function AnalyzePage() {
   const [sourceUrl, setSourceUrl] = useState('');
   const [marketingNotes, setMarketingNotes] = useState('');
 
+  // Ephemeral input fields (committed on Next/Enter)
+  const [titleDraft, setTitleDraft] = useState('');
+  const [ownerDraft, setOwnerDraft] = useState('');
+  const [contentDraft, setContentDraft] = useState('');
+  const [urlDraft, setUrlDraft] = useState('');
+  const [notesDraft, setNotesDraft] = useState('');
+
+  // Analysis state
   const [isRunning, setIsRunning] = useState(false);
   const [activityStep, setActivityStep] = useState(-1);
   const [result, setResult] = useState<any | null>(null);
   const [sourcesUsed, setSourcesUsed] = useState<Array<{ file_name: string; category: string }>>([]);
+  const [savedOppIds, setSavedOppIds] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const resultsRef = useRef<HTMLDivElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, []);
 
+  // Load source types on mount / account change
   useEffect(() => {
-    setResult(null);
-    setError(null);
-    setActivityStep(-1);
-    setSourceType('');
+    resetConversation();
     if (!accountId || !supabaseConfigured) { setSourceTypes([]); return; }
     let cancelled = false;
     setLoadingTypes(true);
     api.sourceTypes.list(accountId).then(({ data }) => {
       if (cancelled) return;
-      const types = data ?? [];
-      setSourceTypes(types);
-      if (types.length > 0) setSourceType(types[0].slug);
+      setSourceTypes(data ?? []);
       setLoadingTypes(false);
     });
     return () => { cancelled = true; };
   }, [accountId]);
+
+  // Scroll chat to bottom whenever step changes
+  useEffect(() => {
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 80);
+  }, [step]);
+
+  function resetConversation() {
+    setStep('source_type');
+    setSourceType('');
+    setSourceTitle('');
+    setSourceOwner('');
+    setSourceContent('');
+    setSourceUrl('');
+    setMarketingNotes('');
+    setInputMode('text');
+    setTitleDraft('');
+    setOwnerDraft('');
+    setContentDraft('');
+    setUrlDraft('');
+    setNotesDraft('');
+    setResult(null);
+    setError(null);
+    setActivityStep(-1);
+    setSavedOppIds({});
+  }
 
   const handleAddSourceType = useCallback(async (name: string, description: string, formats: string[], guidance: string) => {
     if (!accountId) return;
@@ -132,7 +229,6 @@ export default function AnalyzePage() {
     const { data, error: apiErr } = await api.sourceTypes.create(accountId, name, description, formats, guidance);
     if (apiErr || !data) return;
     setSourceTypes((prev) => [...prev, data]);
-    setSourceType(data.slug);
   }, [accountId]);
 
   const handleDeleteSourceType = useCallback(async (st: SourceType) => {
@@ -142,41 +238,76 @@ export default function AnalyzePage() {
     setConfirmDeleteType(null);
     setSourceTypes((prev) => {
       const next = prev.filter((t) => t.id !== st.id);
-      if (next.length > 0 && !next.find((t) => t.slug === sourceType)) {
-        setSourceType(next[0].slug);
-      } else if (next.length === 0) {
-        setSourceType('');
-      }
+      if (sourceType === st.slug) setSourceType(next[0]?.slug ?? '');
       return next;
     });
   }, [accountId, sourceType]);
 
+  // Conversation step handlers
+  function pickSourceType(slug: string) {
+    setSourceType(slug);
+    setStep('title');
+  }
+
+  function commitTitle() {
+    const t = titleDraft.trim();
+    setSourceTitle(t);
+    setStep('owner');
+  }
+
+  function commitOwner(skip = false) {
+    setSourceOwner(skip ? '' : ownerDraft.trim());
+    setStep('input_mode');
+  }
+
+  function pickInputMode(mode: 'text' | 'url') {
+    setInputMode(mode);
+    setStep('content');
+  }
+
+  function commitContent() {
+    if (inputMode === 'text') {
+      if (!contentDraft.trim()) return;
+      setSourceContent(contentDraft.trim());
+    } else {
+      if (!urlDraft.trim()) return;
+      setSourceUrl(urlDraft.trim());
+      setSourceContent(contentDraft.trim());
+    }
+    setStep('notes');
+  }
+
+  function commitNotes(skip = false) {
+    setMarketingNotes(skip ? '' : notesDraft.trim());
+    setStep('ready');
+  }
+
   const handleRunAnalysis = useCallback(async () => {
     if (!accountId) return;
-    if (!sourceContent.trim() && inputMode === 'text') return;
-    if (!sourceUrl.trim() && inputMode === 'url') return;
+    const content = inputMode === 'text' ? sourceContent : sourceContent;
+    const url = inputMode === 'url' ? sourceUrl : undefined;
+    const finalContent = url ? `[Source URL: ${url}]\n\n${content}` : content;
 
     setIsRunning(true);
     setResult(null);
     setSourcesUsed([]);
+    setSavedOppIds({});
     setError(null);
     setActivityStep(0);
 
-    let step = 0;
+    let s = 0;
     const stepTimer = setInterval(() => {
-      step++;
-      if (step < ACTIVITY_LABELS.length - 1) setActivityStep(step);
+      s++;
+      if (s < ACTIVITY_LABELS.length - 1) setActivityStep(s);
     }, 800);
     timerRef.current = stepTimer;
 
-    const content = inputMode === 'url' ? `[Source URL: ${sourceUrl}]\n\n${sourceContent}` : sourceContent;
     const activeType = sourceTypes.find((t) => t.slug === sourceType);
     const sourceTypeLabel = activeType?.name ?? sourceType;
 
     try {
-      // Load personas from KB (category = 'persona') in parallel with retrieval
       const [retrieval, personaFilesResult] = await Promise.all([
-        retrieve(accountId, `${sourceTitle}\n\n${content}`, sourceType),
+        retrieve(accountId, `${sourceTitle}\n\n${finalContent}`, sourceType),
         supabase
           .from('knowledge_files')
           .select('file_name, structured')
@@ -195,42 +326,34 @@ export default function AnalyzePage() {
         return;
       }
 
-      let kbWarning: string | undefined;
-      if (retrieval.reason) {
-        kbWarning = retrieval.reason;
-      }
-
       const kbChunks = [
         ...retrieval.constraintChunks.slice(0, 15).map((c) => c.chunk_text),
         ...retrieval.chunks.map((c) => c.chunk_text),
       ];
 
       const personas = (personaFilesResult.data || []).map((f: any) => {
-        const s = (f.structured as any) || {};
+        const str = (f.structured as any) || {};
         const cleanName = f.file_name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
-        const descParts = [s.summary, s.audience ? `Audience: ${s.audience}` : null].filter(Boolean);
         return {
           name: cleanName || f.file_name,
-          description: descParts.join(' — ') || cleanName,
-          pain_points: (s.important_facts || s.key_messages || []).slice(0, 5),
-          goals: (s.main_topics || []).slice(0, 5),
+          description: [str.summary, str.audience ? `Audience: ${str.audience}` : null].filter(Boolean).join(' — ') || cleanName,
+          pain_points: (str.important_facts || str.key_messages || []).slice(0, 5),
+          goals: (str.main_topics || []).slice(0, 5),
         };
       });
 
       const { data, error: apiErr } = await api.analysis.run({
         accountId,
-        sourceText: content,
+        sourceText: finalContent,
         sourceType: sourceTypeLabel,
         sourceTypeContext: activeType ? {
-          name: activeType.name,
-          slug: activeType.slug,
-          description: activeType.description,
-          formats: activeType.formats,
+          name: activeType.name, slug: activeType.slug,
+          description: activeType.description, formats: activeType.formats,
           analysis_guidance: activeType.analysis_guidance,
         } : undefined,
         sourceTitle: sourceTitle || 'Untitled Source',
         sourceOwner,
-        sourceUrl: inputMode === 'url' ? sourceUrl : undefined,
+        sourceUrl: url,
         marketingNotes: marketingNotes || undefined,
         knowledgeChunks: kbChunks,
         fileContext: retrieval.sourcesUsed,
@@ -239,16 +362,12 @@ export default function AnalyzePage() {
 
       clearInterval(stepTimer);
       timerRef.current = null;
-
       if (apiErr) throw new Error(apiErr);
 
       const analysis = (data as any)?.analysis ?? data;
-      if (kbWarning && analysis) {
-        analysis.warnings = [...(analysis.warnings || []), kbWarning];
+      if (retrieval.reason && analysis) {
+        analysis.warnings = [...(analysis.warnings || []), retrieval.reason];
       }
-
-      // Strict-grounding refusal path — surface as an error so the user
-      // can act (upload relevant KB files) instead of seeing empty cards.
       if (analysis?.refused === true) {
         setError(analysis.reason || "I don't have that idea in the knowledge base. Add relevant knowledge files that cover this source's topic.");
         setActivityStep(-1);
@@ -256,15 +375,10 @@ export default function AnalyzePage() {
         return;
       }
 
-      // Show results immediately — don't block on DB saves
       setResult(analysis);
       setSourcesUsed(retrieval.sourcesUsed);
       setActivityStep(ACTIVITY_LABELS.length);
 
-      // Scroll results into view
-      setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
-
-      // Save opportunities — non-blocking but surface errors to user
       if (analysis?.opportunities?.length > 0 && accountId) {
         api.opportunities.createFromAnalysis(
           accountId,
@@ -278,17 +392,19 @@ export default function AnalyzePage() {
             suggested_cta: o.suggested_cta,
             source_context: o.source_context,
           })),
-        ).then((res) => {
+        ).then((res: any) => {
           if (res.error) {
-            setError(`Results saved but opportunities could not be stored: ${res.error}. Check Supabase RLS policies.`);
+            setError(`Results saved but opportunities could not be stored: ${res.error}.`);
+          } else if (Array.isArray(res.data)) {
+            const idMap: Record<string, string> = {};
+            res.data.forEach((row: any) => { if (row?.id && row?.title) idMap[row.title] = row.id; });
+            setSavedOppIds(idMap);
           }
         }).catch(() => {});
       }
 
       auditLog({
-        accountId,
-        action: 'analyze',
-        targetType: 'analysis',
+        accountId, action: 'analyze', targetType: 'analysis',
         targetId: (data as any)?.id,
         detail: { source_type: sourceType, source_title: sourceTitle },
       }).catch(() => {});
@@ -303,65 +419,12 @@ export default function AnalyzePage() {
   }, [accountId, sourceType, sourceTypes, sourceTitle, sourceOwner, sourceContent, sourceUrl, inputMode, marketingNotes]);
 
   const activeType = sourceTypes.find((t) => t.slug === sourceType);
-  const activeFormats: string[] = activeType ? (activeType.formats as unknown as string[]) : [];
-  const canRun = (inputMode === 'text' ? sourceContent.trim().length > 0 : sourceUrl.trim().length > 0) && supabaseConfigured && sourceType !== '';
+  const wordCount = (inputMode === 'text' ? contentDraft : contentDraft).split(/\s+/).filter(Boolean).length;
 
   return (
     <div>
       <div className="eyebrow">Analysis Engine</div>
-      <h1 className="page-title">Analyze Source Content</h1>
-      <p className="page-desc">Paste your source content and let the intelligence engine extract topics, match personas, and identify content opportunities.</p>
-
-      {!supabaseConfigured && (
-        <div className="glass-card-static" style={{ padding: '1rem', marginBottom: '1rem', borderLeft: '3px solid var(--status-warning)' }}>
-          <p style={{ fontSize: '0.85rem', color: 'var(--status-warning)' }}>
-            Database connection required to run analysis. Configure Supabase to enable this feature.
-          </p>
-        </div>
-      )}
-
-      <div style={{ marginBottom: '1.2rem' }}>
-        <div className="field-label" style={{ marginBottom: '0.5rem' }}>Source Type</div>
-        {loadingTypes ? (
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.5rem 0' }}>Loading source types...</div>
-        ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', alignItems: 'center' }}>
-            {sourceTypes.map((st) => (
-              <span key={st.id} className="badge" onClick={() => setSourceType(st.slug)} style={{ cursor: 'pointer', background: sourceType === st.slug ? 'var(--accent-primary)' : undefined, color: sourceType === st.slug ? '#fff' : undefined, position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px' }}>
-                {st.name}
-                <span
-                  onClick={(e) => { e.stopPropagation(); setConfirmDeleteType(st); }}
-                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 18, height: 18, borderRadius: '50%', background: 'rgba(220,38,38,0.15)', color: '#DC2626', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer', lineHeight: 1, flexShrink: 0 }}
-                  title="Remove source type"
-                >&times;</span>
-              </span>
-            ))}
-            <span
-              className="badge"
-              onClick={() => setShowAddModal(true)}
-              style={{ cursor: 'pointer', border: '1px dashed var(--border-default)', background: 'transparent', display: 'flex', alignItems: 'center', gap: 4 }}
-              title="Add a new source type"
-            >
-              + Add
-            </span>
-          </div>
-        )}
-        {activeType && (
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem', display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-            {(() => {
-              const hint = archetypeHint(activeType.name, activeType.slug);
-              return hint ? <span>Archetype: <strong>{hint}</strong></span> : null;
-            })()}
-            {activeFormats.length > 0 && <span>Repurposed as: {activeFormats.join(', ')}</span>}
-            {activeType.analysis_guidance && <span title={activeType.analysis_guidance}>Custom guidance ✓</span>}
-          </div>
-        )}
-        {sourceTypes.length === 0 && !loadingTypes && supabaseConfigured && (
-          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
-            No source types configured for this account. Click "+ Add" to create one.
-          </div>
-        )}
-      </div>
+      <h1 className="page-title">New Analysis</h1>
 
       {showAddModal && <AddSourceTypeModal onClose={() => setShowAddModal(false)} onSave={handleAddSourceType} />}
 
@@ -370,12 +433,7 @@ export default function AnalyzePage() {
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} onClick={() => setConfirmDeleteType(null)} />
           <div className="glass-card-static" style={{ position: 'relative', width: '100%', maxWidth: 420, padding: '1.5rem', zIndex: 1 }}>
             <div style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.75rem' }}>Delete Source Type</div>
-            <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}>
-              Are you sure you want to delete <strong>{confirmDeleteType.name}</strong>?
-            </p>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '1.2rem' }}>
-              This action cannot be undone. Existing analyses using this source type will not be affected.
-            </p>
+            <p style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}>Delete <strong>{confirmDeleteType.name}</strong>? This cannot be undone.</p>
             <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
               <button className="btn btn-sm" onClick={() => setConfirmDeleteType(null)} style={{ opacity: 0.7 }}>Cancel</button>
               <button className="btn btn-sm" onClick={() => handleDeleteSourceType(confirmDeleteType)} style={{ background: '#DC2626', color: '#fff' }}>Yes, Delete</button>
@@ -384,101 +442,358 @@ export default function AnalyzePage() {
         </div>
       )}
 
-      {/* ── INPUT FORM — hidden once results arrive ── */}
-      {!result && (
-        <div className="grid grid-2" style={{ gap: '1.5rem', alignItems: 'start' }}>
-          <div>
-            <div className="underline-tabs" style={{ marginBottom: '1rem' }}>
-              <button className={`u-tab${inputMode === 'text' ? ' active' : ''}`} onClick={() => setInputMode('text')}>Paste Text / Transcript</button>
-              <button className={`u-tab${inputMode === 'url' ? ' active' : ''}`} onClick={() => setInputMode('url')}>Paste Source Link</button>
-            </div>
-
-            <div className="glass-card-static" style={{ padding: '1.2rem' }}>
-              <div className="field" style={{ marginBottom: '0.8rem' }}>
-                <label className="field-label">Source Title</label>
-                <input className="glass-input" type="text" placeholder="e.g. Market Outlook Q3 2025" value={sourceTitle} onChange={(e) => setSourceTitle(e.target.value)} />
+      {/* ── RUNNING STATE ── */}
+      <AnimatePresence>
+        {isRunning && (
+          <motion.div
+            key="running"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.22 }}
+            style={{ maxWidth: 520, margin: '2rem auto' }}
+          >
+            <div className="glass-card-static" style={{ padding: '2rem 2.5rem' }}>
+              <div style={{ textAlign: 'center', marginBottom: '1.8rem' }}>
+                <div style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--accent-primary)', marginBottom: 8 }}>Intelligence Engine</div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 700 }}>{sourceTitle || 'Analyzing source…'}</div>
               </div>
-              <div className="field" style={{ marginBottom: '0.8rem' }}>
-                <label className="field-label">Source Owner / Speaker</label>
-                <input className="glass-input" type="text" placeholder="e.g. Anil Kumar" value={sourceOwner} onChange={(e) => setSourceOwner(e.target.value)} />
-              </div>
-              {inputMode === 'url' && (
-                <div className="field" style={{ marginBottom: '0.8rem' }}>
-                  <label className="field-label">Source URL</label>
-                  <input className="glass-input" type="url" placeholder="https://..." value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} />
-                  <div style={{ fontSize: '0.7rem', color: 'var(--status-warning)', marginTop: '0.3rem' }}>
-                    Paste the article text below as well for best results.
-                  </div>
-                </div>
-              )}
-              <div className="field" style={{ marginBottom: '0.8rem' }}>
-                <label className="field-label">{inputMode === 'text' ? 'Source Content / Transcript' : 'Paste Article Text'}</label>
-                <textarea className="glass-textarea" rows={8} placeholder={inputMode === 'text' ? 'Paste the full transcript, article text, or raw content here...' : 'Paste the article text here...'} value={sourceContent} onChange={(e) => setSourceContent(e.target.value)} />
-              </div>
-              <div className="field" style={{ marginBottom: '1rem' }}>
-                <label className="field-label">Marketing Notes (optional)</label>
-                <textarea className="glass-textarea" rows={3} placeholder="Any specific goals, campaigns, or context..." value={marketingNotes} onChange={(e) => setMarketingNotes(e.target.value)} />
-              </div>
-              <button className="btn btn-brand" disabled={!canRun || isRunning} onClick={handleRunAnalysis} style={{ width: '100%', background: canRun && !isRunning ? 'linear-gradient(135deg, var(--accent-primary), #a855f7)' : undefined, opacity: !canRun || isRunning ? 0.5 : 1, cursor: !canRun || isRunning ? 'not-allowed' : 'pointer' }}>
-                {isRunning ? 'Analyzing...' : 'Run Analysis'}
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <div className="glass-card-static" style={{ padding: '1.2rem' }}>
-              <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '0.8rem' }}>
-                Agent Activity
-              </div>
-
-              {error && (
-                <div style={{ padding: '0.8rem', background: '#DC262610', borderRadius: '0.5rem', marginBottom: '0.8rem' }}>
-                  <p style={{ fontSize: '0.8rem', color: '#DC2626' }}>{error}</p>
-                </div>
-              )}
-
-              {activityStep < 0 && !error ? (
-                <div className="empty-state" style={{ padding: '2rem 1rem' }}>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Click "Run Analysis" to start the intelligence engine.</p>
-                </div>
-              ) : activityStep >= 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                  {ACTIVITY_LABELS.map((label, idx) => {
-                    const isDone = idx < activityStep || activityStep >= ACTIVITY_LABELS.length;
-                    const isActive = idx === activityStep && activityStep < ACTIVITY_LABELS.length;
-                    const isPending = idx > activityStep;
-                    return (
-                      <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                        {isDone && <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--status-success)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', color: '#fff', flexShrink: 0 }}>&#10003;</div>}
-                        {isActive && <div className="spin-dot" style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--accent-primary)', flexShrink: 0 }} />}
-                        {isPending && <div style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border-default)', flexShrink: 0 }} />}
-                        <span style={{ fontSize: '0.8rem', fontWeight: isActive ? 600 : 400, color: isPending ? 'var(--text-muted)' : 'var(--text-primary)' }}>{label}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+                {ACTIVITY_LABELS.map((label, idx) => {
+                  const isDone = idx < activityStep;
+                  const isActive = idx === activityStep && activityStep < ACTIVITY_LABELS.length;
+                  const isPending = idx > activityStep;
+                  return (
+                    <motion.div key={idx} animate={{ opacity: isPending ? 0.35 : 1 }} transition={{ duration: 0.3 }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+                      <div style={{ flexShrink: 0, width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', ...(isDone ? { background: 'var(--status-success)' } : isActive ? { background: 'var(--accent-primary)' } : { border: '2px solid var(--border-default)' }) }}>
+                        {isDone && <span style={{ fontSize: '0.65rem', color: '#fff' }}>✓</span>}
+                        {isActive && <div className="spin-dot" style={{ width: 10, height: 10, borderRadius: '50%', background: '#fff' }} />}
                       </div>
-                    );
-                  })}
-                </div>
+                      <span style={{ fontSize: '0.84rem', fontWeight: isActive ? 700 : 400, color: isPending ? 'var(--text-muted)' : 'var(--text-primary)' }}>{label}</span>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── CONVERSATIONAL INPUT ── */}
+      {!result && !isRunning && (
+        <div style={{ maxWidth: 660, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1rem', paddingBottom: '1rem' }}>
+
+          {/* Step 0 — Source type */}
+          <AgentBubble>
+            <span style={{ fontWeight: 600 }}>Hey! What would you like to analyze today?</span>
+            <div style={{ marginTop: '0.65rem', display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+              {loadingTypes ? (
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Loading source types…</span>
+              ) : sourceTypes.length === 0 ? (
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>No source types yet.</span>
+              ) : (
+                sourceTypes.map((st) => {
+                  const hint = archetypeHint(st.name, st.slug);
+                  const isChosen = sourceType === st.slug && step !== 'source_type';
+                  return (
+                    <button
+                      key={st.id}
+                      onClick={() => { if (step === 'source_type') pickSourceType(st.slug); }}
+                      disabled={step !== 'source_type'}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '6px 14px', borderRadius: 20, border: '1px solid',
+                        borderColor: isChosen ? 'var(--accent-primary)' : 'var(--border)',
+                        background: isChosen ? 'var(--accent-primary)' : 'var(--surface-hover)',
+                        color: isChosen ? '#fff' : 'var(--text-primary)',
+                        fontSize: '0.82rem', fontWeight: 600,
+                        cursor: step === 'source_type' ? 'pointer' : 'default',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {st.name}
+                      {hint && <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>· {hint}</span>}
+                      {step === 'source_type' && (
+                        <span
+                          onClick={(e) => { e.stopPropagation(); setConfirmDeleteType(st); }}
+                          title="Remove"
+                          style={{ width: 16, height: 16, borderRadius: '50%', background: 'rgba(220,38,38,0.18)', color: '#DC2626', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', lineHeight: 1 }}
+                        >&times;</span>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+              {step === 'source_type' && (
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  style={{ padding: '6px 14px', borderRadius: 20, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: '0.82rem', cursor: 'pointer' }}
+                >
+                  + New type
+                </button>
               )}
             </div>
-          </div>
+          </AgentBubble>
+
+          {/* Step 1 — Title */}
+          <AnimatePresence>
+            {step !== 'source_type' && sourceType && (
+              <>
+                <UserBubble>{activeType?.name ?? sourceType}</UserBubble>
+                <AgentBubble delay={0.08}>
+                  <span style={{ fontWeight: 600 }}>Great choice.</span> What's the title or name of this piece?
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 2 }}>e.g. "Market Outlook Q3" or "Brand Strategy Video"</div>
+                  {step === 'title' && (
+                    <div style={{ marginTop: '0.6rem', display: 'flex', gap: 6 }}>
+                      <input
+                        autoFocus
+                        className="glass-input"
+                        style={{ flex: 1, fontSize: '0.84rem' }}
+                        placeholder="Source title…"
+                        value={titleDraft}
+                        onChange={(e) => setTitleDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' && titleDraft.trim()) commitTitle(); }}
+                      />
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={!titleDraft.trim()}
+                        onClick={commitTitle}
+                        style={{ opacity: titleDraft.trim() ? 1 : 0.4 }}
+                      >Next</button>
+                    </div>
+                  )}
+                </AgentBubble>
+              </>
+            )}
+          </AnimatePresence>
+
+          {/* Step 2 — Owner */}
+          <AnimatePresence>
+            {['owner', 'input_mode', 'content', 'notes', 'ready'].includes(step) && sourceTitle && (
+              <>
+                <UserBubble>{sourceTitle}</UserBubble>
+                <AgentBubble delay={0.08}>
+                  Who created or presented this? <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>(optional — helps with attribution)</span>
+                  {step === 'owner' && (
+                    <div style={{ marginTop: '0.6rem', display: 'flex', gap: 6 }}>
+                      <input
+                        autoFocus
+                        className="glass-input"
+                        style={{ flex: 1, fontSize: '0.84rem' }}
+                        placeholder="e.g. Anil Kumar"
+                        value={ownerDraft}
+                        onChange={(e) => setOwnerDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') commitOwner(); }}
+                      />
+                      <button className="btn btn-primary btn-sm" onClick={() => commitOwner()}>Next</button>
+                      <button className="btn btn-sm" onClick={() => commitOwner(true)} style={{ opacity: 0.6 }}>Skip</button>
+                    </div>
+                  )}
+                </AgentBubble>
+              </>
+            )}
+          </AnimatePresence>
+
+          {/* Step 3 — Input mode */}
+          <AnimatePresence>
+            {['input_mode', 'content', 'notes', 'ready'].includes(step) && (
+              <>
+                {sourceOwner && <UserBubble>{sourceOwner}</UserBubble>}
+                {!sourceOwner && step !== 'owner' && <UserBubble>Skipped</UserBubble>}
+                <AgentBubble delay={0.08}>
+                  How would you like to share the content?
+                  {step === 'input_mode' && (
+                    <div style={{ marginTop: '0.6rem', display: 'flex', gap: 8 }}>
+                      <button
+                        onClick={() => pickInputMode('text')}
+                        style={{ flex: 1, padding: '0.6rem', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-hover)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}
+                      >
+                        <div>Paste text</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 400 }}>Transcript, article, script…</div>
+                      </button>
+                      <button
+                        onClick={() => pickInputMode('url')}
+                        style={{ flex: 1, padding: '0.6rem', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-hover)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}
+                      >
+                        <div>Paste a link</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 400 }}>URL + optional text</div>
+                      </button>
+                    </div>
+                  )}
+                </AgentBubble>
+              </>
+            )}
+          </AnimatePresence>
+
+          {/* Step 4 — Content */}
+          <AnimatePresence>
+            {['content', 'notes', 'ready'].includes(step) && (
+              <>
+                <UserBubble>{inputMode === 'text' ? 'Paste text' : 'Paste a link'}</UserBubble>
+                <AgentBubble delay={0.08}>
+                  {inputMode === 'url' ? (
+                    <>
+                      <span style={{ fontWeight: 600 }}>Drop the link below.</span> You can also paste the article text — it helps the engine go deeper.
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontWeight: 600 }}>Paste your content below.</span> The more text, the richer the output.
+                    </>
+                  )}
+                  {step === 'content' && (
+                    <div style={{ marginTop: '0.65rem', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {inputMode === 'url' && (
+                        <input
+                          autoFocus
+                          className="glass-input"
+                          type="url"
+                          placeholder="https://…"
+                          value={urlDraft}
+                          onChange={(e) => setUrlDraft(e.target.value)}
+                          style={{ fontSize: '0.84rem' }}
+                        />
+                      )}
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                            {inputMode === 'url' ? 'Article text (optional but recommended)' : 'Content / Transcript'}
+                          </span>
+                          {contentDraft.length > 0 && (
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                              {wordCount.toLocaleString()} words
+                            </span>
+                          )}
+                        </div>
+                        <textarea
+                          className="glass-textarea"
+                          rows={6}
+                          placeholder={inputMode === 'text' ? 'Paste your transcript, article, or script here…' : 'Paste article text here…'}
+                          value={contentDraft}
+                          onChange={(e) => setContentDraft(e.target.value)}
+                          style={{ fontSize: '0.84rem' }}
+                          autoFocus={inputMode === 'text'}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          disabled={inputMode === 'text' ? !contentDraft.trim() : !urlDraft.trim()}
+                          onClick={commitContent}
+                          style={{ opacity: (inputMode === 'text' ? !contentDraft.trim() : !urlDraft.trim()) ? 0.4 : 1 }}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </AgentBubble>
+              </>
+            )}
+          </AnimatePresence>
+
+          {/* Step 5 — Notes */}
+          <AnimatePresence>
+            {['notes', 'ready'].includes(step) && (
+              <>
+                <UserBubble>
+                  {inputMode === 'url' && urlDraft ? urlDraft : `${wordCount} words pasted`}
+                </UserBubble>
+                <AgentBubble delay={0.08}>
+                  Almost there. Any specific marketing goals, active campaigns, or context I should keep in mind? <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>(optional)</span>
+                  {step === 'notes' && (
+                    <div style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <textarea
+                        autoFocus
+                        className="glass-textarea"
+                        rows={3}
+                        placeholder="e.g. We're pushing brand awareness this quarter, focus on LinkedIn…"
+                        value={notesDraft}
+                        onChange={(e) => setNotesDraft(e.target.value)}
+                        style={{ fontSize: '0.84rem' }}
+                      />
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <button className="btn btn-sm" onClick={() => commitNotes(true)} style={{ opacity: 0.6 }}>Skip</button>
+                        <button className="btn btn-primary btn-sm" onClick={() => commitNotes()}>Next</button>
+                      </div>
+                    </div>
+                  )}
+                </AgentBubble>
+              </>
+            )}
+          </AnimatePresence>
+
+          {/* Step 6 — Ready to run */}
+          <AnimatePresence>
+            {step === 'ready' && (
+              <>
+                {marketingNotes ? <UserBubble>{marketingNotes}</UserBubble> : <UserBubble>No special notes</UserBubble>}
+                <AgentBubble delay={0.1}>
+                  <span style={{ fontWeight: 600 }}>All set.</span> Here's what I'll analyze:
+                  <div style={{ marginTop: '0.65rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                    {[
+                      { label: 'Source type', value: activeType?.name ?? sourceType },
+                      { label: 'Title', value: sourceTitle },
+                      sourceOwner && { label: 'Owner', value: sourceOwner },
+                      { label: 'Input', value: inputMode === 'url' ? sourceUrl || urlDraft : `${wordCount} words` },
+                      marketingNotes && { label: 'Notes', value: marketingNotes.length > 60 ? marketingNotes.slice(0, 60) + '…' : marketingNotes },
+                    ].filter(Boolean).map((row: any) => (
+                      <div key={row.label} style={{ display: 'flex', gap: 8, fontSize: '0.78rem' }}>
+                        <span style={{ color: 'var(--text-muted)', minWidth: 80 }}>{row.label}</span>
+                        <span style={{ fontWeight: 600 }}>{row.value}</span>
+                      </div>
+                    ))}
+                    {activeType && (activeType.formats as unknown as string[]).length > 0 && (
+                      <div style={{ display: 'flex', gap: 8, fontSize: '0.78rem' }}>
+                        <span style={{ color: 'var(--text-muted)', minWidth: 80 }}>Outputs</span>
+                        <span style={{ fontWeight: 600 }}>{(activeType.formats as unknown as string[]).join(', ')}</span>
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    className="btn btn-brand"
+                    onClick={handleRunAnalysis}
+                    style={{ marginTop: '1rem', width: '100%', background: 'linear-gradient(135deg, var(--accent-primary), #a855f7)' }}
+                  >
+                    Run Analysis
+                  </button>
+                </AgentBubble>
+              </>
+            )}
+          </AnimatePresence>
+
+          {/* Error shown in chat (pre-run) */}
+          {error && !result && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <AgentAvatar />
+              <div style={{ background: '#DC262610', border: '1px solid #DC262630', borderRadius: '0 14px 14px 14px', padding: '0.7rem 1rem', fontSize: '0.84rem', color: '#DC2626', maxWidth: 540 }}>
+                {error}
+                <button className="btn btn-sm" onClick={() => { setError(null); setStep('source_type'); resetConversation(); }} style={{ marginTop: 8, display: 'block', fontSize: '0.72rem' }}>Start over</button>
+              </div>
+            </motion.div>
+          )}
+
+          <div ref={chatEndRef} />
         </div>
       )}
 
-      {/* ── RESULTS — shown full-width immediately after run ── */}
+      {/* ── RESULTS ── */}
       {result && (
         <div>
-          {/* header row with New Analysis button */}
-          {/* ── Header ── */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
             <div>
               <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--accent-primary)', marginBottom: 4 }}>Analysis Complete</div>
               <div style={{ fontSize: '1.25rem', fontWeight: 800, fontFamily: 'Fraunces, Georgia, serif', lineHeight: 1.3 }}>{sourceTitle || 'Untitled Source'}</div>
             </div>
-            <button className="btn btn-sm" onClick={() => { setResult(null); setSourcesUsed([]); setActivityStep(-1); setError(null); }} style={{ flexShrink: 0 }}>
-              New Analysis
-            </button>
+            <button className="btn btn-sm" onClick={resetConversation} style={{ flexShrink: 0 }}>New Analysis</button>
           </div>
 
-          {/* ── Stats row ── */}
+          {error && (
+            <div style={{ padding: '0.8rem 1rem', marginBottom: '1rem', borderRadius: 10, background: '#DC262608', border: '1px solid #DC262630', fontSize: '0.8rem', color: '#DC2626' }}>
+              {error}
+            </div>
+          )}
+
           <div className="grid grid-4" style={{ gap: '0.7rem', marginBottom: '1.5rem' }}>
             <StatCard label="Topics" value={result.topics?.length ?? 0} color="var(--accent-primary)" />
             <StatCard label="Insights" value={result.insights?.length ?? 0} color="#6366F1" />
@@ -486,21 +801,18 @@ export default function AnalyzePage() {
             <StatCard label="Source Quality" value={result.quality_check?.source_richness ?? 'N/A'} color="#F59E0B" />
           </div>
 
-          {/* ── Warnings ── */}
           {result.warnings?.length > 0 && (
             <div style={{ padding: '0.7rem 1rem', marginBottom: '1.2rem', borderRadius: 10, background: '#F59E0B0A', border: '1px solid #F59E0B30' }}>
               {result.warnings.map((w: string, i: number) => <div key={i} style={{ fontSize: '0.78rem', color: '#F59E0B', lineHeight: 1.5 }}>{w}</div>)}
             </div>
           )}
 
-          {/* ── Summary ── */}
           {result.summary && (
             <div className="glass-card-static" style={{ padding: '1.2rem 1.4rem', marginBottom: '1.2rem', borderLeft: '4px solid var(--accent-primary)' }}>
-              <p style={{ fontSize: '0.9rem', lineHeight: 1.7, margin: 0, color: 'var(--text-primary)' }}>{result.summary}</p>
+              <p style={{ fontSize: '0.9rem', lineHeight: 1.7, margin: 0 }}>{result.summary}</p>
             </div>
           )}
 
-          {/* ── Topics & Depth ── */}
           {result.topics?.length > 0 && (
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '0.8rem' }}>Topics & Depth Analysis</div>
@@ -542,7 +854,6 @@ export default function AnalyzePage() {
             </div>
           )}
 
-          {/* ── Key Insights ── */}
           {result.insights?.length > 0 && (
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '0.8rem' }}>Key Insights</div>
@@ -554,7 +865,7 @@ export default function AnalyzePage() {
                       <div style={{ position: 'absolute', right: 12, top: 10 }}>
                         <span style={{ fontSize: '0.58rem', fontWeight: 700, textTransform: 'uppercase', padding: '2px 7px', borderRadius: 20, background: confColor + '15', color: confColor }}>{ins.confidence || 'insight'}</span>
                       </div>
-                      <div style={{ fontSize: '0.84rem', lineHeight: 1.6, paddingRight: '4rem', color: 'var(--text-primary)' }}>{ins.text}</div>
+                      <div style={{ fontSize: '0.84rem', lineHeight: 1.6, paddingRight: '4rem' }}>{ins.text}</div>
                       {ins.source_reference && (
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 6, fontStyle: 'italic', paddingLeft: 8, borderLeft: '2px solid var(--border)' }}>
                           {ins.source_reference}
@@ -567,7 +878,6 @@ export default function AnalyzePage() {
             </div>
           )}
 
-          {/* ── Persona Matches ── */}
           {result.persona_matches?.length > 0 && (
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '0.8rem' }}>Audience Fit</div>
@@ -599,7 +909,6 @@ export default function AnalyzePage() {
             </div>
           )}
 
-          {/* ── Quality Assessment ── */}
           {result.quality_check && (
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '0.8rem' }}>Quality Assessment</div>
@@ -625,12 +934,11 @@ export default function AnalyzePage() {
             </div>
           )}
 
-          {/* ── Repurposing Plan (Opportunities) ── */}
           {result.opportunities?.length > 0 && (
             <div style={{ marginBottom: '1.5rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.8rem' }}>
                 <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>Repurposing Plan</div>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{result.opportunities.length} pieces &middot; sorted by ship order</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{result.opportunities.length} pieces · sorted by ship order</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.8rem' }}>
                 {[...result.opportunities]
@@ -640,26 +948,20 @@ export default function AnalyzePage() {
                     const effortLabel = opp.effort === 'quick' ? 'Quick win' : opp.effort === 'half-day' ? 'Half day' : opp.effort === 'full-day' ? 'Full day' : opp.effort;
                     return (
                       <div key={i} className="glass-card-static" style={{ padding: 0, overflow: 'hidden' }}>
-                        {/* Card header bar */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0.7rem 1rem', background: 'var(--accent-primary)06', borderBottom: '1px solid var(--border)' }}>
                           <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--accent-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 800, flexShrink: 0 }}>{opp.sequence_rank ?? i + 1}</span>
                           <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-secondary)', flex: 1 }}>{opp.recommended_format}</span>
                           <span style={{ fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase', padding: '2px 8px', borderRadius: 20, background: priorityColor + '12', color: priorityColor }}>{opp.priority}</span>
                           {effortLabel && <span style={{ fontSize: '0.6rem', fontWeight: 600, padding: '2px 8px', borderRadius: 20, background: '#6366F110', color: '#6366F1' }}>{effortLabel}</span>}
                         </div>
-
-                        {/* Card body */}
                         <div style={{ padding: '1rem 1.2rem' }}>
                           <div style={{ fontWeight: 700, fontSize: '0.92rem', lineHeight: 1.4, marginBottom: '0.5rem' }}>{opp.title}</div>
-
                           {opp.hook && (
                             <div style={{ fontSize: '0.8rem', fontStyle: 'italic', color: 'var(--text-primary)', marginBottom: '0.6rem', paddingLeft: 10, borderLeft: '3px solid var(--accent-primary)' }}>
                               &ldquo;{opp.hook}&rdquo;
                             </div>
                           )}
-
                           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '0.7rem' }}>{opp.content_angle}</div>
-
                           {opp.structure?.length > 0 && (
                             <div style={{ marginBottom: '0.7rem' }}>
                               <div style={{ fontSize: '0.64rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 6 }}>Content Flow</div>
@@ -673,32 +975,34 @@ export default function AnalyzePage() {
                               </div>
                             </div>
                           )}
-
-                          {/* Footer meta row */}
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.8rem', paddingTop: '0.6rem', borderTop: '1px solid var(--border)' }}>
                             {opp.persona_match && opp.persona_match !== 'general' && (
-                              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                                <span style={{ fontWeight: 600, marginRight: 4 }}>For:</span>{opp.persona_match}
-                              </div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}><span style={{ fontWeight: 600, marginRight: 4 }}>For:</span>{opp.persona_match}</div>
                             )}
                             {opp.kpi && (
-                              <div style={{ fontSize: '0.7rem', color: '#10B981' }}>
-                                <span style={{ fontWeight: 600, marginRight: 4 }}>KPI:</span>{opp.kpi}
-                              </div>
+                              <div style={{ fontSize: '0.7rem', color: '#10B981' }}><span style={{ fontWeight: 600, marginRight: 4 }}>KPI:</span>{opp.kpi}</div>
                             )}
                             {opp.suggested_cta && (
-                              <div style={{ fontSize: '0.7rem', color: 'var(--accent-primary)' }}>
-                                <span style={{ fontWeight: 600, marginRight: 4 }}>CTA:</span>{opp.suggested_cta}
-                              </div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--accent-primary)' }}><span style={{ fontWeight: 600, marginRight: 4 }}>CTA:</span>{opp.suggested_cta}</div>
                             )}
                           </div>
-
                           {opp.prerequisites?.length > 0 && (
                             <div style={{ marginTop: 8, padding: '6px 10px', borderRadius: 8, background: '#F59E0B08', border: '1px solid #F59E0B20' }}>
                               <span style={{ fontSize: '0.66rem', fontWeight: 700, color: '#F59E0B', marginRight: 6 }}>BEFORE SHIPPING:</span>
                               <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{opp.prerequisites.join(' · ')}</span>
                             </div>
                           )}
+                          <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+                            {savedOppIds[opp.title] ? (
+                              <button className="btn btn-primary btn-sm" onClick={() => { setActiveStudioOpp(savedOppIds[opp.title]); setActiveTab('studio'); }} style={{ fontSize: '0.72rem' }}>
+                                Open in Studio →
+                              </button>
+                            ) : (
+                              <button className="btn btn-sm" disabled style={{ fontSize: '0.72rem', opacity: 0.4, cursor: 'not-allowed' }} title="Saving…">
+                                Open in Studio →
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -707,7 +1011,6 @@ export default function AnalyzePage() {
             </div>
           )}
 
-          {/* ── Sources Used ── */}
           {sourcesUsed.length > 0 && (
             <div className="glass-card-static" style={{ padding: '0.8rem 1.2rem', marginBottom: '1.2rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -721,7 +1024,6 @@ export default function AnalyzePage() {
             </div>
           )}
 
-          {/* ── CTA ── */}
           <div className="glass-card-static" style={{ padding: '1.2rem', textAlign: 'center', background: 'linear-gradient(135deg, var(--accent-primary)08, #a855f708)' }}>
             <div style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.6rem' }}>{result.opportunities?.length ?? 0} content pieces ready for your pipeline</div>
             <button className="btn btn-primary btn-sm" onClick={() => setActiveTab('opportunities')}>View in Opportunities</button>
