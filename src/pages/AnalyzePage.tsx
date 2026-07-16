@@ -35,16 +35,17 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
   );
 }
 
-function AgentAvatar() {
+function AgentAvatar({ size = 38 }: { size?: number }) {
   return (
     <div style={{
-      width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-      background: 'linear-gradient(135deg, var(--accent-primary), #a855f7)',
+      width: size, height: size, borderRadius: '50%', flexShrink: 0,
+      background: 'linear-gradient(135deg, #6366f1, #a855f7)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
+      boxShadow: '0 0 0 3px rgba(139,92,246,0.18), 0 4px 14px rgba(139,92,246,0.35)',
     }}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10" />
-        <path d="M12 8v4l3 3" />
+      {/* Spark / intelligence icon */}
+      <svg width={size * 0.44} height={size * 0.44} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2L9.5 9.5 2 12l7.5 2.5L12 22l2.5-7.5L22 12l-7.5-2.5z" />
       </svg>
     </div>
   );
@@ -53,21 +54,22 @@ function AgentAvatar() {
 function AgentBubble({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.22, delay }}
-      style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}
+      transition={{ duration: 0.25, delay, ease: [0.22, 1, 0.36, 1] }}
+      style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}
     >
       <AgentAvatar />
       <div style={{
         background: 'var(--surface-card)',
         border: '1px solid var(--border)',
-        borderRadius: '0 14px 14px 14px',
-        padding: '0.7rem 1rem',
-        fontSize: '0.85rem',
-        lineHeight: 1.6,
+        borderRadius: '4px 18px 18px 18px',
+        padding: '0.85rem 1.1rem',
+        fontSize: '0.875rem',
+        lineHeight: 1.65,
         color: 'var(--text-primary)',
-        maxWidth: 540,
+        maxWidth: 560,
+        boxShadow: '0 2px 12px rgba(0,0,0,0.07)',
       }}>
         {children}
       </div>
@@ -78,19 +80,20 @@ function AgentBubble({ children, delay = 0 }: { children: React.ReactNode; delay
 function UserBubble({ children }: { children: React.ReactNode }) {
   return (
     <motion.div
-      initial={{ opacity: 0, x: 12 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.18 }}
+      initial={{ opacity: 0, x: 16, scale: 0.97 }}
+      animate={{ opacity: 1, x: 0, scale: 1 }}
+      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
       style={{ display: 'flex', justifyContent: 'flex-end' }}
     >
       <div style={{
-        background: 'linear-gradient(135deg, var(--accent-primary), #a855f7)',
-        borderRadius: '14px 0 14px 14px',
-        padding: '0.55rem 1rem',
-        fontSize: '0.84rem',
+        background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+        borderRadius: '18px 4px 18px 18px',
+        padding: '0.6rem 1.1rem',
+        fontSize: '0.875rem',
         color: '#fff',
         fontWeight: 500,
         maxWidth: 480,
+        boxShadow: '0 4px 16px rgba(139,92,246,0.3)',
       }}>
         {children}
       </div>
@@ -423,8 +426,33 @@ export default function AnalyzePage() {
 
   return (
     <div>
-      <div className="eyebrow">Analysis Engine</div>
-      <h1 className="page-title">New Analysis</h1>
+      {/* ── Hero ── */}
+      {!result && (
+        <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '4px 14px', borderRadius: 20,
+            background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)',
+            fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+            color: '#a78bfa', marginBottom: '0.9rem',
+          }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#a78bfa', boxShadow: '0 0 6px #a78bfa' }} />
+            Intelligence Engine
+          </div>
+          <div style={{
+            fontSize: '1.9rem', fontWeight: 800,
+            fontFamily: 'Fraunces, Georgia, serif',
+            background: 'linear-gradient(135deg, var(--text-primary) 40%, #a78bfa)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            lineHeight: 1.2, marginBottom: '0.5rem',
+          }}>
+            New Analysis
+          </div>
+          <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', maxWidth: 480, margin: '0 auto' }}>
+            Drop in any source — webinar transcript, article, video script, report — and the engine extracts opportunities for your pipeline.
+          </p>
+        </div>
+      )}
 
       {showAddModal && <AddSourceTypeModal onClose={() => setShowAddModal(false)} onSave={handleAddSourceType} />}
 
@@ -482,58 +510,73 @@ export default function AnalyzePage() {
 
       {/* ── CONVERSATIONAL INPUT ── */}
       {!result && !isRunning && (
-        <div style={{ maxWidth: 660, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1rem', paddingBottom: '1rem' }}>
+        <div style={{ maxWidth: 680, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.1rem', paddingBottom: '2rem' }}>
 
           {/* Step 0 — Source type */}
           <AgentBubble>
-            <span style={{ fontWeight: 600 }}>Hey! What would you like to analyze today?</span>
-            <div style={{ marginTop: '0.65rem', display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-              {loadingTypes ? (
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Loading source types…</span>
-              ) : sourceTypes.length === 0 ? (
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>No source types yet.</span>
-              ) : (
-                sourceTypes.map((st) => {
+            <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.15rem' }}>Hey! What would you like to analyze today?</div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.9rem' }}>Pick the type of source you're bringing in.</div>
+            {loadingTypes ? (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                <div className="spin-dot" style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-primary)' }} />
+                Loading source types…
+              </div>
+            ) : sourceTypes.length === 0 ? (
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>No source types yet — create one below.</span>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: '0.5rem' }}>
+                {sourceTypes.map((st) => {
                   const hint = archetypeHint(st.name, st.slug);
                   const isChosen = sourceType === st.slug && step !== 'source_type';
+                  const isActive = step === 'source_type';
                   return (
                     <button
                       key={st.id}
-                      onClick={() => { if (step === 'source_type') pickSourceType(st.slug); }}
-                      disabled={step !== 'source_type'}
+                      onClick={() => { if (isActive) pickSourceType(st.slug); }}
+                      disabled={!isActive}
                       style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 6,
-                        padding: '6px 14px', borderRadius: 20, border: '1px solid',
-                        borderColor: isChosen ? 'var(--accent-primary)' : 'var(--border)',
-                        background: isChosen ? 'var(--accent-primary)' : 'var(--surface-hover)',
-                        color: isChosen ? '#fff' : 'var(--text-primary)',
-                        fontSize: '0.82rem', fontWeight: 600,
-                        cursor: step === 'source_type' ? 'pointer' : 'default',
+                        position: 'relative',
+                        display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+                        gap: 2,
+                        padding: '0.65rem 0.8rem',
+                        borderRadius: 12,
+                        border: `1.5px solid ${isChosen ? '#6366f1' : 'var(--border)'}`,
+                        background: isChosen
+                          ? 'linear-gradient(135deg, rgba(99,102,241,0.18), rgba(168,85,247,0.12))'
+                          : isActive ? 'var(--surface-hover)' : 'transparent',
+                        color: isChosen ? '#a78bfa' : 'var(--text-primary)',
+                        fontSize: '0.82rem', fontWeight: 700,
+                        cursor: isActive ? 'pointer' : 'default',
+                        textAlign: 'left',
                         transition: 'all 0.15s',
+                        boxShadow: isChosen ? '0 0 0 3px rgba(99,102,241,0.15)' : 'none',
                       }}
+                      onMouseEnter={(e) => { if (isActive && !isChosen) (e.currentTarget as HTMLElement).style.borderColor = '#6366f150'; }}
+                      onMouseLeave={(e) => { if (isActive && !isChosen) (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
                     >
-                      {st.name}
-                      {hint && <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>· {hint}</span>}
-                      {step === 'source_type' && (
+                      <span>{st.name}</span>
+                      {hint && <span style={{ fontSize: '0.67rem', fontWeight: 400, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{hint}</span>}
+                      {isActive && (
                         <span
                           onClick={(e) => { e.stopPropagation(); setConfirmDeleteType(st); }}
                           title="Remove"
-                          style={{ width: 16, height: 16, borderRadius: '50%', background: 'rgba(220,38,38,0.18)', color: '#DC2626', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', lineHeight: 1 }}
+                          style={{ position: 'absolute', top: 5, right: 6, width: 16, height: 16, borderRadius: '50%', background: 'rgba(220,38,38,0.15)', color: '#DC2626', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                         >&times;</span>
                       )}
                     </button>
                   );
-                })
-              )}
-              {step === 'source_type' && (
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  style={{ padding: '6px 14px', borderRadius: 20, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: '0.82rem', cursor: 'pointer' }}
-                >
-                  + New type
-                </button>
-              )}
-            </div>
+                })}
+              </div>
+            )}
+            {step === 'source_type' && (
+              <button
+                onClick={() => setShowAddModal(true)}
+                style={{ marginTop: '0.6rem', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: '0.78rem', cursor: 'pointer' }}
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add source type
+              </button>
+            )}
           </AgentBubble>
 
           {/* Step 1 — Title */}
@@ -604,21 +647,29 @@ export default function AnalyzePage() {
                 <AgentBubble delay={0.08}>
                   How would you like to share the content?
                   {step === 'input_mode' && (
-                    <div style={{ marginTop: '0.6rem', display: 'flex', gap: 8 }}>
-                      <button
-                        onClick={() => pickInputMode('text')}
-                        style={{ flex: 1, padding: '0.6rem', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-hover)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}
-                      >
-                        <div>Paste text</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 400 }}>Transcript, article, script…</div>
-                      </button>
-                      <button
-                        onClick={() => pickInputMode('url')}
-                        style={{ flex: 1, padding: '0.6rem', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface-hover)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}
-                      >
-                        <div>Paste a link</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 400 }}>URL + optional text</div>
-                      </button>
+                    <div style={{ marginTop: '0.75rem', display: 'flex', gap: 10 }}>
+                      {[
+                        { mode: 'text' as const, icon: '📋', label: 'Paste text', sub: 'Transcript, article, script, report…' },
+                        { mode: 'url' as const, icon: '🔗', label: 'Paste a link', sub: 'URL + optional article text' },
+                      ].map(({ mode, icon, label, sub }) => (
+                        <button
+                          key={mode}
+                          onClick={() => pickInputMode(mode)}
+                          style={{
+                            flex: 1, padding: '0.85rem 1rem', borderRadius: 14,
+                            border: '1.5px solid var(--border)',
+                            background: 'var(--surface-hover)',
+                            cursor: 'pointer', textAlign: 'left',
+                            transition: 'all 0.15s',
+                          }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = '#6366f1'; (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.07)'; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)'; }}
+                        >
+                          <div style={{ fontSize: '1.4rem', marginBottom: 6 }}>{icon}</div>
+                          <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{label}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{sub}</div>
+                        </button>
+                      ))}
                     </div>
                   )}
                 </AgentBubble>
@@ -751,11 +802,20 @@ export default function AnalyzePage() {
                     )}
                   </div>
                   <button
-                    className="btn btn-brand"
                     onClick={handleRunAnalysis}
-                    style={{ marginTop: '1rem', width: '100%', background: 'linear-gradient(135deg, var(--accent-primary), #a855f7)' }}
+                    style={{
+                      marginTop: '1.1rem', width: '100%',
+                      padding: '0.75rem 1.5rem', borderRadius: 12, border: 'none',
+                      background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                      color: '#fff', fontSize: '0.9rem', fontWeight: 700,
+                      cursor: 'pointer', letterSpacing: '0.02em',
+                      boxShadow: '0 4px 20px rgba(139,92,246,0.4)',
+                      transition: 'all 0.15s',
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 6px 28px rgba(139,92,246,0.55)'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 20px rgba(139,92,246,0.4)'; (e.currentTarget as HTMLElement).style.transform = 'none'; }}
                   >
-                    Run Analysis
+                    Run Analysis →
                   </button>
                 </AgentBubble>
               </>
