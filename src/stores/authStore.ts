@@ -4,6 +4,22 @@ import type { User } from '@/types';
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 
 const ALLOWED_DOMAIN = 'trilliantdigital.com';
+const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
+const LOGIN_AT_KEY = 'auth_login_at';
+
+function recordLoginTime() {
+  localStorage.setItem(LOGIN_AT_KEY, Date.now().toString());
+}
+
+function clearLoginTime() {
+  localStorage.removeItem(LOGIN_AT_KEY);
+}
+
+function isSessionExpired(): boolean {
+  const raw = localStorage.getItem(LOGIN_AT_KEY);
+  if (!raw) return false; // no timestamp = fresh session, let Supabase decide
+  return Date.now() - parseInt(raw, 10) > SESSION_DURATION_MS;
+}
 
 interface AuthState {
   user: User | null;
@@ -61,9 +77,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (data.session) {
         if (!isDomainAllowed(data.session.user.email)) {
           await supabase.auth.signOut();
+          clearLoginTime();
           set({ initialized: true, error: `Only @${ALLOWED_DOMAIN} accounts are allowed.` });
           return;
         }
+
+        // Force re-login if session is older than 8 hours
+        if (isSessionExpired()) {
+          await supabase.auth.signOut();
+          clearLoginTime();
+          set({ initialized: true });
+          return;
+        }
+
         set({
           session: data.session,
           user: mapSupabaseUser(data.session.user),
@@ -77,12 +103,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     supabase.auth.onAuthStateChange(
-      (_event: AuthChangeEvent, session: Session | null) => {
+      (event: AuthChangeEvent, session: Session | null) => {
         if (session) {
           if (!isDomainAllowed(session.user.email)) {
             supabase.auth.signOut();
+            clearLoginTime();
             set({ session: null, user: null, error: `Only @${ALLOWED_DOMAIN} accounts are allowed.` });
             return;
+          }
+          // Record login time only on actual sign-in, not token refreshes
+          if (event === 'SIGNED_IN') {
+            recordLoginTime();
           }
           set({ session, user: mapSupabaseUser(session.user), error: null });
         } else {
@@ -113,6 +144,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      clearLoginTime();
       set({ user: null, session: null, loading: false });
     } catch (err: any) {
       set({ loading: false, error: err.message ?? 'Sign out failed' });
