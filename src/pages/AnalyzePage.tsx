@@ -35,69 +35,32 @@ function StatCard({ label, value, color }: { label: string; value: string | numb
   );
 }
 
-function AgentAvatar({ size = 38 }: { size?: number }) {
+// Ordered steps for the progress indicator
+const STEP_ORDER: Step[] = ['source_type', 'title', 'owner', 'input_mode', 'content', 'notes', 'ready'];
+const STEP_LABELS: Record<Step, string> = {
+  source_type: 'Source type',
+  title: 'Title',
+  owner: 'Owner',
+  input_mode: 'Format',
+  content: 'Content',
+  notes: 'Notes',
+  ready: 'Review',
+};
+
+function StepProgress({ step }: { step: Step }) {
+  const currentIdx = STEP_ORDER.indexOf(step);
   return (
-    <div style={{
-      width: size, height: size, borderRadius: '50%', flexShrink: 0,
-      background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      boxShadow: '0 0 0 3px rgba(139,92,246,0.18), 0 4px 14px rgba(139,92,246,0.35)',
-    }}>
-      {/* Spark / intelligence icon */}
-      <svg width={size * 0.44} height={size * 0.44} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 2L9.5 9.5 2 12l7.5 2.5L12 22l2.5-7.5L22 12l-7.5-2.5z" />
-      </svg>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: '1.1rem' }}>
+      {STEP_ORDER.map((s, i) => (
+        <div key={s} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{
+            height: 3, flex: 1, borderRadius: 2,
+            background: i <= currentIdx ? 'var(--accent-primary)' : 'var(--border)',
+            transition: 'background 0.25s',
+          }} />
+        </div>
+      ))}
     </div>
-  );
-}
-
-function AgentBubble({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25, delay, ease: [0.22, 1, 0.36, 1] }}
-      style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}
-    >
-      <AgentAvatar />
-      <div style={{
-        background: 'var(--surface-card)',
-        border: '1px solid var(--border)',
-        borderRadius: '4px 18px 18px 18px',
-        padding: '0.85rem 1.1rem',
-        fontSize: '0.875rem',
-        lineHeight: 1.65,
-        color: 'var(--text-primary)',
-        maxWidth: 560,
-        boxShadow: '0 2px 12px rgba(0,0,0,0.07)',
-      }}>
-        {children}
-      </div>
-    </motion.div>
-  );
-}
-
-function UserBubble({ children }: { children: React.ReactNode }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: 16, scale: 0.97 }}
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-      style={{ display: 'flex', justifyContent: 'flex-end' }}
-    >
-      <div style={{
-        background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-        borderRadius: '18px 4px 18px 18px',
-        padding: '0.6rem 1.1rem',
-        fontSize: '0.875rem',
-        color: '#fff',
-        fontWeight: 500,
-        maxWidth: 480,
-        boxShadow: '0 4px 16px rgba(139,92,246,0.3)',
-      }}>
-        {children}
-      </div>
-    </motion.div>
   );
 }
 
@@ -426,32 +389,12 @@ export default function AnalyzePage() {
 
   return (
     <div>
-      {/* ── Hero ── */}
       {!result && (
-        <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            padding: '4px 14px', borderRadius: 20,
-            background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.25)',
-            fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-            color: '#a78bfa', marginBottom: '0.9rem',
-          }}>
-            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#a78bfa', boxShadow: '0 0 6px #a78bfa' }} />
-            Intelligence Engine
-          </div>
-          <div style={{
-            fontSize: '1.9rem', fontWeight: 800,
-            fontFamily: 'Fraunces, Georgia, serif',
-            background: 'linear-gradient(135deg, var(--text-primary) 40%, #a78bfa)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-            lineHeight: 1.2, marginBottom: '0.5rem',
-          }}>
-            New Analysis
-          </div>
-          <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', maxWidth: 480, margin: '0 auto' }}>
-            Drop in any source — webinar transcript, article, video script, report — and the engine extracts opportunities for your pipeline.
-          </p>
-        </div>
+        <>
+          <div className="eyebrow">Analysis Engine</div>
+          <h1 className="page-title">New Analysis</h1>
+          <p className="page-desc">Paste your source content and let the intelligence engine extract topics, match personas, and identify content opportunities.</p>
+        </>
       )}
 
       {showAddModal && <AddSourceTypeModal onClose={() => setShowAddModal(false)} onSave={handleAddSourceType} />}
@@ -508,329 +451,229 @@ export default function AnalyzePage() {
         )}
       </AnimatePresence>
 
-      {/* ── CONVERSATIONAL INPUT ── */}
+      {/* ── STEPPED INPUT CARD ── */}
       {!result && !isRunning && (
-        <div style={{ maxWidth: 680, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.1rem', paddingBottom: '2rem' }}>
+        <div style={{ maxWidth: 640, margin: '0 auto' }}>
+          <div className="glass-card-static" style={{ padding: '1.4rem' }}>
+            <StepProgress step={step} />
+            <div style={{ fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+              Step {STEP_ORDER.indexOf(step) + 1} of {STEP_ORDER.length} · {STEP_LABELS[step]}
+            </div>
 
-          {/* Step 0 — Source type */}
-          <AgentBubble>
-            <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.15rem' }}>Hey! What would you like to analyze today?</div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.9rem' }}>Pick the type of source you're bringing in.</div>
-            {loadingTypes ? (
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                <div className="spin-dot" style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-primary)' }} />
-                Loading source types…
-              </div>
-            ) : sourceTypes.length === 0 ? (
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>No source types yet — create one below.</span>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: '0.5rem' }}>
-                {sourceTypes.map((st) => {
-                  const hint = archetypeHint(st.name, st.slug);
-                  const isChosen = sourceType === st.slug && step !== 'source_type';
-                  const isActive = step === 'source_type';
-                  return (
-                    <button
-                      key={st.id}
-                      onClick={() => { if (isActive) pickSourceType(st.slug); }}
-                      disabled={!isActive}
-                      style={{
-                        position: 'relative',
-                        display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-                        gap: 2,
-                        padding: '0.65rem 0.8rem',
-                        borderRadius: 12,
-                        border: `1.5px solid ${isChosen ? '#6366f1' : 'var(--border)'}`,
-                        background: isChosen
-                          ? 'linear-gradient(135deg, rgba(99,102,241,0.18), rgba(168,85,247,0.12))'
-                          : isActive ? 'var(--surface-hover)' : 'transparent',
-                        color: isChosen ? '#a78bfa' : 'var(--text-primary)',
-                        fontSize: '0.82rem', fontWeight: 700,
-                        cursor: isActive ? 'pointer' : 'default',
-                        textAlign: 'left',
-                        transition: 'all 0.15s',
-                        boxShadow: isChosen ? '0 0 0 3px rgba(99,102,241,0.15)' : 'none',
-                      }}
-                      onMouseEnter={(e) => { if (isActive && !isChosen) (e.currentTarget as HTMLElement).style.borderColor = '#6366f150'; }}
-                      onMouseLeave={(e) => { if (isActive && !isChosen) (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; }}
-                    >
-                      <span>{st.name}</span>
-                      {hint && <span style={{ fontSize: '0.67rem', fontWeight: 400, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{hint}</span>}
-                      {isActive && (
-                        <span
-                          onClick={(e) => { e.stopPropagation(); setConfirmDeleteType(st); }}
-                          title="Remove"
-                          style={{ position: 'absolute', top: 5, right: 6, width: 16, height: 16, borderRadius: '50%', background: 'rgba(220,38,38,0.15)', color: '#DC2626', fontSize: '0.65rem', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                        >&times;</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {step === 'source_type' && (
-              <button
-                onClick={() => setShowAddModal(true)}
-                style={{ marginTop: '0.6rem', display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 12px', borderRadius: 20, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: '0.78rem', cursor: 'pointer' }}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={step}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
               >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Add source type
-              </button>
-            )}
-          </AgentBubble>
+                {/* Step: source type */}
+                {step === 'source_type' && (
+                  <div>
+                    <div className="field-label" style={{ marginBottom: '0.6rem' }}>What are you analyzing?</div>
+                    {loadingTypes ? (
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.5rem 0' }}>Loading source types…</div>
+                    ) : sourceTypes.length === 0 ? (
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', padding: '0.5rem 0' }}>No source types configured yet.</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        {sourceTypes.map((st) => (
+                          <span
+                            key={st.id}
+                            className="badge"
+                            onClick={() => pickSourceType(st.slug)}
+                            style={{ cursor: 'pointer', position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px' }}
+                          >
+                            {st.name}
+                            <span
+                              onClick={(e) => { e.stopPropagation(); setConfirmDeleteType(st); }}
+                              title="Remove"
+                              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, borderRadius: '50%', background: 'rgba(220,38,38,0.15)', color: '#DC2626', fontSize: '0.65rem', fontWeight: 700, cursor: 'pointer', lineHeight: 1 }}
+                            >&times;</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      className="btn btn-sm"
+                      onClick={() => setShowAddModal(true)}
+                      style={{ marginTop: '0.7rem', border: '1px dashed var(--border-default)', background: 'transparent' }}
+                    >
+                      + Add source type
+                    </button>
+                  </div>
+                )}
 
-          {/* Step 1 — Title */}
-          <AnimatePresence>
-            {step !== 'source_type' && sourceType && (
-              <>
-                <UserBubble>{activeType?.name ?? sourceType}</UserBubble>
-                <AgentBubble delay={0.08}>
-                  <span style={{ fontWeight: 600 }}>Great choice.</span> What's the title or name of this piece?
-                  <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: 2 }}>e.g. "Market Outlook Q3" or "Brand Strategy Video"</div>
-                  {step === 'title' && (
-                    <div style={{ marginTop: '0.6rem', display: 'flex', gap: 6 }}>
-                      <input
-                        autoFocus
-                        className="glass-input"
-                        style={{ flex: 1, fontSize: '0.84rem' }}
-                        placeholder="Source title…"
-                        value={titleDraft}
-                        onChange={(e) => setTitleDraft(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' && titleDraft.trim()) commitTitle(); }}
-                      />
-                      <button
-                        className="btn btn-primary btn-sm"
-                        disabled={!titleDraft.trim()}
-                        onClick={commitTitle}
-                        style={{ opacity: titleDraft.trim() ? 1 : 0.4 }}
-                      >Next</button>
+                {/* Step: title */}
+                {step === 'title' && (
+                  <div className="field">
+                    <label className="field-label">Title of this piece</label>
+                    <input
+                      autoFocus
+                      className="glass-input"
+                      placeholder="e.g. Market Outlook Q3 2025"
+                      value={titleDraft}
+                      onChange={(e) => setTitleDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' && titleDraft.trim()) commitTitle(); }}
+                    />
+                  </div>
+                )}
+
+                {/* Step: owner */}
+                {step === 'owner' && (
+                  <div className="field">
+                    <label className="field-label">Source Owner / Speaker <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
+                    <input
+                      autoFocus
+                      className="glass-input"
+                      placeholder="e.g. Anil Kumar"
+                      value={ownerDraft}
+                      onChange={(e) => setOwnerDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') commitOwner(); }}
+                    />
+                  </div>
+                )}
+
+                {/* Step: input mode */}
+                {step === 'input_mode' && (
+                  <div>
+                    <div className="field-label" style={{ marginBottom: '0.6rem' }}>How will you share the content?</div>
+                    <div className="underline-tabs">
+                      <button className="u-tab" onClick={() => pickInputMode('text')}>Paste Text / Transcript</button>
+                      <button className="u-tab" onClick={() => pickInputMode('url')}>Paste Source Link</button>
                     </div>
-                  )}
-                </AgentBubble>
-              </>
-            )}
-          </AnimatePresence>
+                  </div>
+                )}
 
-          {/* Step 2 — Owner */}
-          <AnimatePresence>
-            {['owner', 'input_mode', 'content', 'notes', 'ready'].includes(step) && sourceTitle && (
-              <>
-                <UserBubble>{sourceTitle}</UserBubble>
-                <AgentBubble delay={0.08}>
-                  Who created or presented this? <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>(optional — helps with attribution)</span>
-                  {step === 'owner' && (
-                    <div style={{ marginTop: '0.6rem', display: 'flex', gap: 6 }}>
-                      <input
-                        autoFocus
-                        className="glass-input"
-                        style={{ flex: 1, fontSize: '0.84rem' }}
-                        placeholder="e.g. Anil Kumar"
-                        value={ownerDraft}
-                        onChange={(e) => setOwnerDraft(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') commitOwner(); }}
-                      />
-                      <button className="btn btn-primary btn-sm" onClick={() => commitOwner()}>Next</button>
-                      <button className="btn btn-sm" onClick={() => commitOwner(true)} style={{ opacity: 0.6 }}>Skip</button>
-                    </div>
-                  )}
-                </AgentBubble>
-              </>
-            )}
-          </AnimatePresence>
-
-          {/* Step 3 — Input mode */}
-          <AnimatePresence>
-            {['input_mode', 'content', 'notes', 'ready'].includes(step) && (
-              <>
-                {sourceOwner && <UserBubble>{sourceOwner}</UserBubble>}
-                {!sourceOwner && step !== 'owner' && <UserBubble>Skipped</UserBubble>}
-                <AgentBubble delay={0.08}>
-                  How would you like to share the content?
-                  {step === 'input_mode' && (
-                    <div style={{ marginTop: '0.75rem', display: 'flex', gap: 10 }}>
-                      {[
-                        { mode: 'text' as const, icon: '📋', label: 'Paste text', sub: 'Transcript, article, script, report…' },
-                        { mode: 'url' as const, icon: '🔗', label: 'Paste a link', sub: 'URL + optional article text' },
-                      ].map(({ mode, icon, label, sub }) => (
-                        <button
-                          key={mode}
-                          onClick={() => pickInputMode(mode)}
-                          style={{
-                            flex: 1, padding: '0.85rem 1rem', borderRadius: 14,
-                            border: '1.5px solid var(--border)',
-                            background: 'var(--surface-hover)',
-                            cursor: 'pointer', textAlign: 'left',
-                            transition: 'all 0.15s',
-                          }}
-                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = '#6366f1'; (e.currentTarget as HTMLElement).style.background = 'rgba(99,102,241,0.07)'; }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)'; }}
-                        >
-                          <div style={{ fontSize: '1.4rem', marginBottom: 6 }}>{icon}</div>
-                          <div style={{ fontSize: '0.84rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{label}</div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{sub}</div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </AgentBubble>
-              </>
-            )}
-          </AnimatePresence>
-
-          {/* Step 4 — Content */}
-          <AnimatePresence>
-            {['content', 'notes', 'ready'].includes(step) && (
-              <>
-                <UserBubble>{inputMode === 'text' ? 'Paste text' : 'Paste a link'}</UserBubble>
-                <AgentBubble delay={0.08}>
-                  {inputMode === 'url' ? (
-                    <>
-                      <span style={{ fontWeight: 600 }}>Drop the link below.</span> You can also paste the article text — it helps the engine go deeper.
-                    </>
-                  ) : (
-                    <>
-                      <span style={{ fontWeight: 600 }}>Paste your content below.</span> The more text, the richer the output.
-                    </>
-                  )}
-                  {step === 'content' && (
-                    <div style={{ marginTop: '0.65rem', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {inputMode === 'url' && (
+                {/* Step: content */}
+                {step === 'content' && (
+                  <div>
+                    {inputMode === 'url' && (
+                      <div className="field" style={{ marginBottom: '0.8rem' }}>
+                        <label className="field-label">Source URL</label>
                         <input
                           autoFocus
                           className="glass-input"
                           type="url"
-                          placeholder="https://…"
+                          placeholder="https://..."
                           value={urlDraft}
                           onChange={(e) => setUrlDraft(e.target.value)}
-                          style={{ fontSize: '0.84rem' }}
                         />
-                      )}
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                            {inputMode === 'url' ? 'Article text (optional but recommended)' : 'Content / Transcript'}
-                          </span>
-                          {contentDraft.length > 0 && (
-                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                              {wordCount.toLocaleString()} words
-                            </span>
-                          )}
-                        </div>
-                        <textarea
-                          className="glass-textarea"
-                          rows={6}
-                          placeholder={inputMode === 'text' ? 'Paste your transcript, article, or script here…' : 'Paste article text here…'}
-                          value={contentDraft}
-                          onChange={(e) => setContentDraft(e.target.value)}
-                          style={{ fontSize: '0.84rem' }}
-                          autoFocus={inputMode === 'text'}
-                        />
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                        <button
-                          className="btn btn-primary btn-sm"
-                          disabled={inputMode === 'text' ? !contentDraft.trim() : !urlDraft.trim()}
-                          onClick={commitContent}
-                          style={{ opacity: (inputMode === 'text' ? !contentDraft.trim() : !urlDraft.trim()) ? 0.4 : 1 }}
-                        >
-                          Next
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </AgentBubble>
-              </>
-            )}
-          </AnimatePresence>
-
-          {/* Step 5 — Notes */}
-          <AnimatePresence>
-            {['notes', 'ready'].includes(step) && (
-              <>
-                <UserBubble>
-                  {inputMode === 'url' && urlDraft ? urlDraft : `${wordCount} words pasted`}
-                </UserBubble>
-                <AgentBubble delay={0.08}>
-                  Almost there. Any specific marketing goals, active campaigns, or context I should keep in mind? <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>(optional)</span>
-                  {step === 'notes' && (
-                    <div style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <textarea
-                        autoFocus
-                        className="glass-textarea"
-                        rows={3}
-                        placeholder="e.g. We're pushing brand awareness this quarter, focus on LinkedIn…"
-                        value={notesDraft}
-                        onChange={(e) => setNotesDraft(e.target.value)}
-                        style={{ fontSize: '0.84rem' }}
-                      />
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                        <button className="btn btn-sm" onClick={() => commitNotes(true)} style={{ opacity: 0.6 }}>Skip</button>
-                        <button className="btn btn-primary btn-sm" onClick={() => commitNotes()}>Next</button>
-                      </div>
-                    </div>
-                  )}
-                </AgentBubble>
-              </>
-            )}
-          </AnimatePresence>
-
-          {/* Step 6 — Ready to run */}
-          <AnimatePresence>
-            {step === 'ready' && (
-              <>
-                {marketingNotes ? <UserBubble>{marketingNotes}</UserBubble> : <UserBubble>No special notes</UserBubble>}
-                <AgentBubble delay={0.1}>
-                  <span style={{ fontWeight: 600 }}>All set.</span> Here's what I'll analyze:
-                  <div style={{ marginTop: '0.65rem', display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
-                    {[
-                      { label: 'Source type', value: activeType?.name ?? sourceType },
-                      { label: 'Title', value: sourceTitle },
-                      sourceOwner && { label: 'Owner', value: sourceOwner },
-                      { label: 'Input', value: inputMode === 'url' ? sourceUrl || urlDraft : `${wordCount} words` },
-                      marketingNotes && { label: 'Notes', value: marketingNotes.length > 60 ? marketingNotes.slice(0, 60) + '…' : marketingNotes },
-                    ].filter(Boolean).map((row: any) => (
-                      <div key={row.label} style={{ display: 'flex', gap: 8, fontSize: '0.78rem' }}>
-                        <span style={{ color: 'var(--text-muted)', minWidth: 80 }}>{row.label}</span>
-                        <span style={{ fontWeight: 600 }}>{row.value}</span>
-                      </div>
-                    ))}
-                    {activeType && (activeType.formats as unknown as string[]).length > 0 && (
-                      <div style={{ display: 'flex', gap: 8, fontSize: '0.78rem' }}>
-                        <span style={{ color: 'var(--text-muted)', minWidth: 80 }}>Outputs</span>
-                        <span style={{ fontWeight: 600 }}>{(activeType.formats as unknown as string[]).join(', ')}</span>
                       </div>
                     )}
+                    <div className="field">
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.3rem' }}>
+                        <label className="field-label" style={{ marginBottom: 0 }}>
+                          {inputMode === 'text' ? 'Source Content / Transcript' : 'Article Text (optional, recommended)'}
+                        </label>
+                        {contentDraft.length > 0 && (
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{wordCount.toLocaleString()} words</span>
+                        )}
+                      </div>
+                      <textarea
+                        className="glass-textarea"
+                        rows={8}
+                        placeholder={inputMode === 'text' ? 'Paste the full transcript, article text, or raw content here...' : 'Paste the article text here...'}
+                        value={contentDraft}
+                        onChange={(e) => setContentDraft(e.target.value)}
+                        autoFocus={inputMode === 'text'}
+                      />
+                    </div>
                   </div>
-                  <button
-                    onClick={handleRunAnalysis}
-                    style={{
-                      marginTop: '1.1rem', width: '100%',
-                      padding: '0.75rem 1.5rem', borderRadius: 12, border: 'none',
-                      background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-                      color: '#fff', fontSize: '0.9rem', fontWeight: 700,
-                      cursor: 'pointer', letterSpacing: '0.02em',
-                      boxShadow: '0 4px 20px rgba(139,92,246,0.4)',
-                      transition: 'all 0.15s',
-                    }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 6px 28px rgba(139,92,246,0.55)'; (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 20px rgba(139,92,246,0.4)'; (e.currentTarget as HTMLElement).style.transform = 'none'; }}
-                  >
-                    Run Analysis →
-                  </button>
-                </AgentBubble>
-              </>
-            )}
-          </AnimatePresence>
+                )}
 
-          {/* Error shown in chat (pre-run) */}
-          {error && !result && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <AgentAvatar />
-              <div style={{ background: '#DC262610', border: '1px solid #DC262630', borderRadius: '0 14px 14px 14px', padding: '0.7rem 1rem', fontSize: '0.84rem', color: '#DC2626', maxWidth: 540 }}>
-                {error}
-                <button className="btn btn-sm" onClick={() => { setError(null); setStep('source_type'); resetConversation(); }} style={{ marginTop: 8, display: 'block', fontSize: '0.72rem' }}>Start over</button>
+                {/* Step: notes */}
+                {step === 'notes' && (
+                  <div className="field">
+                    <label className="field-label">Marketing Notes <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span></label>
+                    <textarea
+                      autoFocus
+                      className="glass-textarea"
+                      rows={3}
+                      placeholder="Any specific goals, campaigns, or context..."
+                      value={notesDraft}
+                      onChange={(e) => setNotesDraft(e.target.value)}
+                    />
+                  </div>
+                )}
+
+                {/* Step: ready */}
+                {step === 'ready' && (
+                  <div>
+                    <div className="field-label" style={{ marginBottom: '0.6rem' }}>Ready to run</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', marginBottom: '0.4rem' }}>
+                      {[
+                        { label: 'Source type', value: activeType?.name ?? sourceType },
+                        { label: 'Title', value: sourceTitle },
+                        sourceOwner && { label: 'Owner', value: sourceOwner },
+                        { label: 'Input', value: inputMode === 'url' ? (sourceUrl || urlDraft) : `${wordCount.toLocaleString()} words` },
+                        marketingNotes && { label: 'Notes', value: marketingNotes.length > 70 ? marketingNotes.slice(0, 70) + '…' : marketingNotes },
+                      ].filter(Boolean).map((row: any) => (
+                        <div key={row.label} style={{ display: 'flex', gap: 10, fontSize: '0.8rem', paddingBottom: '0.45rem', borderBottom: '1px solid var(--border)' }}>
+                          <span style={{ color: 'var(--text-muted)', minWidth: 90, flexShrink: 0 }}>{row.label}</span>
+                          <span style={{ fontWeight: 600 }}>{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Nav buttons */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.2rem', paddingTop: '1rem', borderTop: step !== 'source_type' && step !== 'input_mode' ? '1px solid var(--border)' : undefined }}>
+              <div>
+                {step !== 'source_type' && (
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => setStep(STEP_ORDER[Math.max(0, STEP_ORDER.indexOf(step) - 1)])}
+                    style={{ opacity: 0.7 }}
+                  >
+                    ← Back
+                  </button>
+                )}
               </div>
-            </motion.div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {step === 'owner' && (
+                  <button className="btn btn-sm" onClick={() => commitOwner(true)} style={{ opacity: 0.7 }}>Skip</button>
+                )}
+                {step === 'notes' && (
+                  <button className="btn btn-sm" onClick={() => commitNotes(true)} style={{ opacity: 0.7 }}>Skip</button>
+                )}
+                {step === 'title' && (
+                  <button className="btn btn-primary btn-sm" disabled={!titleDraft.trim()} onClick={commitTitle} style={{ opacity: titleDraft.trim() ? 1 : 0.5 }}>Next</button>
+                )}
+                {step === 'owner' && (
+                  <button className="btn btn-primary btn-sm" onClick={() => commitOwner()}>Next</button>
+                )}
+                {step === 'content' && (
+                  <button
+                    className="btn btn-primary btn-sm"
+                    disabled={inputMode === 'text' ? !contentDraft.trim() : !urlDraft.trim()}
+                    onClick={commitContent}
+                    style={{ opacity: (inputMode === 'text' ? !contentDraft.trim() : !urlDraft.trim()) ? 0.5 : 1 }}
+                  >
+                    Next
+                  </button>
+                )}
+                {step === 'notes' && (
+                  <button className="btn btn-primary btn-sm" onClick={() => commitNotes()}>Next</button>
+                )}
+                {step === 'ready' && (
+                  <button className="btn btn-brand btn-sm" onClick={handleRunAnalysis} style={{ background: 'linear-gradient(135deg, var(--accent-primary), #a855f7)' }}>
+                    Run Analysis
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {error && !result && (
+            <div className="glass-card-static" style={{ marginTop: '1rem', padding: '0.9rem 1.1rem', borderLeft: '3px solid #DC2626' }}>
+              <p style={{ fontSize: '0.82rem', color: '#DC2626', margin: 0 }}>{error}</p>
+              <button className="btn btn-sm" onClick={() => { setError(null); resetConversation(); }} style={{ marginTop: 8 }}>Start over</button>
+            </div>
           )}
 
           <div ref={chatEndRef} />
