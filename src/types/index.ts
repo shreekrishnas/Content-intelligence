@@ -237,6 +237,7 @@ export interface TrendRecord {
   topic: string;
   summary: string;
   classification: "domain_trend" | "supertrend_exception" | "monitor" | "reject";
+  time_horizon?: "reactive" | "strategic";
   domain_relevance_score: number;
   trend_impact_score: number;
   adaptability_score: number;

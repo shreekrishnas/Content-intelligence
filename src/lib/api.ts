@@ -726,6 +726,7 @@ export const api = {
           topic: String(t.topic || 'Untitled'),
           summary: String(t.summary || ''),
           classification,
+          time_horizon: t.time_horizon === 'strategic' ? 'strategic' : 'reactive',
           domain_relevance_score: num(t.domain_relevance_score),
           trend_impact_score: num(t.trend_impact_score),
           adaptability_score: num(t.adaptability_score),

@@ -28,6 +28,11 @@ export interface TrendSignal {
   published_at?: string;
   content?: string;
   score?: number;
+  // 'reactive' = this-week news, good for newsjacking. 'strategic' = a
+  // durable multi-month shift (regulatory phase-in, market report, seasonal
+  // category) worth planning a content pillar around. Set at collection
+  // time as a hint — the supervisor makes the final call per topic.
+  horizon?: 'reactive' | 'strategic';
 }
 
 export interface FileContext {

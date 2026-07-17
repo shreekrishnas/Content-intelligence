@@ -8,47 +8,84 @@ import type { DomainProfile, TrendSignal } from './_lib/types.js';
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
 
-function buildQueries(p: DomainProfile): string[] {
+// Reactive queries: this week's news, for time-boxed newsjacking content.
+function buildReactiveQueries(p: DomainProfile): string[] {
   const q: string[] = [];
   const loc = p.target_locations ? ` ${p.target_locations}` : '';
   const splitList = (s?: string) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
-  splitList(p.core_topics).slice(0, 4).forEach((t) => q.push(`${t}${loc} latest news trends`));
-  splitList(p.target_keywords).slice(0, 3).forEach((k) => q.push(`${k}${loc} 2026 trend`));
-  if (p.industry) q.push(`${p.industry}${loc} industry trends this week`);
+  splitList(p.core_topics).slice(0, 3).forEach((t) => q.push(`${t}${loc} latest news this week`));
+  if (p.industry) q.push(`${p.industry}${loc} news announcement this week`);
   if (p.competitors) splitList(p.competitors).slice(0, 2).forEach((c) => q.push(`${c} news announcement`));
   if (!q.length && p.business_name) q.push(`${p.business_name}${loc} news`);
-  return [...new Set(q)].slice(0, 6);
+  return [...new Set(q)].slice(0, 5);
+}
+
+// Strategic queries: durable, structural shifts — regulatory phase-ins,
+// market/industry outlook reports, multi-phase initiatives — the kind of
+// thing worth building a content pillar around for the quarter, not just
+// this week's news cycle.
+function buildStrategicQueries(p: DomainProfile): string[] {
+  const q: string[] = [];
+  const loc = p.target_locations ? ` ${p.target_locations}` : '';
+  const splitList = (s?: string) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+  if (p.industry) {
+    q.push(`${p.industry}${loc} industry outlook 2026`);
+    q.push(`${p.industry}${loc} market trends report 2026`);
+  }
+  splitList(p.core_topics).slice(0, 2).forEach((t) => q.push(`${t}${loc} regulatory changes 2026`));
+  splitList(p.target_keywords).slice(0, 2).forEach((k) => q.push(`${k}${loc} annual forecast`));
+  return [...new Set(q)].slice(0, 5);
+}
+
+async function runTavilySearch(query: string, opts: { topic: 'news' | 'general'; days: number; depth: 'basic' | 'advanced' }): Promise<any[]> {
+  const key = process.env.TAVILY_API_KEY;
+  if (!key) return [];
+  try {
+    const resp = await fetch(TAVILY_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: key, query, topic: opts.topic, search_depth: opts.depth, max_results: 5, days: opts.days }),
+    });
+    if (!resp.ok) return [];
+    const data = await resp.json();
+    return data.results || [];
+  } catch {
+    return [];
+  }
 }
 
 async function collectTavilySignals(profile: DomainProfile): Promise<TrendSignal[]> {
   const key = process.env.TAVILY_API_KEY;
   if (!key) return [];
-  const queries = buildQueries(profile);
+
+  const reactiveQueries = buildReactiveQueries(profile);
+  const strategicQueries = buildStrategicQueries(profile);
+
   const seen = new Set<string>();
   const signals: TrendSignal[] = [];
-  await Promise.all(queries.map(async (query) => {
-    try {
-      const resp = await fetch(TAVILY_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: key, query, topic: 'news', search_depth: 'basic', max_results: 5, days: 14 }),
+
+  function ingest(results: any[], horizon: 'reactive' | 'strategic') {
+    for (const r of results) {
+      const url: string = r.url || '';
+      const dedupeKey = url || r.title;
+      if (!dedupeKey || seen.has(dedupeKey)) continue;
+      if (typeof r.score === 'number' && r.score < 0.35) continue;
+      seen.add(dedupeKey);
+      signals.push({
+        title: r.title, content: r.content, url,
+        source: (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'web'; } })(),
+        published_at: r.published_date, score: r.score, horizon,
       });
-      if (!resp.ok) return;
-      const data = await resp.json();
-      for (const r of (data.results || [])) {
-        const url: string = r.url || '';
-        const dedupeKey = url || r.title;
-        if (!dedupeKey || seen.has(dedupeKey)) continue;
-        if (typeof r.score === 'number' && r.score < 0.35) continue;
-        seen.add(dedupeKey);
-        signals.push({
-          title: r.title, content: r.content, url,
-          source: (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'web'; } })(),
-          published_at: r.published_date, score: r.score,
-        });
-      }
-    } catch { /* skip failed query */ }
-  }));
+    }
+  }
+
+  const [reactiveResults, strategicResults] = await Promise.all([
+    Promise.all(reactiveQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 14, depth: 'basic' }))),
+    Promise.all(strategicQueries.map((q) => runTavilySearch(q, { topic: 'general', days: 180, depth: 'advanced' }))),
+  ]);
+  reactiveResults.forEach((results) => ingest(results, 'reactive'));
+  strategicResults.forEach((results) => ingest(results, 'strategic'));
+
   return signals;
 }
 
