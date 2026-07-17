@@ -1,5 +1,6 @@
 import { callLLM } from './llm.js';
 import { extractJSON } from './json.js';
+import { isGenericText, hasConcreteAnchor } from './generic-filter.js';
 import type { DomainProfile, TrendSignal } from './types.js';
 
 export const SUPERVISOR_SYSTEM_PROMPT = `You are an AI Trend Supervisor. You sit between raw trend signals and a content Action Layer. You are a strict gatekeeper — most signals should be rejected. Only forward the few that are genuinely strong.
@@ -19,6 +20,19 @@ ROUTING RULES (all conditions must be met — not suggestions, requirements):
 - supertrend_exception: domain_relevance < 70 AND trend_impact >= 85 AND adaptability >= 70 AND risk <= 35. Only when there is an obvious, natural brand connection — do not force it.
 - monitor: genuinely emerging signal with real potential but insufficient evidence yet. Maximum 3 monitor items — pick only the most promising.
 - reject: everything else. When topics overlap, keep the strongest and reject duplicates. Reject anything generic, speculative, off-brand, risky, or outdated.
+
+SPECIFICITY IS MANDATORY — NOT OPTIONAL. Every topic that survives (domain_trend, supertrend_exception, monitor) must be anchored to a concrete, named, dated, or numbered fact. If you cannot name the specific event, announcement, data point, regulation, product launch, or study driving it, REJECT it — do not soften it into a vague theme instead.
+
+BANNED as topic titles or content_angle text — these are evasions, not trends. If your draft output resembles any of these patterns, reject the topic instead of publishing it softened:
+- "The growing importance/rise/future of X"
+- "Increasing demand/focus/adoption of X"
+- "X is transforming/reshaping/revolutionizing the industry"
+- "Leveraging AI/technology for X"
+- "Why X matters in [year]"
+- "The evolution of X"
+- Any topic whose "summary" or "reason" could apply to this same industry in any random month — that is the tell of a generic theme wearing a trend costume.
+
+REQUIRED INSTEAD: name the specific thing. Not "the rise of AI in manufacturing" but "Siemens' Jan 2026 partnership with [named AI vendor] to automate defect detection on production lines." Not "growing demand for water recycling" but "the new CPCB zero-liquid-discharge mandate taking effect [date] for [named sector]." A trend without a proper noun, a number, or a date attached is not a trend — reject it.
 
 OUTPUT RULE: Do NOT include rejected topics in the topics array. Only include domain_trend, supertrend_exception, and monitor items. Count rejections in the summary only.
 
@@ -82,8 +96,30 @@ Return ONLY this JSON (no extra fields, no markdown):
 {"analysis_date":"YYYY-MM-DD","summary":{"total_topics_reviewed":0,"domain_trends_sent":0,"supertrends_sent":0,"topics_monitored":0,"topics_rejected":0},"topics":[{"topic":"","summary":"","classification":"domain_trend|supertrend_exception|monitor","domain_relevance_score":0,"trend_impact_score":0,"adaptability_score":0,"risk_score":0,"confidence_score":0,"priority":"high|medium|low","trend_stage":"emerging|growing|peak|declining","estimated_lifespan":"","recommended_route":"","recommended_formats":[],"suggested_connection":"","content_angle":"One specific content piece this brand should make","related_keywords":[],"needs_human_review":false,"reason":""}]}`;
   const { content: raw } = await callLLM(SUPERVISOR_SYSTEM_PROMPT, prompt, { maxTokens: 3000, temperature: 0.2 });
   const parsed: any = extractJSON(raw);
-  const topics = Array.isArray(parsed) ? parsed : (parsed.topics || []);
-  return { topics, summary: parsed?.summary ?? null, analysis_date: parsed?.analysis_date };
+  const rawTopics = Array.isArray(parsed) ? parsed : (parsed.topics || []);
+
+  // Deterministic backstop: a model can ignore prompt instructions, so re-check
+  // every surviving topic against the generic-phrase denylist and the
+  // proper-noun/date/number anchor requirement. Anything that fails either
+  // check is dropped here — not just asked nicely to be dropped upstream.
+  let genericDropped = 0;
+  const topics = rawTopics.filter((t: any) => {
+    const isGeneric = isGenericText(t.topic, t.content_angle, t.summary);
+    const hasAnchor = hasConcreteAnchor(t.topic, t.content_angle, t.summary, t.reason);
+    if (isGeneric || !hasAnchor) {
+      genericDropped++;
+      return false;
+    }
+    return true;
+  });
+
+  const summary = parsed?.summary ? {
+    ...parsed.summary,
+    topics_rejected: (parsed.summary.topics_rejected ?? 0) + genericDropped,
+    generic_filtered: genericDropped,
+  } : (genericDropped > 0 ? { generic_filtered: genericDropped } : null);
+
+  return { topics, summary, analysis_date: parsed?.analysis_date };
 }
 
 export function topicToRecord(t: any): Record<string, unknown> {

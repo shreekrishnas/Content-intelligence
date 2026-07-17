@@ -3,6 +3,7 @@ import { callLLM } from './_lib/llm.js';
 import { extractJSON } from './_lib/json.js';
 import { handleOptions, sendError } from './_lib/http.js';
 import { logUsage } from './_lib/usage.js';
+import { isGenericText } from './_lib/generic-filter.js';
 import type { KnowledgeChunk } from './_lib/types.js';
 
 // Brand-agnostic content strategist. This app is multi-account (finance,
@@ -17,7 +18,16 @@ HOW YOU WORK:
 - Ground brand voice, product facts, and compliance in the provided knowledge base when available; otherwise use the brief and your expertise.
 - Vary format, angle, funnel stage, and audience segment across the batch — no two ideas should feel like the same idea reworded.
 - Write hooks that lead with a specific number, tension, or insight — not a vague promise.
-- Be honest about compliance: flag risky claims rather than making them.`;
+- Be honest about compliance: flag risky claims rather than making them.
+
+TITLES AND HOOKS MUST BE SPECIFIC, NOT GENERIC TEMPLATES. Reject your own draft and rewrite if the title matches any of these evasion patterns:
+- "The Ultimate/Complete Guide to X"
+- "Everything You Need to Know About X"
+- "Top N Tips/Ways/Reasons for X"
+- "The Growing Importance/Rise/Future of X"
+- "Why X Matters"
+- "Understanding X" / "Navigating X"
+A specific title names a fact, a number, a named product/feature, or a concrete scenario — not a category label wearing a headline's clothes. If the brief or knowledge base gives you nothing specific to hook into, say so via a thin idea rather than padding with a generic template.`;
 
 interface IdeasRequest {
   task: 'generate' | 'webinar' | 'seo' | 'seasonal' | 'expand';
@@ -262,9 +272,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Normalize: accept {ideas:[...]}, {items:[...]}, or a bare array
-    const ideas = Array.isArray(parsed)
+    const rawIdeas = Array.isArray(parsed)
       ? parsed
       : (parsed.ideas || parsed.items || []);
+
+    // Deterministic backstop: a model can ignore the prompt's anti-generic
+    // instructions, so re-check every returned idea's title/hook against the
+    // same denylist used for Trends. Dropped rather than softened — a
+    // shorter batch of real ideas beats a full batch padded with templates.
+    const ideas = rawIdeas.filter((idea: any) => !isGenericText(idea?.title, idea?.hook));
+
     return res.status(200).json({ success: true, task: body.task, ideas });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'An unexpected error occurred';
