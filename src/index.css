@@ -610,6 +610,11 @@ button.badge:hover {
   50% { opacity: 1; transform: scale(1.1); }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* ── 22. Scrollbar ───────────────────────────────────────────────── */
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }

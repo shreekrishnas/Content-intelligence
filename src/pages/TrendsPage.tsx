@@ -265,12 +265,42 @@ export default function TrendsPage() {
 
   return (
     <div>
-      <p className="eyebrow">Monitoring</p>
-      <h1 className="page-title">Trends &amp; Alerts</h1>
-      <p className="page-desc">An AI supervisor scores, classifies, and routes trends — only qualified topics reach your content pipeline.</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div>
+          <p className="eyebrow">Monitoring</p>
+          <h1 className="page-title">Trends &amp; Alerts</h1>
+          <p className="page-desc">An AI supervisor scores, classifies, and routes trends — only qualified topics reach your content pipeline.</p>
+        </div>
+        <button
+          onClick={() => runScan('live')}
+          disabled={scanning || detecting}
+          title="Fetch live signals and re-scan"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
+            padding: '8px 14px', borderRadius: 10,
+            border: '1px solid var(--border)',
+            background: 'var(--surface-card)',
+            color: scanning ? 'var(--text-muted)' : 'var(--text-primary)',
+            fontSize: '0.78rem', fontWeight: 700,
+            cursor: scanning || detecting ? 'not-allowed' : 'pointer',
+            opacity: scanning || detecting ? 0.6 : 1,
+          }}
+        >
+          <svg
+            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+            style={scanning ? { animation: 'spin 0.9s linear infinite' } : undefined}
+          >
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
+          {scanning ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
 
       {/* action bar */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center', marginTop: 12 }}>
         <button className="btn btn-brand" onClick={() => runScan('live')} disabled={scanning || detecting}>{scanning ? 'Scanning…' : '⚡ Run Live Scan'}</button>
         <button className="btn btn-secondary btn-sm" onClick={() => runScan('suggest')} disabled={scanning || detecting}>AI-suggest candidates</button>
         <button className="btn btn-ghost btn-sm" onClick={() => setPasteOpen((v) => !v)} disabled={scanning || detecting}>Paste topics</button>
