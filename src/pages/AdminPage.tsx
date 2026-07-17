@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { api } from '@/lib/api';
+import { showToast } from '@/lib/toast';
 
 interface TeamMember {
   id: string;
@@ -16,6 +18,16 @@ interface ClientAccount {
   status: string;
   created_at: string;
   members: Array<{ email: string; name: string | null; role: string; td_role: string | null }>;
+}
+
+interface TrendReadiness {
+  id: string;
+  name: string;
+  status: string;
+  websiteUrl: string;
+  hasProfile: boolean;
+  trendRecords: number;
+  kbFiles: number;
 }
 
 const ROLE_BADGE: Record<string, { label: string; color: string }> = {
@@ -53,78 +65,106 @@ function Badge({ text, color }: { text: string; color: string }) {
 }
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<'team' | 'accounts'>('team');
+  const [tab, setTab] = useState<'team' | 'accounts' | 'trends'>('team');
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [accounts, setAccountsList] = useState<ClientAccount[]>([]);
+  const [trendStatus, setTrendStatus] = useState<TrendReadiness[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
+  const loadAll = useCallback(async () => {
+    setLoading(true);
 
-      // Fetch all users with their account access
-      const { data: users } = await supabase
-        .from('users')
-        .select('id, name, email, td_role, is_org_admin')
-        .order('email');
+    // Fetch all users with their account access
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, name, email, td_role, is_org_admin')
+      .order('email');
 
-      // Fetch all account_access joined to accounts and users
-      const { data: accessRows } = await supabase
-        .from('account_access')
-        .select('user_id, role, accounts(id, name, status), users(email, name, td_role)');
+    // Fetch all account_access joined to accounts and users
+    const { data: accessRows } = await supabase
+      .from('account_access')
+      .select('user_id, role, accounts(id, name, status), users(email, name, td_role)');
 
-      // Fetch all accounts
-      const { data: allAccounts } = await supabase
-        .from('accounts')
-        .select('id, name, status, created_at')
-        .order('name');
+    // Fetch all accounts (including trend_profile for the Trend Setup tab)
+    const { data: allAccounts } = await supabase
+      .from('accounts')
+      .select('id, name, status, created_at, profile')
+      .order('name');
 
-      // Build team list
-      const accessByUser: Record<string, Array<{ id: string; name: string; role: string }>> = {};
-      for (const row of accessRows || []) {
-        const uid = row.user_id;
-        if (!accessByUser[uid]) accessByUser[uid] = [];
-        const acc = row.accounts as any;
-        if (acc) {
-          accessByUser[uid].push({ id: acc.id, name: acc.name, role: row.role });
-        }
+    const accountIds = (allAccounts || []).map((a: any) => a.id);
+
+    // Trend record + KB file counts, batched per table (no per-account round trips)
+    const [{ data: trendCountRows }, { data: kbCountRows }] = await Promise.all([
+      supabase.from('trend_records').select('account_id').in('account_id', accountIds),
+      supabase.from('knowledge_files').select('account_id').eq('active', true).eq('ingest_status', 'ready').in('account_id', accountIds),
+    ]);
+    const trendCounts: Record<string, number> = {};
+    for (const r of trendCountRows || []) trendCounts[r.account_id] = (trendCounts[r.account_id] || 0) + 1;
+    const kbCounts: Record<string, number> = {};
+    for (const r of kbCountRows || []) kbCounts[r.account_id] = (kbCounts[r.account_id] || 0) + 1;
+
+    // Build team list
+    const accessByUser: Record<string, Array<{ id: string; name: string; role: string }>> = {};
+    for (const row of accessRows || []) {
+      const uid = row.user_id;
+      if (!accessByUser[uid]) accessByUser[uid] = [];
+      const acc = row.accounts as any;
+      if (acc) {
+        accessByUser[uid].push({ id: acc.id, name: acc.name, role: row.role });
       }
+    }
 
-      const teamList: TeamMember[] = (users || []).map((u: any) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        td_role: u.td_role,
-        is_org_admin: u.is_org_admin,
-        accounts: (accessByUser[u.id] || []).sort((a, b) => a.name.localeCompare(b.name)),
-      }));
+    const teamList: TeamMember[] = (users || []).map((u: any) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      td_role: u.td_role,
+      is_org_admin: u.is_org_admin,
+      accounts: (accessByUser[u.id] || []).sort((a, b) => a.name.localeCompare(b.name)),
+    }));
 
-      // Build accounts list
-      const accessByAccount: Record<string, Array<{ email: string; name: string | null; role: string; td_role: string | null }>> = {};
-      for (const row of accessRows || []) {
-        const acc = row.accounts as any;
-        if (!acc) continue;
-        if (!accessByAccount[acc.id]) accessByAccount[acc.id] = [];
-        const u = row.users as any;
-        if (u) {
-          accessByAccount[acc.id].push({ email: u.email, name: u.name, role: row.role, td_role: u.td_role });
-        }
+    // Build accounts list
+    const accessByAccount: Record<string, Array<{ email: string; name: string | null; role: string; td_role: string | null }>> = {};
+    for (const row of accessRows || []) {
+      const acc = row.accounts as any;
+      if (!acc) continue;
+      if (!accessByAccount[acc.id]) accessByAccount[acc.id] = [];
+      const u = row.users as any;
+      if (u) {
+        accessByAccount[acc.id].push({ email: u.email, name: u.name, role: row.role, td_role: u.td_role });
       }
+    }
 
-      const accountsList: ClientAccount[] = (allAccounts || []).map((a: any) => ({
+    const accountsList: ClientAccount[] = (allAccounts || []).map((a: any) => ({
+      id: a.id,
+      name: a.name,
+      status: a.status,
+      created_at: a.created_at,
+      members: (accessByAccount[a.id] || []).sort((a, b) => a.email.localeCompare(b.email)),
+    }));
+
+    // Build trend-readiness list
+    const trendList: TrendReadiness[] = (allAccounts || []).map((a: any) => {
+      const tp = a.profile?.trend_profile || {};
+      return {
         id: a.id,
         name: a.name,
         status: a.status,
-        created_at: a.created_at,
-        members: (accessByAccount[a.id] || []).sort((a, b) => a.email.localeCompare(b.email)),
-      }));
+        websiteUrl: tp.website_url || '',
+        hasProfile: !!(tp.core_topics || tp.industry),
+        trendRecords: trendCounts[a.id] || 0,
+        kbFiles: kbCounts[a.id] || 0,
+      };
+    });
 
-      setTeam(teamList);
-      setAccountsList(accountsList);
-      setLoading(false);
-    })();
+    setTeam(teamList);
+    setAccountsList(accountsList);
+    setTrendStatus(trendList);
+    setLoading(false);
   }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   const filteredTeam = team.filter(m =>
     !search ||
@@ -135,6 +175,10 @@ export default function AdminPage() {
 
   const filteredAccounts = accounts.filter(a =>
     !search || a.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const filteredTrendStatus = trendStatus.filter(t =>
+    !search || t.name.toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -183,7 +227,7 @@ export default function AdminPage() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
-        {(['team', 'accounts'] as const).map(t => (
+        {(['team', 'accounts', 'trends'] as const).map(t => (
           <button
             key={t}
             onClick={() => { setTab(t); setSearch(''); }}
@@ -201,7 +245,7 @@ export default function AdminPage() {
               textTransform: 'capitalize',
             }}
           >
-            {t === 'team' ? `Team (${team.length})` : `Accounts (${accounts.length})`}
+            {t === 'team' ? `Team (${team.length})` : t === 'accounts' ? `Accounts (${accounts.length})` : `Trend Setup (${trendStatus.filter(t => !t.hasProfile).length} pending)`}
           </button>
         ))}
       </div>
@@ -211,8 +255,10 @@ export default function AdminPage() {
         <div className="empty-state"><p>Loading…</p></div>
       ) : tab === 'team' ? (
         <TeamTab members={filteredTeam} />
-      ) : (
+      ) : tab === 'accounts' ? (
         <AccountsTab accounts={filteredAccounts} />
+      ) : (
+        <TrendSetupTab accounts={filteredTrendStatus} onChanged={loadAll} />
       )}
     </div>
   );
@@ -406,6 +452,153 @@ function AccountCard({ account: a }: { account: ClientAccount }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Trend Setup — bulk-seed each account's trend_profile from a website URL.
+// Runs the same auto-detect + save path TrendsPage uses on first open, so an
+// admin can backfill accounts as URLs come in instead of waiting on the full
+// mapping file, or for owners to individually visit the Trends tab.
+// --------------------------------------------------------------------------
+
+function TrendSetupTab({ accounts, onChanged }: { accounts: TrendReadiness[]; onChanged: () => void }) {
+  if (!accounts.length) return <div className="empty-state"><p>No accounts found.</p></div>;
+
+  const pending = accounts.filter(a => !a.hasProfile);
+  const ready = accounts.filter(a => a.hasProfile);
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+        Trends & Ideas Lab are already scoped per account — each account's trend profile (industry, topics,
+        keywords) drives what gets searched and how relevance is scored, so nothing crosses over. The profile
+        just has to exist. Paste a website URL below to auto-detect and save it — same detection TrendsPage runs
+        on first open, done here in bulk as URLs come in.
+      </div>
+
+      {pending.length > 0 && (
+        <div>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+            fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase',
+            letterSpacing: '0.08em', color: 'var(--text-muted)',
+          }}>
+            <Badge text="Needs setup" color="#F59E0B" />
+            <span>{pending.length} account{pending.length > 1 ? 's' : ''}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {pending.map(a => <TrendSetupRow key={a.id} account={a} onChanged={onChanged} />)}
+          </div>
+        </div>
+      )}
+
+      {ready.length > 0 && (
+        <div>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+            fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase',
+            letterSpacing: '0.08em', color: 'var(--text-muted)',
+          }}>
+            <Badge text="Ready" color="#059669" />
+            <span>{ready.length} account{ready.length > 1 ? 's' : ''}</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {ready.map(a => <TrendSetupRow key={a.id} account={a} onChanged={onChanged} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TrendSetupRow({ account: a, onChanged }: { account: TrendReadiness; onChanged: () => void }) {
+  const [url, setUrl] = useState(a.websiteUrl);
+  const [busy, setBusy] = useState(false);
+
+  async function detectAndSave() {
+    if (!url.trim()) return;
+    setBusy(true);
+    try {
+      const detected = await api.trends.autoDetectProfile(url.trim(), a.name);
+      if (detected.error || !detected.data) {
+        showToast(`${a.name}: detection failed — ${detected.error || 'no data returned'}`, 'error');
+        return;
+      }
+      const nextProfile = {
+        enabled: true,
+        max_recommendations: 8,
+        business_name: a.name,
+        ...detected.data,
+        website_url: url.trim(),
+      };
+      const saved = await api.trends.saveProfile(a.id, nextProfile as any);
+      if (saved.error) {
+        showToast(`${a.name}: save failed — ${saved.error}`, 'error');
+        return;
+      }
+      showToast(`${a.name}: trend profile saved`);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{
+      background: 'var(--surface-card)',
+      border: '1px solid var(--border)',
+      borderRadius: 10,
+      padding: '12px 14px',
+      display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+    }}>
+      <div style={{ minWidth: 160, flex: '0 0 auto' }}>
+        <div style={{ fontWeight: 600, fontSize: '0.83rem', color: 'var(--text-primary)' }}>{a.name}</div>
+        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 2, display: 'flex', gap: 8 }}>
+          <span>{a.trendRecords} trend{a.trendRecords !== 1 ? 's' : ''}</span>
+          <span>·</span>
+          <span>{a.kbFiles} KB file{a.kbFiles !== 1 ? 's' : ''}</span>
+        </div>
+      </div>
+
+      <input
+        placeholder="https://example.com"
+        value={url}
+        onChange={e => setUrl(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter' && url.trim() && !busy) detectAndSave(); }}
+        style={{
+          flex: '1 1 200px',
+          minWidth: 160,
+          padding: '6px 10px',
+          borderRadius: 8,
+          border: '1px solid var(--border)',
+          background: 'var(--surface-hover)',
+          color: 'var(--text-primary)',
+          fontSize: '0.78rem',
+          outline: 'none',
+        }}
+      />
+
+      <button
+        onClick={detectAndSave}
+        disabled={busy || !url.trim()}
+        style={{
+          padding: '6px 14px',
+          borderRadius: 8,
+          border: 'none',
+          background: busy || !url.trim() ? 'var(--surface-hover)' : '#6366F1',
+          color: busy || !url.trim() ? 'var(--text-muted)' : '#fff',
+          fontSize: '0.76rem',
+          fontWeight: 700,
+          cursor: busy || !url.trim() ? 'not-allowed' : 'pointer',
+          flexShrink: 0,
+        }}
+      >
+        {busy ? 'Detecting…' : a.hasProfile ? 'Re-detect' : 'Detect & Save'}
+      </button>
+
+      {a.hasProfile && <Badge text="Profile saved" color="#059669" />}
     </div>
   );
 }
