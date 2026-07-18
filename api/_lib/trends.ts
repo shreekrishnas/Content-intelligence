@@ -3,42 +3,34 @@ import { extractJSON } from './json.js';
 import { isGenericText, hasConcreteAnchor } from './generic-filter.js';
 import type { DomainProfile, TrendSignal } from './types.js';
 
-export const SUPERVISOR_SYSTEM_PROMPT = `You are an AI Trend Supervisor. You sit between raw trend signals and a content Action Layer. You are a strict gatekeeper — most signals should be rejected. Only forward the few that are genuinely strong.
+export const SUPERVISOR_SYSTEM_PROMPT = `You are an AI Trend Supervisor. You review raw news signals and select the best few for a brand to publish content around.
 
 CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after. Your entire response must be parseable by JSON.parse().
 
 YOUR JOB:
-- Deduplicate and cluster signals that describe the same underlying topic into ONE record. If three signals are the same story from three outlets, or three angles on the same underlying shift, that is ONE topic — never publish it twice under different headlines.
-- Score each clustered topic on four independent 0-100 scales: domain_relevance, trend_impact, adaptability, and risk (higher = more dangerous).
-- Classify each into exactly one of: domain_trend, supertrend_exception, monitor, reject.
-- Assign priority, trend_stage, estimated_lifespan, time_horizon, and a confidence_score (0-100).
-- Write a specific, concrete reason for every classification.
-- Be ruthless: if in doubt, reject. A lean, high-quality output beats a bloated one.
+- Cluster signals that describe the same underlying story into ONE topic. Multiple outlets covering the same event = one topic, not three.
+- Score each clustered topic on four 0-100 scales: domain_relevance, trend_impact, adaptability, risk (higher risk = more dangerous).
+- Classify each into: domain_trend, supertrend_exception, monitor, or reject.
+- Assign priority, trend_stage, estimated_lifespan, time_horizon (always "reactive"), and confidence_score.
+- Always tag time_horizon = "reactive" — every surviving topic is a specific, dated thing happening now/this week.
 
-TIME HORIZON — every surviving topic is reactive: a specific, dated thing happening now/this week that's good for immediate newsjacking. estimated_lifespan should be short (days to a couple weeks). Always tag time_horizon = "reactive".
+MANDATORY MINIMUM OUTPUT: you MUST return at least one topic if the input contains any real news signals. If nothing meets the domain_trend bar, promote the top 1-2 candidates to "monitor" instead. Returning an empty topics array when signals were provided is a failure — the user needs SOMETHING to react to.
 
-ROUTING RULES (all conditions must be met — not suggestions, requirements):
-- domain_trend: domain_relevance >= 70 AND trend_impact >= 58 AND risk <= 55. Must have a clear, direct content angle for this brand.
-- supertrend_exception: domain_relevance < 70 AND trend_impact >= 82 AND adaptability >= 70 AND risk <= 35. Only when there is an obvious, natural brand connection — do not force it.
-- monitor: genuinely emerging signal with real potential but insufficient evidence yet. Maximum 2 monitor items per scan — pick only the most promising.
-- reject: everything else. When topics overlap — even if phrased differently, sourced from different outlets, or given different headlines — keep only the single strongest version and reject the rest as duplicates. Reject anything generic, speculative, off-brand, risky, or outdated. Prefer quality — but don't reject everything: if there are legitimate, specific news items relevant to this brand, surface them even if not spectacular.
+CLASSIFICATION RULES (soft guidelines — use judgment, not rigid arithmetic):
+- domain_trend: clearly relevant to this brand's industry/audience with a workable content angle. Aim for domain_relevance around 65+ and trend_impact around 55+.
+- supertrend_exception: culturally huge but off-niche, with a natural (not forced) brand angle. High trend_impact (~80+), decent adaptability.
+- monitor: promising but early — worth watching, not yet worth publishing. Also the fallback for when nothing crosses the domain_trend bar.
+- reject: only for truly generic, off-brand, duplicated, or actively risky content.
 
-SPECIFICITY IS MANDATORY — NOT OPTIONAL. Every topic that survives (domain_trend, supertrend_exception, monitor) must be anchored to a concrete, named, dated, or numbered fact. If you cannot name the specific event, announcement, data point, regulation, product launch, or study driving it, REJECT it — do not soften it into a vague theme instead.
+SPECIFICITY: prefer topics anchored to a real event, name, or date. If the source signal is a real news article with a headline, that's your anchor — cite it in the topic and reason.
 
-BANNED as topic titles or content_angle text — these are evasions, not trends. If your draft output resembles any of these patterns, reject the topic instead of publishing it softened:
-- "The growing importance/rise/future of X"
-- "Increasing demand/focus/adoption of X"
-- "X is transforming/reshaping/revolutionizing the industry"
-- "Leveraging AI/technology for X"
-- "Why X matters in [year]"
-- "The evolution of X"
-- Any topic whose "summary" or "reason" could apply to this same industry in any random month — that is the tell of a generic theme wearing a trend costume.
+AVOID (rephrase or reject) these evasion patterns:
+- "The rise/future/evolution of X", "growing importance of X", "why X matters", "leveraging AI for X", "top N tips" — these are blog-post titles, not trends.
+- Rephrase into a specific news-anchored form when possible: don't reject a real signal just because your draft title was generic — write a better title.
 
-REQUIRED INSTEAD: name the specific thing. Not "the rise of AI in manufacturing" but "Siemens' Jan 2026 partnership with [named AI vendor] to automate defect detection on production lines." Not "growing demand for water recycling" but "the new CPCB zero-liquid-discharge mandate taking effect [date] for [named sector]." A trend without a proper noun, a number, or a date attached is not a trend — reject it.
+OUTPUT RULE: only include domain_trend / supertrend_exception / monitor items in the topics array. Count rejects in the summary.
 
-OUTPUT RULE: Do NOT include rejected topics in the topics array. Only include domain_trend, supertrend_exception, and monitor items. Count rejections in the summary only.
-
-GUARDRAILS: never invent trend data, never treat virality as domain relevance, never force a brand connection, never exceed max_recommendations for domain_trend + supertrend combined. If a topic touches politics, health, finance, law, tragedy, or controversy, raise its risk and set needs_human_review = true.`;
+GUARDRAILS: never invent trend data. Never force a brand connection. If a topic touches politics, health, finance, law, tragedy, or controversy, raise its risk and set needs_human_review = true. Never exceed max_recommendations for domain_trend + supertrend combined.`;
 
 export function profileBlock(p: DomainProfile = {}): string {
   const rows: Array<[string, unknown]> = [
@@ -108,19 +100,26 @@ Return ONLY this JSON (no extra fields, no markdown):
   const parsed: any = extractJSON(raw);
   const rawTopics = Array.isArray(parsed) ? parsed : (parsed.topics || []);
 
-  // Deterministic backstop: a model can ignore prompt instructions, so re-check
-  // every surviving topic against the generic-phrase denylist and the
-  // proper-noun/date/number anchor requirement. Anything that fails either
-  // check is dropped here — not just asked nicely to be dropped upstream.
+  // Deterministic backstop: catch obvious blog-post-title junk the LLM
+  // might have sneaked through. ONLY drop for the generic-phrase denylist
+  // — the anchor check is now advisory (used as a penalty, not a kill).
+  // A high-scored real news article without a proper-noun match still
+  // deserves to reach the user; the LLM already saw the source article.
   let genericDropped = 0;
   const specific = rawTopics.filter((t: any) => {
-    const isGeneric = isGenericText(t.topic, t.content_angle, t.summary);
-    const hasAnchor = hasConcreteAnchor(t.topic, t.content_angle, t.summary, t.reason);
-    if (isGeneric || !hasAnchor) {
+    if (isGenericText(t.topic, t.content_angle, t.summary)) {
       genericDropped++;
       return false;
     }
     return true;
+  });
+  // Soft demotion: topics with no concrete anchor drop to monitor even if
+  // the LLM classified them higher.
+  specific.forEach((t: any) => {
+    if (!hasConcreteAnchor(t.topic, t.content_angle, t.summary, t.reason)
+      && t.classification !== 'monitor') {
+      t.classification = 'monitor';
+    }
   });
 
   // Deterministic backstop #2: the model is told to cluster duplicates before
@@ -141,7 +140,24 @@ Return ONLY this JSON (no extra fields, no markdown):
       }
     }
   }
-  const topics = specific.filter((_: any, i: number) => !dupDropped.has(i));
+  let topics = specific.filter((_: any, i: number) => !dupDropped.has(i));
+
+  // Guaranteed floor: if we had real signals to work with but everything
+  // got rejected — by the LLM's own reject verdict or by our backstops —
+  // rescue the top 2 raw topics as monitor items. Empty output on a
+  // non-empty scan is a UX failure; the user needs SOMETHING to react to.
+  const hadRealSignals = (body.signals || []).length > 0;
+  if (!topics.length && hadRealSignals && rawTopics.length > 0) {
+    const ranked = [...rawTopics].sort(
+      (a: any, b: any) => (Number(b.trend_impact_score) || 0) - (Number(a.trend_impact_score) || 0),
+    );
+    topics = ranked.slice(0, 2).map((t: any) => ({
+      ...t,
+      classification: 'monitor',
+      needs_human_review: true,
+      reason: (t.reason || '') + ' [Auto-promoted to monitor: no topic cleared the domain_trend bar this scan.]',
+    }));
+  }
 
   const genericFiltered = genericDropped;
   const duplicatesMerged = dupDropped.size;
