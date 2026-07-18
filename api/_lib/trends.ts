@@ -18,10 +18,10 @@ YOUR JOB:
 TIME HORIZON — every surviving topic is reactive: a specific, dated thing happening now/this week that's good for immediate newsjacking. estimated_lifespan should be short (days to a couple weeks). Always tag time_horizon = "reactive".
 
 ROUTING RULES (all conditions must be met — not suggestions, requirements):
-- domain_trend: domain_relevance >= 70 AND trend_impact >= 55 AND risk <= 55. Must have a clear, direct content angle for this brand.
-- supertrend_exception: domain_relevance < 70 AND trend_impact >= 85 AND adaptability >= 70 AND risk <= 35. Only when there is an obvious, natural brand connection — do not force it.
-- monitor: genuinely emerging signal with real potential but insufficient evidence yet. Maximum 3 monitor items — pick only the most promising.
-- reject: everything else. When topics overlap — even if phrased differently, sourced from different outlets, or given different headlines — keep only the single strongest version and reject the rest as duplicates. Reject anything generic, speculative, off-brand, risky, or outdated.
+- domain_trend: domain_relevance >= 78 AND trend_impact >= 65 AND risk <= 50. Must have a clear, direct content angle for this brand.
+- supertrend_exception: domain_relevance < 78 AND trend_impact >= 88 AND adaptability >= 75 AND risk <= 30. Only when there is an obvious, natural brand connection — do not force it. Bar is deliberately very high.
+- monitor: genuinely emerging signal with real potential but insufficient evidence yet. Maximum 1 monitor item per scan — pick only the single most promising, or omit the monitor bucket entirely if nothing is that strong.
+- reject: everything else. When topics overlap — even if phrased differently, sourced from different outlets, or given different headlines — keep only the single strongest version and reject the rest as duplicates. Reject anything generic, speculative, off-brand, risky, or outdated. Default to reject: only surface topics you would confidently recommend to the brand's head of content.
 
 SPECIFICITY IS MANDATORY — NOT OPTIONAL. Every topic that survives (domain_trend, supertrend_exception, monitor) must be anchored to a concrete, named, dated, or numbered fact. If you cannot name the specific event, announcement, data point, regulation, product launch, or study driving it, REJECT it — do not soften it into a vague theme instead.
 
@@ -70,7 +70,8 @@ export function signalsBlock(signals: TrendSignal[] = []): string {
 }
 
 export async function supervise(body: { domain_profile?: DomainProfile; signals?: TrendSignal[]; account_label?: string }) {
-  const max = Math.min(body.domain_profile?.max_recommendations ?? 5, 5);
+  // Cap max recommendations at 3 hard — quality feed, not volume.
+  const max = Math.min(body.domain_profile?.max_recommendations ?? 3, 3);
 
   const signals = body.signals || [];
   const isAiOnly = signals.length > 0 && signals.every((s) => s.source === 'ai-suggested');
@@ -92,8 +93,8 @@ RAW TREND SIGNALS (cluster duplicates — many overlap, be aggressive about merg
 ${signalsBlock(signals)}
 
 TASK: Supervise strictly. Deduplicate aggressively — collapse near-duplicate signals (same underlying story or shift, different headline/outlet) into ONE topic before scoring, never emit the same underlying topic twice. Classify every clustered topic.
-- Max ${max} topics may be classified as domain_trend or supertrend_exception combined.
-- Max 3 topics may be classified as monitor (only genuinely promising, time-bound ones).
+- Max ${max} topics may be classified as domain_trend or supertrend_exception COMBINED. Fewer is better — 1 exceptional trend beats 3 decent ones.
+- Max 1 topic may be classified as monitor (only if genuinely exceptional and time-bound; leave it empty otherwise).
 - Do NOT include rejected topics in the topics array — count them in summary only.
 - Reject generic, non-time-bound, and duplicate-phrased topics without hesitation.
 - Tag every surviving topic's time_horizon as "reactive".

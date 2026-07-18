@@ -35,7 +35,7 @@ function ScorePill({ label, value, invert }: { label: string; value: number; inv
   );
 }
 
-const EMPTY_PROFILE: TrendProfile = { enabled: false, max_recommendations: 8 };
+const EMPTY_PROFILE: TrendProfile = { enabled: false, max_recommendations: 3 };
 
 export default function TrendsPage() {
   const { accountId, account } = useAccount();
@@ -376,7 +376,7 @@ export default function TrendsPage() {
               </div>
             </div>
             <div className="field"><label className="field-label">Max Recommendations</label>
-              <input className="glass-input" type="number" min={1} max={20} value={profile.max_recommendations ?? 8} onChange={(e) => setField('max_recommendations', Number(e.target.value))} />
+              <input className="glass-input" type="number" min={1} max={5} value={profile.max_recommendations ?? 3} onChange={(e) => setField('max_recommendations', Number(e.target.value))} />
             </div>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: '0.82rem', cursor: 'pointer' }}>

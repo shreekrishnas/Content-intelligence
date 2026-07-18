@@ -751,12 +751,28 @@ export const api = {
     },
 
     async list(accountId: string): Promise<Result<TrendRecord[]>> {
-      const { data, error } = await supabase
+      // Only surface the latest scan's records (plus anything the user has
+      // already actioned, so history stays visible when they filter to
+      // "Actioned"). Older scans stay in the DB but don't clutter the feed —
+      // quality > accumulated volume.
+      const { data: latestScan } = await supabase
+        .from('trend_scans')
+        .select('id')
+        .eq('account_id', accountId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const latestScanId = (latestScan as any)?.id as string | undefined;
+
+      const query = supabase
         .from('trend_records')
         .select('*')
         .eq('account_id', accountId)
         .order('created_at', { ascending: false })
-        .limit(200);
+        .limit(60);
+      const { data, error } = latestScanId
+        ? await query.or(`scan_id.eq.${latestScanId},status.eq.actioned`)
+        : await query.eq('status', 'actioned');
       if (error) return err(pgError(error));
       return ok(data as TrendRecord[]);
     },

@@ -111,7 +111,10 @@ Skip signals you cannot bridge — set bridgeable=false. Be selective: better to
     const bridged: TrendSignal[] = [];
     for (const b of bridges) {
       if (typeof b.i !== 'number' || b.i < 0 || b.i >= signals.length) continue;
-      if (!b.bridgeable || b.confidence === 'forced') continue;
+      // Only accept "natural_fit" bridges — creative_stretch and forced are
+      // both dropped. The user gets fewer trend-jack cards, but every one
+      // that survives is one the brand can actually publish without cringe.
+      if (!b.bridgeable || b.confidence !== 'natural_fit') continue;
       const src = signals[b.i];
       bridged.push({
         ...src,
