@@ -7,7 +7,7 @@ import { retrieve } from '@/lib/retrieval';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
 import type { SourceType } from '@/types';
 import { archetypeHint } from '@/lib/archetype-hint';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 
 const ACTIVITY_LABELS = [
   'Reading Source',
@@ -423,14 +423,12 @@ export default function AnalyzePage() {
               <Stepper current={step} />
               <div className="hairline" style={{ margin: '0.9rem 0 1.35rem' }} />
 
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={step}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.16 }}
-                >
+              {/* Previously wrapped in AnimatePresence + motion.div keyed on
+                  step. That fade replayed whenever the div remounted — which
+                  looks like the "New Analysis" section flashing/refreshing on
+                  every tab return. Static render — the step change alone is a
+                  clear-enough transition. */}
+              <div>
                   <div style={{ marginBottom: '1.35rem' }}>
                     <h2 style={{ fontSize: '1.15rem', fontWeight: 800, fontFamily: 'Fraunces, Georgia, serif', margin: '0 0 0.25rem', letterSpacing: '-0.01em' }}>
                       {meta.heading}
@@ -590,8 +588,7 @@ export default function AnalyzePage() {
                       ))}
                     </div>
                   )}
-                </motion.div>
-              </AnimatePresence>
+              </div>
 
               {/* Nav */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.6rem', paddingTop: '1.1rem', borderTop: '1px solid var(--border-subtle)' }}>
