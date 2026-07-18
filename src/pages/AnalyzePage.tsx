@@ -7,6 +7,7 @@ import { retrieve } from '@/lib/retrieval';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
 import type { SourceType } from '@/types';
 import { archetypeHint } from '@/lib/archetype-hint';
+import { showToast } from '@/lib/toast';
 import { motion } from 'motion/react';
 
 const ACTIVITY_LABELS = [
@@ -83,16 +84,27 @@ function RailRow({ label, value, pending, last }: { label: string; value?: strin
   );
 }
 
-function AddSourceTypeModal({ onClose, onSave }: { onClose: () => void; onSave: (name: string, description: string, formats: string[], guidance: string) => void }) {
+function AddSourceTypeModal({ onClose, onSave }: { onClose: () => void; onSave: (name: string, description: string, formats: string[], guidance: string) => Promise<string | null> }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [formatsText, setFormatsText] = useState('');
   const [guidance, setGuidance] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const handleSave = () => {
-    if (!name.trim() || !description.trim()) return;
+  const handleSave = async () => {
+    if (!name.trim() || !description.trim() || saving) return;
     const formats = formatsText.split(',').map((f) => f.trim()).filter(Boolean);
-    onSave(name.trim(), description.trim(), formats.length > 0 ? formats : ['Blog', 'Single Image', 'Carousel'], guidance.trim());
+    setSaving(true);
+    setSaveError(null);
+    // The modal owns the save lifecycle: it stays open (with the user's
+    // typed values intact) until the insert either succeeds or reports an
+    // error. Closing optimistically before the insert is how failures used
+    // to vanish without a trace.
+    const err = await onSave(name.trim(), description.trim(), formats.length > 0 ? formats : ['Blog', 'Single Image', 'Carousel'], guidance.trim());
+    setSaving(false);
+    if (err) setSaveError(err);
+    else onClose();
   };
 
   return (
@@ -116,9 +128,14 @@ function AddSourceTypeModal({ onClose, onSave }: { onClose: () => void; onSave: 
           <label className="field-label">Analysis Guidance (optional)</label>
           <textarea className="glass-textarea" rows={3} style={{ minHeight: 72 }} placeholder="Specifics the engine should follow for this source type…" value={guidance} onChange={(e) => setGuidance(e.target.value)} />
         </div>
+        {saveError && (
+          <div style={{ marginBottom: '0.9rem', padding: '0.6rem 0.8rem', borderRadius: 8, background: '#DC262614', borderLeft: '3px solid #DC2626' }}>
+            <p style={{ fontSize: '0.78rem', color: '#DC2626', margin: 0 }}>{saveError}</p>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-          <button className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary btn-sm" disabled={!name.trim() || !description.trim()} onClick={handleSave}>Add Source Type</button>
+          <button className="btn btn-secondary btn-sm" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="btn btn-primary btn-sm" disabled={!name.trim() || !description.trim() || saving} onClick={handleSave}>{saving ? 'Adding…' : 'Add Source Type'}</button>
         </div>
       </div>
     </div>
@@ -159,8 +176,9 @@ export default function AnalyzePage() {
     if (!accountId || !supabaseConfigured) { setSourceTypes([]); return; }
     let cancelled = false;
     setLoadingTypes(true);
-    api.sourceTypes.list(accountId).then(({ data }) => {
+    api.sourceTypes.list(accountId).then(({ data, error: listErr }) => {
       if (cancelled) return;
+      if (listErr) showToast(`Could not load source types: ${listErr}`, 'error');
       setSourceTypes(data ?? []);
       setLoadingTypes(false);
     });
@@ -182,21 +200,40 @@ export default function AnalyzePage() {
     setSavedOppIds({});
   }
 
-  const handleAddSourceType = useCallback(async (name: string, description: string, formats: string[], guidance: string) => {
-    if (!accountId) return;
-    setShowAddModal(false);
+  // Returns null on success, or a user-facing error message. The modal
+  // stays open on failure so the typed values aren't lost.
+  const handleAddSourceType = useCallback(async (name: string, description: string, formats: string[], guidance: string): Promise<string | null> => {
+    if (!accountId) return 'No account selected — pick an account first.';
     const { data, error: apiErr } = await api.sourceTypes.create(accountId, name, description, formats, guidance);
-    if (apiErr || !data) return;
-    setSourceTypes((prev) => [...prev, data]);
+    if (apiErr || !data) {
+      const msg = apiErr || 'Could not create the source type.';
+      if (/duplicate|unique|uq_source_type/i.test(msg)) {
+        return `A source type named like "${name}" already exists for this account — pick a different name.`;
+      }
+      if (/row-level security|permission|policy/i.test(msg)) {
+        return 'You don\'t have permission to add source types on this account (editor or manager role required).';
+      }
+      return msg;
+    }
+    // Re-fetch instead of appending locally so the list reflects exactly
+    // what the DB has (ordering, server defaults), then land the user on
+    // their new type with the wizard advanced.
+    const { data: fresh } = await api.sourceTypes.list(accountId);
+    setSourceTypes(fresh ?? []);
+    setSourceType(data.slug);
+    setStep('details');
+    showToast(`Source type "${data.name}" added`);
+    return null;
   }, [accountId]);
 
   const handleDeleteSourceType = useCallback(async (st: SourceType) => {
     if (!accountId) return;
     const { error: apiErr } = await api.sourceTypes.delete(accountId, st.id);
-    if (apiErr) return;
+    if (apiErr) { showToast(`Could not delete: ${apiErr}`, 'error'); return; }
     setConfirmDeleteType(null);
     setSourceTypes((prev) => prev.filter((t) => t.id !== st.id));
     if (sourceType === st.slug) { setSourceType(''); setStep('source'); }
+    showToast(`Source type "${st.name}" deleted`);
   }, [accountId, sourceType]);
 
   const activeType = sourceTypes.find((t) => t.slug === sourceType);

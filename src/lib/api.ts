@@ -1024,6 +1024,7 @@ export const api = {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_|_$/g, '');
+      if (!slug) return err('Name must contain at least one letter or number.');
 
       const { data, error } = await supabase
         .from('source_types')
