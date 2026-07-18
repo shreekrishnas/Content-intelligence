@@ -102,10 +102,21 @@ async function collectTavilySignals(profile: DomainProfile, accountLabel?: strin
   }
 
   const newsDomains = newsDomainsFor(profile);
+
+  // Reactive niche runs first-pass locked to trusted news outlets. If a
+  // query returns nothing under that lock — because Moneycontrol / NDTV /
+  // etc. simply didn't cover that specific niche in the last 14 days —
+  // we retry the same query WITHOUT include_domains and widen the window
+  // to 21 days rather than fall back to AI-hypothesised topics. Real
+  // journalism from a less-preferred outlet beats a hallucinated topic.
+  async function reactiveWithFallback(q: string): Promise<any[]> {
+    const scoped = await runTavilySearch(q, { topic: 'news', days: 14, depth: 'basic', include_domains: newsDomains });
+    if (scoped.length) return scoped;
+    return runTavilySearch(q, { topic: 'news', days: 21, depth: 'basic' });
+  }
+
   const [reactiveResults, viralResults] = await Promise.all([
-    // Reactive niche queries are locked to trusted news outlets so the
-    // supervisor doesn't have to filter through affiliate/SEO junk.
-    Promise.all(reactiveQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 14, depth: 'basic', include_domains: newsDomains }))),
+    Promise.all(reactiveQueries.map(reactiveWithFallback)),
     // Viral queries stay unrestricted — pop-culture buzz doesn't originate
     // on business-news sites, so scoping would kill the trend-jack signal.
     Promise.all(viralQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 7, depth: 'basic' }))),
@@ -169,7 +180,10 @@ async function collect(profile: DomainProfile, accountLabel: string | undefined,
   const live = await collectTavilySignals(profile, accountLabel);
   if (live.length) return { signals: live, source: 'tavily' };
   const signals = await suggestCandidateSignals(profile, accountLabel);
-  return { signals, source: 'suggest', note: 'No live results (TAVILY_API_KEY not set or no matches) — used AI-suggested candidate topics instead.' };
+  const note = !process.env.TAVILY_API_KEY
+    ? 'TAVILY_API_KEY is not set on the server — add it to Vercel → Environment Variables to enable live news scans. Falling back to AI-suggested candidate topics for now.'
+    : 'Live scan returned no news matches — your reactive queries produced 0 stories from the preferred outlets, and the 21-day open-web fallback also came up empty. Try broadening core_topics / target_keywords in the Domain Profile, or clearing preferred_news_domains. Using AI-suggested candidates for now.';
+  return { signals, source: 'suggest', note };
 }
 
 interface ScanBody {
