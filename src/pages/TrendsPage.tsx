@@ -61,7 +61,10 @@ export default function TrendsPage() {
   accountRef.current = account;
 
   const accountMeta = useMemo(() => {
-    return { url: (account?.profile as any)?.website_url || '', name: account?.name || '' };
+    const p = (account?.profile as any) || {};
+    // Accounts created via different flows store their site under different
+    // keys — website_url (trend setup) or domain_url (account creation).
+    return { url: p.website_url || p.domain_url || '', name: account?.name || '' };
   }, [account]);
 
   async function loadRecords() {
@@ -185,6 +188,8 @@ export default function TrendsPage() {
         return;
       }
       if (!res.data?.saved) {
+        const serverSaveErr = (res.data as any)?.save_error;
+        if (serverSaveErr) setNote(`Server-side save failed (${serverSaveErr}) — saved from browser instead.`);
         const { error: saveErr } = await api.trends.saveScan(accountId, res.data?.source || mode, topics);
         if (saveErr) { setError(`Scanned but could not save: ${saveErr}`); return; }
       }

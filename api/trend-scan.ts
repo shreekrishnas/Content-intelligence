@@ -272,6 +272,7 @@ async function handleManual(req: VercelRequest, res: VercelResponse) {
   const { topics, summary, analysis_date } = await supervise({ domain_profile: profile, signals, account_label: body.account_label });
 
   let saved = false;
+  let saveError: string | undefined;
   let savedRecords: unknown[] = [];
   const accountId = body.account_id || (req.headers['x-account-id'] as string) || '';
   if (accountId) {
@@ -285,26 +286,35 @@ async function handleManual(req: VercelRequest, res: VercelResponse) {
         else if (c === 'reject') counts.rej++;
         else counts.mon++;
       });
-      const { data: scan } = await admin.from('trend_scans').insert({
+      const { data: scan, error: scanErr } = await admin.from('trend_scans').insert({
         account_id: accountId, source,
         total_reviewed: topics.length,
         domain_sent: counts.domain, supertrends_sent: counts.superts,
         monitored: counts.mon, rejected: counts.rej,
       }).select('id').single();
+      if (scanErr) throw new Error(`trend_scans insert: ${scanErr.message}`);
       const rows = topics.map((t: any) => ({ ...topicToRecord(t), account_id: accountId, scan_id: (scan as any)?.id ?? null }));
       // Prune every previous trend_record for this account before inserting
       // the new batch. The user wants a clean feed on every refresh — no
       // history at all. trend_scans rows are kept for audit/counting.
-      await admin.from('trend_records').delete().eq('account_id', accountId);
+      const { error: delErr } = await admin.from('trend_records').delete().eq('account_id', accountId);
+      if (delErr) throw new Error(`trend_records delete: ${delErr.message}`);
       if (rows.length) {
-        const { data: inserted } = await admin.from('trend_records').insert(rows).select();
+        // supabase-js does NOT throw on failure — it returns { error }.
+        // Ignoring it is exactly how a schema drift (missing column) once
+        // made every scan report "saved" while persisting zero records.
+        const { data: inserted, error: insErr } = await admin.from('trend_records').insert(rows).select();
+        if (insErr) throw new Error(`trend_records insert: ${insErr.message}`);
         savedRecords = inserted || [];
       }
       saved = true;
-    } catch { /* best-effort — client can retry save */ }
+    } catch (e) {
+      saveError = e instanceof Error ? e.message : 'save failed';
+      console.error('[trend-scan] persist failed:', saveError);
+    }
   }
 
-  return res.status(200).json({ success: true, topics, summary, analysis_date, source, signals_reviewed: signals.length, note, saved, saved_records: savedRecords, stats });
+  return res.status(200).json({ success: true, topics, summary, analysis_date, source, signals_reviewed: signals.length, note, saved, save_error: saveError, saved_records: savedRecords, stats });
 }
 
 async function handleCron(req: VercelRequest, res: VercelResponse) {
@@ -340,17 +350,22 @@ async function handleCron(req: VercelRequest, res: VercelResponse) {
         else if (c === 'reject') counts.rej++;
         else counts.mon++;
       });
-      const { data: scan } = await admin.from('trend_scans').insert({
+      const { data: scan, error: scanErr } = await admin.from('trend_scans').insert({
         account_id: acc.id, source: `cron:${source}`,
         total_reviewed: summary?.total_topics_reviewed ?? topics.length,
         domain_sent: counts.domain, supertrends_sent: counts.superts,
         monitored: counts.mon, rejected: counts.rej,
       }).select('id').single();
+      if (scanErr) throw new Error(`trend_scans insert: ${scanErr.message}`);
       const rows = topics.map((t: any) => ({ ...topicToRecord(t), account_id: acc.id, scan_id: (scan as any)?.id ?? null }));
       // Same prune as the manual path — every daily cron scan replaces
       // this account's previous trend_records wholesale.
-      await admin.from('trend_records').delete().eq('account_id', acc.id);
-      if (rows.length) await admin.from('trend_records').insert(rows);
+      const { error: delErr } = await admin.from('trend_records').delete().eq('account_id', acc.id);
+      if (delErr) throw new Error(`trend_records delete: ${delErr.message}`);
+      if (rows.length) {
+        const { error: insErr } = await admin.from('trend_records').insert(rows);
+        if (insErr) throw new Error(`trend_records insert: ${insErr.message}`);
+      }
       results.push({ account: acc.name, inserted: rows.length, source });
     } catch (e) {
       results.push({ account: acc.name, inserted: 0, source: `error: ${e instanceof Error ? e.message : 'failed'}` });

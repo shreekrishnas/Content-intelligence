@@ -741,6 +741,13 @@ export const api = {
           recommended_formats: Array.isArray(t.recommended_formats) ? t.recommended_formats : [],
           related_keywords: Array.isArray(t.related_keywords) ? t.related_keywords : [],
           source_signals: Array.isArray(t.source_signals) ? t.source_signals : [],
+          content_angle: String(t.content_angle || ''),
+          needs_human_review: !!t.needs_human_review,
+          signal_type: t.signal_type === 'viral_bridged' ? 'viral_bridged' : 'niche',
+          bridge_angle: String(t.bridge_angle || ''),
+          underlying_theme: String(t.underlying_theme || ''),
+          bridge_confidence: t.bridge_confidence === 'natural_fit' || t.bridge_confidence === 'creative_stretch' ? t.bridge_confidence : '',
+          sensitivity_warning: String(t.sensitivity_warning || ''),
           status,
         };
       });
