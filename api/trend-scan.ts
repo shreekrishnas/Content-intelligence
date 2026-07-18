@@ -74,12 +74,26 @@ async function runTavilySearch(
   }
 }
 
-async function collectTavilySignals(profile: DomainProfile, accountLabel?: string): Promise<TrendSignal[]> {
+interface CollectStats {
+  queries_built: number;
+  strict_hits: number;
+  wide_hits: number;
+  broad_hits: number;
+  viral_hits: number;
+  bridged_hits: number;
+  profile_empty: boolean;
+}
+
+async function collectTavilySignals(profile: DomainProfile, accountLabel?: string, stats?: CollectStats): Promise<TrendSignal[]> {
   const key = process.env.TAVILY_API_KEY;
   if (!key) return [];
 
   const reactiveQueries = buildReactiveQueries(profile);
   const viralQueries = buildViralQueries(profile);
+  if (stats) {
+    stats.queries_built = reactiveQueries.length;
+    stats.profile_empty = !profile.industry && !profile.core_topics && !profile.target_keywords && !profile.business_name;
+  }
 
   const seen = new Set<string>();
   const nicheSignals: TrendSignal[] = [];
@@ -124,8 +138,19 @@ async function collectTavilySignals(profile: DomainProfile, accountLabel?: strin
     // on business-news sites, so scoping would kill the trend-jack signal.
     Promise.all(viralQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 7, depth: 'basic' }))),
   ]);
-  reactivePairs.forEach(({ results, strict }) => ingest(nicheSignals, results, 'reactive', 'niche', strict ? 0.35 : 0));
-  viralResults.forEach((results) => ingest(viralRaw, results, 'reactive', 'viral_bridged'));
+  const beforeNiche = nicheSignals.length;
+  reactivePairs.forEach(({ results, strict }) => {
+    ingest(nicheSignals, results, 'reactive', 'niche', strict ? 0.35 : 0);
+    if (stats) {
+      if (strict) stats.strict_hits += results.length;
+      else stats.wide_hits += results.length;
+    }
+  });
+  viralResults.forEach((results) => {
+    ingest(viralRaw, results, 'reactive', 'viral_bridged');
+    if (stats) stats.viral_hits += results.length;
+  });
+  void beforeNiche;
 
   // Last-resort broad safety net: if nothing survived the reactive pass,
   // fan out on the plainest possible queries so Tavily returns SOMETHING
@@ -145,7 +170,10 @@ async function collectTavilySignals(profile: DomainProfile, accountLabel?: strin
         broadQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 30, depth: 'basic' })),
       );
       // Score floor 0 — accept anything real that came back.
-      broadResults.forEach((results) => ingest(nicheSignals, results, 'reactive', 'niche', 0));
+      broadResults.forEach((results) => {
+        ingest(nicheSignals, results, 'reactive', 'niche', 0);
+        if (stats) stats.broad_hits += results.length;
+      });
     }
   }
 
@@ -158,6 +186,7 @@ async function collectTavilySignals(profile: DomainProfile, accountLabel?: strin
     const survivors = viralRaw.filter((_, i) => verdicts[i] !== 'block').slice(0, 12);
     if (survivors.length) bridged = await bridgeSignals(survivors, profile, accountLabel);
   }
+  if (stats) stats.bridged_hits = bridged.length;
 
   return [...nicheSignals, ...bridged];
 }
@@ -197,18 +226,30 @@ Return ONLY: {"candidates":[{"topic":"Specific narrow topic","trigger":"The spec
   }));
 }
 
-async function collect(profile: DomainProfile, accountLabel: string | undefined, mode: 'live' | 'suggest'): Promise<{ signals: TrendSignal[]; source: string; note?: string }> {
+async function collect(profile: DomainProfile, accountLabel: string | undefined, mode: 'live' | 'suggest'): Promise<{ signals: TrendSignal[]; source: string; note?: string; stats?: CollectStats }> {
   if (mode === 'suggest') {
     const signals = await suggestCandidateSignals(profile, accountLabel);
     return { signals, source: 'suggest' };
   }
-  const live = await collectTavilySignals(profile, accountLabel);
-  if (live.length) return { signals: live, source: 'tavily' };
+  const stats: CollectStats = {
+    queries_built: 0, strict_hits: 0, wide_hits: 0, broad_hits: 0,
+    viral_hits: 0, bridged_hits: 0, profile_empty: false,
+  };
+  const live = await collectTavilySignals(profile, accountLabel, stats);
+  if (live.length) return { signals: live, source: 'tavily', stats };
   const signals = await suggestCandidateSignals(profile, accountLabel);
-  const note = !process.env.TAVILY_API_KEY
-    ? 'TAVILY_API_KEY is not set on the server — add it to Vercel → Environment Variables to enable live news scans. Falling back to AI-suggested candidate topics for now.'
-    : 'Live scan returned no news matches — your reactive queries produced 0 stories from the preferred outlets, and the 21-day open-web fallback also came up empty. Try broadening core_topics / target_keywords in the Domain Profile, or clearing preferred_news_domains. Using AI-suggested candidates for now.';
-  return { signals, source: 'suggest', note };
+
+  let note: string;
+  if (!process.env.TAVILY_API_KEY) {
+    note = 'TAVILY_API_KEY is not set on the server — add it to Vercel → Environment Variables to enable live news scans. Falling back to AI-suggested candidate topics for now.';
+  } else if (stats.profile_empty) {
+    note = 'Domain profile is empty — no industry, core_topics, target_keywords, or business_name to build queries from. Open Domain Profile and fill at least one of these fields, then re-scan.';
+  } else if (stats.queries_built === 0) {
+    note = 'No usable queries could be built from the Domain Profile. Ensure core_topics or industry has real values (not just punctuation). Using AI-suggested candidates for now.';
+  } else {
+    note = `Live scan tried ${stats.queries_built} reactive queries in 3 tiers — strict (preferred outlets, 14d) hit ${stats.strict_hits}, wide (open web, 30d) hit ${stats.wide_hits}, broad safety-net hit ${stats.broad_hits}, viral hit ${stats.viral_hits} (bridged ${stats.bridged_hits}). Tavily returned zero real signals. Try: (a) clear Preferred News Domains, (b) broaden core_topics/target_keywords, or (c) verify TAVILY_API_KEY is a valid non-expired key. Using AI-suggested candidates for now.`;
+  }
+  return { signals, source: 'suggest', note, stats };
 }
 
 interface ScanBody {
@@ -224,9 +265,9 @@ async function handleManual(req: VercelRequest, res: VercelResponse) {
   const body: ScanBody = req.body || {};
   const profile = body.profile || {};
   const mode = body.mode === 'suggest' ? 'suggest' : 'live';
-  const { signals, source, note } = await collect(profile, body.account_label, mode);
+  const { signals, source, note, stats } = await collect(profile, body.account_label, mode);
   if (!signals.length) {
-    return res.status(200).json({ success: true, topics: [], summary: null, source, note: note || 'No candidate signals were found for this profile. Add more core topics or keywords.', saved: false });
+    return res.status(200).json({ success: true, topics: [], summary: null, source, note: note || 'No candidate signals were found for this profile. Add more core topics or keywords.', saved: false, stats });
   }
   const { topics, summary, analysis_date } = await supervise({ domain_profile: profile, signals, account_label: body.account_label });
 
@@ -263,7 +304,7 @@ async function handleManual(req: VercelRequest, res: VercelResponse) {
     } catch { /* best-effort — client can retry save */ }
   }
 
-  return res.status(200).json({ success: true, topics, summary, analysis_date, source, signals_reviewed: signals.length, note, saved, saved_records: savedRecords });
+  return res.status(200).json({ success: true, topics, summary, analysis_date, source, signals_reviewed: signals.length, note, saved, saved_records: savedRecords, stats });
 }
 
 async function handleCron(req: VercelRequest, res: VercelResponse) {
