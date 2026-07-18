@@ -45,6 +45,7 @@ export default function TrendsPage() {
   const [profile, setProfile] = useState<TrendProfile>(EMPTY_PROFILE);
   const [showProfile, setShowProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [suggestingDomains, setSuggestingDomains] = useState(false);
   const [records, setRecords] = useState<TrendRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
@@ -132,6 +133,22 @@ export default function TrendsPage() {
 
     return () => { stale = true; };
   }, [accountId, accountMeta.url, accountMeta.name]);
+
+  async function suggestNewsDomains() {
+    const url = accountMeta.url || profile.website_url;
+    if (!url) { showToast('Add a website URL to this account first', 'warn'); return; }
+    setSuggestingDomains(true);
+    try {
+      const res = await api.trends.autoDetectProfile(url, accountMeta.name);
+      const detected = (res.data as any) || {};
+      const suggested = String(detected.preferred_news_domains || '').trim();
+      if (!suggested) { showToast('No domain suggestions came back — try again', 'warn'); return; }
+      setField('preferred_news_domains', suggested);
+      showToast('News sources suggested — review, then Save Profile');
+    } finally {
+      setSuggestingDomains(false);
+    }
+  }
 
   async function saveProfile() {
     if (!accountId) return;
@@ -343,9 +360,20 @@ export default function TrendsPage() {
                 onChange={(e) => setField('preferred_news_domains', e.target.value)}
                 placeholder="moneycontrol.com, livemint.com, ndtv.com, economictimes.indiatimes.com"
               />
-              <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 4 }}>
-                Reactive niche queries are scoped to these outlets. Leave blank for the default Indian news set (Moneycontrol, Mint, NDTV, ET, HT, Indian Express, YourStory, Inc42, etc.).
-              </p>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ fontSize: '0.7rem' }}
+                  onClick={suggestNewsDomains}
+                  disabled={suggestingDomains}
+                >
+                  {suggestingDomains ? 'Suggesting…' : '✨ Suggest news sources for this brand'}
+                </button>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                  Reactive queries scope to these outlets. Blank = curated Indian news default.
+                </span>
+              </div>
             </div>
             <div className="field"><label className="field-label">Max Recommendations</label>
               <input className="glass-input" type="number" min={1} max={20} value={profile.max_recommendations ?? 8} onChange={(e) => setField('max_recommendations', Number(e.target.value))} />

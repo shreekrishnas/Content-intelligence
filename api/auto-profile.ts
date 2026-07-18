@@ -77,7 +77,8 @@ const PROFILE_JSON_SCHEMA = `{
   "content_categories": "types of content they should produce (comma-separated)",
   "brand_tone": "brand voice/tone (e.g. professional, casual, authoritative)",
   "competitors": "likely competitors if identifiable (comma-separated)",
-  "risk_tolerance": "low, medium, or high based on industry"
+  "risk_tolerance": "low, medium, or high based on industry",
+  "preferred_news_domains": "6-12 news outlets whose coverage is directly relevant to this brand's industry AND target_locations, as bare domains (comma-separated). Weight toward outlets that actually publish daily journalism on this beat — e.g. finance/markets brand in India → moneycontrol.com, livemint.com, business-standard.com, economictimes.indiatimes.com; tech/startup → yourstory.com, inc42.com, techcrunch.com; healthcare → thehindubusinessline.com/health, statnews.com. Only real news outlets — no aggregators, no Wikipedia, no company blogs."
 }`;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
