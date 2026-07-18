@@ -331,7 +331,7 @@ Rules that make the plan usable:
 Output ONLY raw JSON.`;
 
     const { content: raw, usage } = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
-      maxTokens: 4096,
+      maxTokens: 6500,
       temperature: 0.35,
     });
     logUsage({ accountId: body.account_id }, 'analyze-content', usage);

@@ -293,7 +293,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       default: throw new Error(`Unhandled task type: ${body.task}`);
     }
 
-    const maxTokens = 4096;
+    const maxTokens = 6500;
 
     const { content: raw, usage } = await callLLM(GROUNDING_SYSTEM_PROMPT, userPrompt, {
       maxTokens,
