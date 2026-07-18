@@ -226,6 +226,10 @@ async function handleManual(req: VercelRequest, res: VercelResponse) {
         monitored: counts.mon, rejected: counts.rej,
       }).select('id').single();
       const rows = topics.map((t: any) => ({ ...topicToRecord(t), account_id: accountId, scan_id: (scan as any)?.id ?? null }));
+      // Prune every previous trend_record for this account before inserting
+      // the new batch. The user wants a clean feed on every refresh — no
+      // history at all. trend_scans rows are kept for audit/counting.
+      await admin.from('trend_records').delete().eq('account_id', accountId);
       if (rows.length) {
         const { data: inserted } = await admin.from('trend_records').insert(rows).select();
         savedRecords = inserted || [];
@@ -277,6 +281,9 @@ async function handleCron(req: VercelRequest, res: VercelResponse) {
         monitored: counts.mon, rejected: counts.rej,
       }).select('id').single();
       const rows = topics.map((t: any) => ({ ...topicToRecord(t), account_id: acc.id, scan_id: (scan as any)?.id ?? null }));
+      // Same prune as the manual path — every daily cron scan replaces
+      // this account's previous trend_records wholesale.
+      await admin.from('trend_records').delete().eq('account_id', acc.id);
       if (rows.length) await admin.from('trend_records').insert(rows);
       results.push({ account: acc.name, inserted: rows.length, source });
     } catch (e) {

@@ -745,16 +745,18 @@ export const api = {
         };
       });
 
+      // Wipe every prior trend_record for this account before inserting.
+      // A refresh replaces the feed wholesale — no accumulation.
+      await supabase.from('trend_records').delete().eq('account_id', accountId).neq('scan_id', (scan as any)?.id ?? '');
       const { data, error } = await supabase.from('trend_records').insert(rows).select();
       if (error) return err(pgError(error));
       return ok(data as TrendRecord[]);
     },
 
     async list(accountId: string): Promise<Result<TrendRecord[]>> {
-      // Only surface the latest scan's records (plus anything the user has
-      // already actioned, so history stays visible when they filter to
-      // "Actioned"). Older scans stay in the DB but don't clutter the feed —
-      // quality > accumulated volume.
+      // Show only the latest scan's records. Every refresh replaces the
+      // previous set — no accumulation, no history in the feed. Old
+      // records still live in the DB for audit but never surface here.
       const { data: latestScan } = await supabase
         .from('trend_scans')
         .select('id')
@@ -763,16 +765,14 @@ export const api = {
         .limit(1)
         .maybeSingle();
       const latestScanId = (latestScan as any)?.id as string | undefined;
+      if (!latestScanId) return ok([]);
 
-      const query = supabase
+      const { data, error } = await supabase
         .from('trend_records')
         .select('*')
         .eq('account_id', accountId)
-        .order('created_at', { ascending: false })
-        .limit(60);
-      const { data, error } = latestScanId
-        ? await query.or(`scan_id.eq.${latestScanId},status.eq.actioned`)
-        : await query.eq('status', 'actioned');
+        .eq('scan_id', latestScanId)
+        .order('created_at', { ascending: false });
       if (error) return err(pgError(error));
       return ok(data as TrendRecord[]);
     },
