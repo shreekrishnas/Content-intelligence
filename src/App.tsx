@@ -83,7 +83,14 @@ function AuthGate({ children }: { children: ReactNode }) {
 function AccountGate() {
   const { accountId, account, loading, error } = useAccount();
 
-  if (loading) return <LoadingScreen />;
+  // Only unmount AppShell for the FIRST-time load (no account object yet).
+  // Once an account has landed, transient loading flips — e.g. switching
+  // accounts, background refetches — must NOT swap AppShell for a
+  // LoadingScreen, because that unmount destroys AppShell's visitedTabs
+  // keep-alive state and remounts every visited page from scratch. That
+  // remount is what the user perceives as the whole app "refreshing" when
+  // they come back to a tab.
+  if (loading && !account && !error) return <LoadingScreen />;
 
   if (error === 'not_configured') {
     return <AppShell />;
