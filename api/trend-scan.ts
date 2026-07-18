@@ -9,6 +9,34 @@ import type { DomainProfile, TrendSignal } from './_lib/types.js';
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
 
+// Curated default news sources for India-focused accounts. Reactive niche
+// queries are scoped to these outlets so scans return real journalism —
+// not SEO blogspam or a random Medium post. Accounts can override via
+// domain_profile.preferred_news_domains.
+const DEFAULT_NEWS_DOMAINS = [
+  // General national
+  'ndtv.com', 'indianexpress.com', 'thehindu.com', 'hindustantimes.com',
+  'timesofindia.indiatimes.com', 'news18.com', 'thewire.in', 'theprint.in',
+  // Business / markets
+  'moneycontrol.com', 'livemint.com', 'business-standard.com',
+  'economictimes.indiatimes.com', 'financialexpress.com', 'bloombergquint.com',
+  'businesstoday.in', 'cnbctv18.com', 'thehindubusinessline.com',
+  // Tech / startups
+  'yourstory.com', 'inc42.com', 'entrackr.com',
+];
+
+function parseDomainList(raw?: string): string[] {
+  return (raw || '')
+    .split(/[,\n\s]+/)
+    .map((d) => d.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, ''))
+    .filter(Boolean);
+}
+
+function newsDomainsFor(p: DomainProfile): string[] {
+  const custom = parseDomainList(p.preferred_news_domains);
+  return custom.length ? custom : DEFAULT_NEWS_DOMAINS;
+}
+
 // Reactive queries: this week's news, for time-boxed newsjacking content.
 function buildReactiveQueries(p: DomainProfile): string[] {
   const q: string[] = [];
@@ -21,14 +49,22 @@ function buildReactiveQueries(p: DomainProfile): string[] {
   return [...new Set(q)].slice(0, 5);
 }
 
-async function runTavilySearch(query: string, opts: { topic: 'news' | 'general'; days: number; depth: 'basic' | 'advanced' }): Promise<any[]> {
+async function runTavilySearch(
+  query: string,
+  opts: { topic: 'news' | 'general'; days: number; depth: 'basic' | 'advanced'; include_domains?: string[] },
+): Promise<any[]> {
   const key = process.env.TAVILY_API_KEY;
   if (!key) return [];
   try {
+    const body: Record<string, unknown> = {
+      api_key: key, query, topic: opts.topic,
+      search_depth: opts.depth, max_results: 5, days: opts.days,
+    };
+    if (opts.include_domains?.length) body.include_domains = opts.include_domains;
     const resp = await fetch(TAVILY_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: key, query, topic: opts.topic, search_depth: opts.depth, max_results: 5, days: opts.days }),
+      body: JSON.stringify(body),
     });
     if (!resp.ok) return [];
     const data = await resp.json();
@@ -65,8 +101,13 @@ async function collectTavilySignals(profile: DomainProfile, accountLabel?: strin
     }
   }
 
+  const newsDomains = newsDomainsFor(profile);
   const [reactiveResults, viralResults] = await Promise.all([
-    Promise.all(reactiveQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 14, depth: 'basic' }))),
+    // Reactive niche queries are locked to trusted news outlets so the
+    // supervisor doesn't have to filter through affiliate/SEO junk.
+    Promise.all(reactiveQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 14, depth: 'basic', include_domains: newsDomains }))),
+    // Viral queries stay unrestricted — pop-culture buzz doesn't originate
+    // on business-news sites, so scoping would kill the trend-jack signal.
     Promise.all(viralQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 7, depth: 'basic' }))),
   ]);
   reactiveResults.forEach((results) => ingest(nicheSignals, results, 'reactive', 'niche'));

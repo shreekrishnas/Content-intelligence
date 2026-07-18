@@ -17,6 +17,11 @@ export interface DomainProfile {
   max_recommendations?: number;
   risk_tolerance?: string;
   enabled?: boolean;
+  // Comma/newline-separated list of preferred news domains for reactive
+  // queries (e.g. "moneycontrol.com, livemint.com, ndtv.com"). When set,
+  // Tavily searches for this account only surface results from these
+  // outlets. When blank, we fall back to a curated Indian news default.
+  preferred_news_domains?: string;
 }
 
 export interface TrendSignal {

@@ -335,6 +335,18 @@ export default function TrendsPage() {
             <Field label="Competitors" v={profile.competitors} on={(v) => setField('competitors', v)} />
             <Field label="Restricted Topics" v={profile.restricted_topics} on={(v) => setField('restricted_topics', v)} />
             <Field label="Brand Tone" v={profile.brand_tone} on={(v) => setField('brand_tone', v)} />
+            <div className="field" style={{ gridColumn: '1 / -1' }}>
+              <label className="field-label">Preferred News Domains (comma / newline)</label>
+              <input
+                className="glass-input"
+                value={profile.preferred_news_domains ?? ''}
+                onChange={(e) => setField('preferred_news_domains', e.target.value)}
+                placeholder="moneycontrol.com, livemint.com, ndtv.com, economictimes.indiatimes.com"
+              />
+              <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 4 }}>
+                Reactive niche queries are scoped to these outlets. Leave blank for the default Indian news set (Moneycontrol, Mint, NDTV, ET, HT, Indian Express, YourStory, Inc42, etc.).
+              </p>
+            </div>
             <div className="field"><label className="field-label">Max Recommendations</label>
               <input className="glass-input" type="number" min={1} max={20} value={profile.max_recommendations ?? 8} onChange={(e) => setField('max_recommendations', Number(e.target.value))} />
             </div>

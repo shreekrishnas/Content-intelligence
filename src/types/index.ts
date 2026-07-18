@@ -228,6 +228,7 @@ export interface TrendProfile {
   allowed_formats?: string;
   max_recommendations?: number;
   risk_tolerance?: string;
+  preferred_news_domains?: string;
 }
 
 export interface TrendRecord {
