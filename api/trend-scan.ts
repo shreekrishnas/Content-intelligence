@@ -85,12 +85,15 @@ async function collectTavilySignals(profile: DomainProfile, accountLabel?: strin
   const nicheSignals: TrendSignal[] = [];
   const viralRaw: TrendSignal[] = [];
 
-  function ingest(bucket: TrendSignal[], results: any[], horizon: 'reactive' | 'strategic', signalType: 'niche' | 'viral_bridged') {
+  // scoreFloor: 0.35 for the strict first pass, 0 (accept all) for
+  // rescue fallbacks — a low-score real article is still better than an
+  // AI hallucination. The supervisor re-scores everything anyway.
+  function ingest(bucket: TrendSignal[], results: any[], horizon: 'reactive' | 'strategic', signalType: 'niche' | 'viral_bridged', scoreFloor = 0.35) {
     for (const r of results) {
       const url: string = r.url || '';
       const dedupeKey = url || r.title;
       if (!dedupeKey || seen.has(dedupeKey)) continue;
-      if (typeof r.score === 'number' && r.score < 0.35) continue;
+      if (typeof r.score === 'number' && r.score < scoreFloor) continue;
       seen.add(dedupeKey);
       bucket.push({
         title: r.title, content: r.content, url,
@@ -107,22 +110,44 @@ async function collectTavilySignals(profile: DomainProfile, accountLabel?: strin
   // query returns nothing under that lock — because Moneycontrol / NDTV /
   // etc. simply didn't cover that specific niche in the last 14 days —
   // we retry the same query WITHOUT include_domains and widen the window
-  // to 21 days rather than fall back to AI-hypothesised topics. Real
-  // journalism from a less-preferred outlet beats a hallucinated topic.
-  async function reactiveWithFallback(q: string): Promise<any[]> {
+  // to 30 days rather than fall back to AI-hypothesised topics.
+  async function reactiveWithFallback(q: string): Promise<{ results: any[]; strict: boolean }> {
     const scoped = await runTavilySearch(q, { topic: 'news', days: 14, depth: 'basic', include_domains: newsDomains });
-    if (scoped.length) return scoped;
-    return runTavilySearch(q, { topic: 'news', days: 21, depth: 'basic' });
+    if (scoped.length) return { results: scoped, strict: true };
+    const wide = await runTavilySearch(q, { topic: 'news', days: 30, depth: 'basic' });
+    return { results: wide, strict: false };
   }
 
-  const [reactiveResults, viralResults] = await Promise.all([
+  const [reactivePairs, viralResults] = await Promise.all([
     Promise.all(reactiveQueries.map(reactiveWithFallback)),
     // Viral queries stay unrestricted — pop-culture buzz doesn't originate
     // on business-news sites, so scoping would kill the trend-jack signal.
     Promise.all(viralQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 7, depth: 'basic' }))),
   ]);
-  reactiveResults.forEach((results) => ingest(nicheSignals, results, 'reactive', 'niche'));
+  reactivePairs.forEach(({ results, strict }) => ingest(nicheSignals, results, 'reactive', 'niche', strict ? 0.35 : 0));
   viralResults.forEach((results) => ingest(viralRaw, results, 'reactive', 'viral_bridged'));
+
+  // Last-resort broad safety net: if nothing survived the reactive pass,
+  // fan out on the plainest possible queries so Tavily returns SOMETHING
+  // real for the supervisor to score. Better a supervisor-rejected pile
+  // of real news than an AI-hallucinated pile of fake trends.
+  if (!nicheSignals.length) {
+    const splitList = (s?: string) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+    const loc = profile.target_locations ? ` ${profile.target_locations}` : '';
+    const broadQueries = [
+      ...(profile.industry ? [`${profile.industry}${loc} news`, profile.industry] : []),
+      ...splitList(profile.core_topics).slice(0, 2).map((t) => `${t}${loc} news`),
+      ...(profile.business_name ? [`${profile.business_name}${loc}`] : []),
+      ...(profile.target_keywords ? splitList(profile.target_keywords).slice(0, 2).map((k) => `${k}${loc}`) : []),
+    ].filter(Boolean).slice(0, 4);
+    if (broadQueries.length) {
+      const broadResults = await Promise.all(
+        broadQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 30, depth: 'basic' })),
+      );
+      // Score floor 0 — accept anything real that came back.
+      broadResults.forEach((results) => ingest(nicheSignals, results, 'reactive', 'niche', 0));
+    }
+  }
 
   // Bridge layer: filter viral signals through safety, then attempt to
   // creatively connect them to the brand. Anything the LLM can't bridge
