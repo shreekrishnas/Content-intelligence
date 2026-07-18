@@ -13,6 +13,25 @@ export default class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): State {
+    // Stale chunk after a new Vercel deploy: the old index.html in the
+    // browser references JS bundles whose filename hashes were replaced.
+    // Auto-reload once so the user picks up the new bundle instead of
+    // seeing a scary "Something went wrong". A sessionStorage guard stops
+    // it from becoming an infinite reload loop if the failure is real.
+    const msg = error?.message || '';
+    const isStaleChunk =
+      msg.includes('Failed to fetch dynamically imported module') ||
+      msg.includes('Importing a module script failed') ||
+      /ChunkLoadError/i.test(msg) ||
+      /Loading chunk .* failed/i.test(msg);
+    if (isStaleChunk && typeof window !== 'undefined') {
+      const KEY = '__stale_chunk_reload_at';
+      const last = Number(sessionStorage.getItem(KEY) || 0);
+      if (Date.now() - last > 10_000) {
+        sessionStorage.setItem(KEY, String(Date.now()));
+        window.location.reload();
+      }
+    }
     return { hasError: true, error };
   }
 
@@ -37,9 +56,15 @@ export default class ErrorBoundary extends Component<Props, State> {
                   <line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
               </div>
-              <h1 className="page-title" style={{ marginBottom: 8 }}>Something went wrong</h1>
+              <h1 className="page-title" style={{ marginBottom: 8 }}>
+                {/Failed to fetch dynamically imported module|Loading chunk .* failed|ChunkLoadError/i.test(this.state.error?.message || '')
+                  ? 'Updating…'
+                  : 'Something went wrong'}
+              </h1>
               <p className="page-desc" style={{ marginBottom: 16 }}>
-                {this.state.error?.message || 'An unexpected error occurred.'}
+                {/Failed to fetch dynamically imported module|Loading chunk .* failed|ChunkLoadError/i.test(this.state.error?.message || '')
+                  ? 'A new version was deployed. Reloading to pick it up.'
+                  : (this.state.error?.message || 'An unexpected error occurred.')}
               </p>
               <button
                 className="btn btn-primary"
