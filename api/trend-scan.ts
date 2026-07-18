@@ -4,6 +4,7 @@ import { extractJSON } from './_lib/json.js';
 import { handleOptions, sendError, cors } from './_lib/http.js';
 import { getServiceClient } from './_lib/supabase.js';
 import { supervise, topicToRecord } from './_lib/trends.js';
+import { buildViralQueries, classifySensitivity, bridgeSignals } from './_lib/bridge.js';
 import type { DomainProfile, TrendSignal } from './_lib/types.js';
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
@@ -54,39 +55,54 @@ async function runTavilySearch(query: string, opts: { topic: 'news' | 'general';
   }
 }
 
-async function collectTavilySignals(profile: DomainProfile): Promise<TrendSignal[]> {
+async function collectTavilySignals(profile: DomainProfile, accountLabel?: string): Promise<TrendSignal[]> {
   const key = process.env.TAVILY_API_KEY;
   if (!key) return [];
 
   const reactiveQueries = buildReactiveQueries(profile);
   const strategicQueries = buildStrategicQueries(profile);
+  const viralQueries = buildViralQueries(profile);
 
   const seen = new Set<string>();
-  const signals: TrendSignal[] = [];
+  const nicheSignals: TrendSignal[] = [];
+  const viralRaw: TrendSignal[] = [];
 
-  function ingest(results: any[], horizon: 'reactive' | 'strategic') {
+  function ingest(bucket: TrendSignal[], results: any[], horizon: 'reactive' | 'strategic', signalType: 'niche' | 'viral_bridged') {
     for (const r of results) {
       const url: string = r.url || '';
       const dedupeKey = url || r.title;
       if (!dedupeKey || seen.has(dedupeKey)) continue;
       if (typeof r.score === 'number' && r.score < 0.35) continue;
       seen.add(dedupeKey);
-      signals.push({
+      bucket.push({
         title: r.title, content: r.content, url,
         source: (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'web'; } })(),
         published_at: r.published_date, score: r.score, horizon,
+        signal_type: signalType,
       });
     }
   }
 
-  const [reactiveResults, strategicResults] = await Promise.all([
+  const [reactiveResults, strategicResults, viralResults] = await Promise.all([
     Promise.all(reactiveQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 14, depth: 'basic' }))),
     Promise.all(strategicQueries.map((q) => runTavilySearch(q, { topic: 'general', days: 180, depth: 'advanced' }))),
+    Promise.all(viralQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 7, depth: 'basic' }))),
   ]);
-  reactiveResults.forEach((results) => ingest(results, 'reactive'));
-  strategicResults.forEach((results) => ingest(results, 'strategic'));
+  reactiveResults.forEach((results) => ingest(nicheSignals, results, 'reactive', 'niche'));
+  strategicResults.forEach((results) => ingest(nicheSignals, results, 'strategic', 'niche'));
+  viralResults.forEach((results) => ingest(viralRaw, results, 'reactive', 'viral_bridged'));
 
-  return signals;
+  // Bridge layer: filter viral signals through safety, then attempt to
+  // creatively connect them to the brand. Anything the LLM can't bridge
+  // naturally is dropped — no forced trend-jacks.
+  let bridged: TrendSignal[] = [];
+  if (viralRaw.length) {
+    const verdicts = await classifySensitivity(viralRaw);
+    const survivors = viralRaw.filter((_, i) => verdicts[i] !== 'block').slice(0, 12);
+    if (survivors.length) bridged = await bridgeSignals(survivors, profile, accountLabel);
+  }
+
+  return [...nicheSignals, ...bridged];
 }
 
 async function suggestCandidateSignals(profile: DomainProfile, accountLabel?: string): Promise<TrendSignal[]> {
@@ -129,7 +145,7 @@ async function collect(profile: DomainProfile, accountLabel: string | undefined,
     const signals = await suggestCandidateSignals(profile, accountLabel);
     return { signals, source: 'suggest' };
   }
-  const live = await collectTavilySignals(profile);
+  const live = await collectTavilySignals(profile, accountLabel);
   if (live.length) return { signals: live, source: 'tavily' };
   const signals = await suggestCandidateSignals(profile, accountLabel);
   return { signals, source: 'suggest', note: 'No live results (TAVILY_API_KEY not set or no matches) — used AI-suggested candidate topics instead.' };

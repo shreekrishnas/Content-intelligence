@@ -254,6 +254,11 @@ export interface TrendRecord {
   source_signals: Array<{ title?: string; url?: string; source?: string }>;
   needs_human_review?: boolean;
   content_angle?: string;
+  signal_type?: "niche" | "viral_bridged";
+  bridge_angle?: string;
+  underlying_theme?: string;
+  bridge_confidence?: "natural_fit" | "creative_stretch" | "";
+  sensitivity_warning?: string;
   status: "new" | "accepted" | "monitoring" | "rejected" | "actioned";
   created_at: string;
 }

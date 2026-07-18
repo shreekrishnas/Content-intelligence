@@ -53,6 +53,7 @@ export default function TrendsPage() {
   const [note, setNote] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('actionable');
   const [horizonFilter, setHorizonFilter] = useState<'all' | 'strategic' | 'reactive'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'niche' | 'viral_bridged'>('all');
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const autoDetectRanRef = useRef<Set<string>>(new Set());
@@ -239,6 +240,8 @@ export default function TrendsPage() {
     actioned: records.filter((r) => r.status === 'actioned').length,
     strategic: records.filter((r) => r.time_horizon === 'strategic').length,
     reactive: records.filter((r) => r.time_horizon !== 'strategic').length,
+    viral_bridged: records.filter((r) => r.signal_type === 'viral_bridged').length,
+    niche: records.filter((r) => r.signal_type !== 'viral_bridged').length,
   }), [records]);
 
   const sortByScore = (a: any, b: any) =>
@@ -250,8 +253,9 @@ export default function TrendsPage() {
     else if (filter === 'actioned') base = records.filter((r) => r.status === 'actioned');
     else base = records.filter((r) => r.classification === filter);
     if (horizonFilter !== 'all') base = base.filter((r) => (r.time_horizon === 'strategic') === (horizonFilter === 'strategic'));
+    if (typeFilter !== 'all') base = base.filter((r) => (r.signal_type === 'viral_bridged') === (typeFilter === 'viral_bridged'));
     return [...base].sort(sortByScore);
-  }, [records, filter, horizonFilter]);
+  }, [records, filter, horizonFilter, typeFilter]);
 
   function setField<K extends keyof TrendProfile>(k: K, v: TrendProfile[K]) { setProfile((p) => ({ ...p, [k]: v })); }
 
@@ -377,6 +381,27 @@ export default function TrendsPage() {
               <button key={f.k} className="badge" style={{ cursor: 'pointer', background: filter === f.k ? 'var(--accent-primary)' : undefined, color: filter === f.k ? '#fff' : undefined }} onClick={() => setFilter(f.k)}>{f.label}</button>
             ))}
           </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', fontWeight: 600, marginRight: 2 }}>Type:</span>
+            {[
+              { k: 'all' as const, label: 'All' },
+              { k: 'niche' as const, label: `🎯 Niche (${counts.niche})` },
+              { k: 'viral_bridged' as const, label: `🌉 Trend-jacked (${counts.viral_bridged})` },
+            ].map((f) => (
+              <button
+                key={f.k}
+                className="badge"
+                style={{
+                  cursor: 'pointer', fontSize: '0.7rem',
+                  background: typeFilter === f.k ? '#D946EF' : undefined,
+                  color: typeFilter === f.k ? '#fff' : undefined,
+                }}
+                onClick={() => setTypeFilter(f.k)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
             <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', fontWeight: 600, marginRight: 2 }}>Horizon:</span>
             {[
@@ -424,9 +449,16 @@ export default function TrendsPage() {
             const cm = CLASS_META[t.classification] || CLASS_META.monitor;
             const pc = PRIORITY_COLOR[t.priority] || '#9CA3AF';
             const actionable = t.classification === 'domain_trend' || t.classification === 'supertrend_exception';
+            const isBridged = t.signal_type === 'viral_bridged';
+            const borderColor = isBridged ? '#D946EF' : cm.color;
             return (
-              <div key={t.id} className="glass-card-static" style={{ padding: 16, borderLeft: `3px solid ${cm.color}`, opacity: t.status === 'actioned' ? 0.7 : 1 }}>
+              <div key={t.id} className="glass-card-static" style={{ padding: 16, borderLeft: `3px solid ${borderColor}`, opacity: t.status === 'actioned' ? 0.7 : 1 }}>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8, alignItems: 'center' }}>
+                  {isBridged && (
+                    <span className="badge" style={{ fontSize: '0.6rem', background: '#D946EF18', color: '#D946EF', fontWeight: 700 }}>
+                      🌉 Trend-jacked{t.bridge_confidence === 'creative_stretch' ? ' · stretch' : ''}
+                    </span>
+                  )}
                   <span className="badge" style={{ fontSize: '0.6rem', background: cm.color + '18', color: cm.color }}>{cm.label}</span>
                   <span className="badge" style={{ fontSize: '0.6rem', background: pc + '18', color: pc }}>{t.priority}</span>
                   <span className="badge" style={{ fontSize: '0.6rem' }}>{t.trend_stage}</span>
@@ -450,6 +482,22 @@ export default function TrendsPage() {
                   <ScorePill label="Risk" value={t.risk_score} invert />
                 </div>
 
+                {isBridged && (t.bridge_angle || t.underlying_theme) && (
+                  <div style={{ fontSize: '0.78rem', marginBottom: 6, padding: '8px 10px', background: '#D946EF10', borderRadius: 8, borderLeft: '2px solid #D946EF' }}>
+                    <strong style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#D946EF' }}>Bridge</strong>
+                    {t.underlying_theme && (
+                      <div style={{ marginTop: 3, fontSize: '0.72rem', color: 'var(--text-muted)' }}>Theme: {t.underlying_theme}</div>
+                    )}
+                    {t.bridge_angle && (
+                      <div style={{ marginTop: 3, fontStyle: 'italic' }}>{t.bridge_angle}</div>
+                    )}
+                  </div>
+                )}
+                {t.sensitivity_warning && (
+                  <div style={{ fontSize: '0.72rem', marginBottom: 6, padding: '6px 10px', background: '#F59E0B18', borderRadius: 8, borderLeft: '2px solid #F59E0B', color: '#B45309' }}>
+                    ⚠️ Sensitivity: {t.sensitivity_warning}
+                  </div>
+                )}
                 {(t as any).content_angle && (
                   <div style={{ fontSize: '0.78rem', marginBottom: 6, padding: '6px 10px', background: 'var(--accent-primary-soft)', borderRadius: 8, borderLeft: '2px solid var(--accent-primary)' }}>
                     <strong style={{ fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-primary)' }}>Content angle</strong>

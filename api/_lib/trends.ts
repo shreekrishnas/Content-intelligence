@@ -60,6 +60,9 @@ export function signalsBlock(signals: TrendSignal[] = []): string {
     const parts = [
       `[${i + 1}] ${s.topic || s.title || 'Untitled'}`,
       s.horizon ? `[horizon: ${s.horizon}]` : '',
+      s.signal_type === 'viral_bridged' ? `[type: viral_bridged | bridge: ${s.bridge_confidence || 'unknown'}]` : '',
+      s.underlying_theme ? `theme: ${s.underlying_theme}` : '',
+      s.bridge_angle ? `bridge_angle: ${s.bridge_angle}` : '',
       s.source ? `source: ${s.source}` : '',
       s.published_at ? `date: ${s.published_at}` : '',
       s.summary || s.content ? `note: ${String(s.summary || s.content).slice(0, 300)}` : '',
@@ -99,8 +102,10 @@ TASK: Supervise strictly. Deduplicate aggressively — collapse near-duplicate s
 - Tag every surviving topic's time_horizon as "reactive" or "strategic" per the definitions above. Prefer including at least one strategic trend when the signals support it.
 - Aim for quality: 2 strong domain_trend items beats 8 mediocre ones.
 
+TREND-JACKED SIGNALS: signals tagged [type: viral_bridged] came from broad viral culture and were pre-connected to this brand by the bridge layer. For those, PRESERVE the bridge_angle, underlying_theme, and signal_type=viral_bridged fields on the output topic — they are the whole point of the trend-jack. Still enforce specificity (a named event/date/number must anchor the trend) and safety. Use suggested_connection for the bridge angle when you accept one.
+
 Return ONLY this JSON (no extra fields, no markdown):
-{"analysis_date":"YYYY-MM-DD","summary":{"total_topics_reviewed":0,"domain_trends_sent":0,"supertrends_sent":0,"topics_monitored":0,"topics_rejected":0},"topics":[{"topic":"","summary":"","classification":"domain_trend|supertrend_exception|monitor","time_horizon":"reactive|strategic","domain_relevance_score":0,"trend_impact_score":0,"adaptability_score":0,"risk_score":0,"confidence_score":0,"priority":"high|medium|low","trend_stage":"emerging|growing|peak|declining","estimated_lifespan":"","recommended_route":"","recommended_formats":[],"suggested_connection":"","content_angle":"One specific content piece this brand should make","related_keywords":[],"needs_human_review":false,"reason":""}]}`;
+{"analysis_date":"YYYY-MM-DD","summary":{"total_topics_reviewed":0,"domain_trends_sent":0,"supertrends_sent":0,"topics_monitored":0,"topics_rejected":0},"topics":[{"topic":"","summary":"","classification":"domain_trend|supertrend_exception|monitor","time_horizon":"reactive|strategic","signal_type":"niche|viral_bridged","bridge_angle":"","underlying_theme":"","bridge_confidence":"natural_fit|creative_stretch|","domain_relevance_score":0,"trend_impact_score":0,"adaptability_score":0,"risk_score":0,"confidence_score":0,"priority":"high|medium|low","trend_stage":"emerging|growing|peak|declining","estimated_lifespan":"","recommended_route":"","recommended_formats":[],"suggested_connection":"","content_angle":"One specific content piece this brand should make","related_keywords":[],"needs_human_review":false,"reason":""}]}`;
   const { content: raw } = await callLLM(SUPERVISOR_SYSTEM_PROMPT, prompt, { maxTokens: 3000, temperature: 0.2 });
   const parsed: any = extractJSON(raw);
   const rawTopics = Array.isArray(parsed) ? parsed : (parsed.topics || []);
@@ -196,6 +201,12 @@ export function topicToRecord(t: any): Record<string, unknown> {
     related_keywords: Array.isArray(t.related_keywords) ? t.related_keywords : [],
     content_angle: String(t.content_angle || ''),
     needs_human_review: !!t.needs_human_review,
+    signal_type: t.signal_type === 'viral_bridged' ? 'viral_bridged' : 'niche',
+    bridge_angle: String(t.bridge_angle || ''),
+    underlying_theme: String(t.underlying_theme || ''),
+    bridge_confidence: t.bridge_confidence === 'natural_fit' || t.bridge_confidence === 'creative_stretch'
+      ? t.bridge_confidence : '',
+    sensitivity_warning: String(t.sensitivity_warning || ''),
     status,
   };
 }

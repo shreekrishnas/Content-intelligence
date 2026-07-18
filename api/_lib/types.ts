@@ -33,6 +33,15 @@ export interface TrendSignal {
   // category) worth planning a content pillar around. Set at collection
   // time as a hint — the supervisor makes the final call per topic.
   horizon?: 'reactive' | 'strategic';
+  // Trend-jacking metadata. When 'viral_bridged', the signal originated
+  // outside the brand's niche and was creatively connected via the bridge
+  // layer — the supervisor should preserve bridge_angle/underlying_theme on
+  // the output topic so the UI can flag it as a trend-jack.
+  signal_type?: 'niche' | 'viral_bridged';
+  bridge_angle?: string;
+  underlying_theme?: string;
+  bridge_confidence?: 'natural_fit' | 'creative_stretch';
+  sensitivity_warning?: string;
 }
 
 export interface FileContext {
