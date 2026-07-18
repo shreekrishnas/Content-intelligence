@@ -21,23 +21,6 @@ function buildReactiveQueries(p: DomainProfile): string[] {
   return [...new Set(q)].slice(0, 5);
 }
 
-// Strategic queries: durable, structural shifts — regulatory phase-ins,
-// market/industry outlook reports, multi-phase initiatives — the kind of
-// thing worth building a content pillar around for the quarter, not just
-// this week's news cycle.
-function buildStrategicQueries(p: DomainProfile): string[] {
-  const q: string[] = [];
-  const loc = p.target_locations ? ` ${p.target_locations}` : '';
-  const splitList = (s?: string) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
-  if (p.industry) {
-    q.push(`${p.industry}${loc} industry outlook 2026`);
-    q.push(`${p.industry}${loc} market trends report 2026`);
-  }
-  splitList(p.core_topics).slice(0, 2).forEach((t) => q.push(`${t}${loc} regulatory changes 2026`));
-  splitList(p.target_keywords).slice(0, 2).forEach((k) => q.push(`${k}${loc} annual forecast`));
-  return [...new Set(q)].slice(0, 5);
-}
-
 async function runTavilySearch(query: string, opts: { topic: 'news' | 'general'; days: number; depth: 'basic' | 'advanced' }): Promise<any[]> {
   const key = process.env.TAVILY_API_KEY;
   if (!key) return [];
@@ -60,7 +43,6 @@ async function collectTavilySignals(profile: DomainProfile, accountLabel?: strin
   if (!key) return [];
 
   const reactiveQueries = buildReactiveQueries(profile);
-  const strategicQueries = buildStrategicQueries(profile);
   const viralQueries = buildViralQueries(profile);
 
   const seen = new Set<string>();
@@ -83,13 +65,11 @@ async function collectTavilySignals(profile: DomainProfile, accountLabel?: strin
     }
   }
 
-  const [reactiveResults, strategicResults, viralResults] = await Promise.all([
+  const [reactiveResults, viralResults] = await Promise.all([
     Promise.all(reactiveQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 14, depth: 'basic' }))),
-    Promise.all(strategicQueries.map((q) => runTavilySearch(q, { topic: 'general', days: 180, depth: 'advanced' }))),
     Promise.all(viralQueries.map((q) => runTavilySearch(q, { topic: 'news', days: 7, depth: 'basic' }))),
   ]);
   reactiveResults.forEach((results) => ingest(nicheSignals, results, 'reactive', 'niche'));
-  strategicResults.forEach((results) => ingest(nicheSignals, results, 'strategic', 'niche'));
   viralResults.forEach((results) => ingest(viralRaw, results, 'reactive', 'viral_bridged'));
 
   // Bridge layer: filter viral signals through safety, then attempt to

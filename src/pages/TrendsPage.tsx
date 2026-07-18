@@ -52,7 +52,6 @@ export default function TrendsPage() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>('actionable');
-  const [horizonFilter, setHorizonFilter] = useState<'all' | 'strategic' | 'reactive'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'niche' | 'viral_bridged'>('all');
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
@@ -238,8 +237,6 @@ export default function TrendsPage() {
     supertrend_exception: records.filter((r) => r.classification === 'supertrend_exception').length,
     monitor: records.filter((r) => r.classification === 'monitor').length,
     actioned: records.filter((r) => r.status === 'actioned').length,
-    strategic: records.filter((r) => r.time_horizon === 'strategic').length,
-    reactive: records.filter((r) => r.time_horizon !== 'strategic').length,
     viral_bridged: records.filter((r) => r.signal_type === 'viral_bridged').length,
     niche: records.filter((r) => r.signal_type !== 'viral_bridged').length,
   }), [records]);
@@ -252,10 +249,9 @@ export default function TrendsPage() {
     if (filter === 'actionable') base = records.filter((r) => r.classification === 'domain_trend' || r.classification === 'supertrend_exception');
     else if (filter === 'actioned') base = records.filter((r) => r.status === 'actioned');
     else base = records.filter((r) => r.classification === filter);
-    if (horizonFilter !== 'all') base = base.filter((r) => (r.time_horizon === 'strategic') === (horizonFilter === 'strategic'));
     if (typeFilter !== 'all') base = base.filter((r) => (r.signal_type === 'viral_bridged') === (typeFilter === 'viral_bridged'));
     return [...base].sort(sortByScore);
-  }, [records, filter, horizonFilter, typeFilter]);
+  }, [records, filter, typeFilter]);
 
   function setField<K extends keyof TrendProfile>(k: K, v: TrendProfile[K]) { setProfile((p) => ({ ...p, [k]: v })); }
 
@@ -402,27 +398,6 @@ export default function TrendsPage() {
               </button>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
-            <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', fontWeight: 600, marginRight: 2 }}>Horizon:</span>
-            {[
-              { k: 'all' as const, label: 'All' },
-              { k: 'strategic' as const, label: `📅 Plan-worthy (${counts.strategic})` },
-              { k: 'reactive' as const, label: `⚡ This week (${counts.reactive})` },
-            ].map((f) => (
-              <button
-                key={f.k}
-                className="badge"
-                style={{
-                  cursor: 'pointer', fontSize: '0.7rem',
-                  background: horizonFilter === f.k ? '#8B5CF6' : undefined,
-                  color: horizonFilter === f.k ? '#fff' : undefined,
-                }}
-                onClick={() => setHorizonFilter(f.k)}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
         </>
       )}
 
@@ -462,9 +437,6 @@ export default function TrendsPage() {
                   <span className="badge" style={{ fontSize: '0.6rem', background: cm.color + '18', color: cm.color }}>{cm.label}</span>
                   <span className="badge" style={{ fontSize: '0.6rem', background: pc + '18', color: pc }}>{t.priority}</span>
                   <span className="badge" style={{ fontSize: '0.6rem' }}>{t.trend_stage}</span>
-                  <span className="badge" style={{ fontSize: '0.6rem', background: t.time_horizon === 'strategic' ? '#8B5CF618' : '#0EA5E918', color: t.time_horizon === 'strategic' ? '#8B5CF6' : '#0EA5E9' }}>
-                    {t.time_horizon === 'strategic' ? '📅 Plan-worthy' : '⚡ This week'}
-                  </span>
                   {t.status === 'actioned' && <span className="badge" style={{ fontSize: '0.6rem', background: '#10B98118', color: '#10B981' }}>Actioned</span>}
                   {t.needs_human_review && <span className="badge" style={{ fontSize: '0.6rem', background: '#F59E0B18', color: '#F59E0B' }}>Review</span>}
                   <span style={{ marginLeft: 'auto', fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600 }}>

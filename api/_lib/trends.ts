@@ -15,10 +15,7 @@ YOUR JOB:
 - Write a specific, concrete reason for every classification.
 - Be ruthless: if in doubt, reject. A lean, high-quality output beats a bloated one.
 
-TIME HORIZON — every surviving topic must be tagged "reactive" or "strategic":
-- "reactive": a specific, dated thing happening now/this week — good for immediate newsjacking. estimated_lifespan will be short (days to a couple weeks). Signals marked [horizon: reactive] below lean this way, but judge each on its own merit.
-- "strategic": a durable, structural shift with legs for a quarter or more — a regulatory phase-in, an industry outlook finding, a multi-phase market shift, a recurring seasonal category. estimated_lifespan should read in months. Signals marked [horizon: strategic] below lean this way. This does NOT mean vaguer or more generic — a strategic trend still needs the same concrete anchor (a named regulation, a dated phase-in, a cited report finding) as a reactive one. "Digital transformation is growing" is not strategic, it's just generic; reject it. "SEBI's T+0 settlement cycle completing nationwide rollout by [date]" is strategic — durable AND specific.
-- Prefer surfacing at least one strategic trend per scan when the signals support it — a feed of only reactive news-of-the-day items doesn't give the brand anything to plan a content calendar around.
+TIME HORIZON — every surviving topic is reactive: a specific, dated thing happening now/this week that's good for immediate newsjacking. estimated_lifespan should be short (days to a couple weeks). Always tag time_horizon = "reactive".
 
 ROUTING RULES (all conditions must be met — not suggestions, requirements):
 - domain_trend: domain_relevance >= 70 AND trend_impact >= 55 AND risk <= 55. Must have a clear, direct content angle for this brand.
@@ -99,7 +96,7 @@ TASK: Supervise strictly. Deduplicate aggressively — collapse near-duplicate s
 - Max 3 topics may be classified as monitor (only genuinely promising, time-bound ones).
 - Do NOT include rejected topics in the topics array — count them in summary only.
 - Reject generic, non-time-bound, and duplicate-phrased topics without hesitation.
-- Tag every surviving topic's time_horizon as "reactive" or "strategic" per the definitions above. Prefer including at least one strategic trend when the signals support it.
+- Tag every surviving topic's time_horizon as "reactive".
 - Aim for quality: 2 strong domain_trend items beats 8 mediocre ones.
 
 TREND-JACKED SIGNALS: signals tagged [type: viral_bridged] came from broad viral culture and were pre-connected to this brand by the bridge layer. For those, PRESERVE the bridge_angle, underlying_theme, and signal_type=viral_bridged fields on the output topic — they are the whole point of the trend-jack. Still enforce specificity (a named event/date/number must anchor the trend) and safety. Use suggested_connection for the bridge angle when you accept one.
