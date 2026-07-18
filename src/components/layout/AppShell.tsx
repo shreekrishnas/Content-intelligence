@@ -1,5 +1,4 @@
-import { useEffect, lazy, Suspense } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { useAppStore } from '@/store';
 import { useAccount } from '@/contexts/AccountContext';
 import Atmosphere from './Atmosphere';
@@ -44,7 +43,19 @@ export default function AppShell() {
   }, [theme]);
 
   const currentTab = activeTab === 'dashboard' ? 'analyze' : activeTab;
-  const ActivePage = pages[currentTab];
+
+  // Keep-alive tabs: once a tab has been opened, its page component stays
+  // mounted (just hidden) instead of unmounting on every switch. Previously
+  // each tab was conditionally rendered by key, so leaving and returning to
+  // a tab remounted the component from scratch — re-running every
+  // data-fetching useEffect and discarding all in-progress state (scroll
+  // position, wizard steps, unsaved form fields, loaded records). Now that
+  // work only happens once per session per tab; switching back just shows
+  // the pane as it was left.
+  const [visitedTabs, setVisitedTabs] = useState<string[]>([currentTab]);
+  useEffect(() => {
+    setVisitedTabs((prev) => (prev.includes(currentTab) ? prev : [...prev, currentTab]));
+  }, [currentTab]);
 
   return (
     <div className="app-outer">
@@ -54,20 +65,20 @@ export default function AppShell() {
           <Sidebar activeTab={currentTab} onTabChange={setActiveTab} isAdmin={isAdmin} />
           <div className="app-content">
             <Topbar activeTab={currentTab} onToggleTheme={toggleTheme} theme={theme} />
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={currentTab}
-                className="app-main"
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
-              >
-                <Suspense fallback={<div className="empty-state"><p>Loading...</p></div>}>
-                  {ActivePage && <ActivePage />}
-                </Suspense>
-              </motion.div>
-            </AnimatePresence>
+            <div className="app-main" style={{ position: 'relative' }}>
+              <Suspense fallback={<div className="empty-state"><p>Loading...</p></div>}>
+                {visitedTabs.map((tabKey) => {
+                  const Page = pages[tabKey];
+                  if (!Page) return null;
+                  const isActive = tabKey === currentTab;
+                  return (
+                    <div key={tabKey} style={{ display: isActive ? 'block' : 'none' }}>
+                      <Page />
+                    </div>
+                  );
+                })}
+              </Suspense>
+            </div>
           </div>
         </div>
       </div>
