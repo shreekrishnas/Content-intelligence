@@ -66,18 +66,25 @@ export default function AppShell() {
           <div className="app-content">
             <Topbar activeTab={currentTab} onToggleTheme={toggleTheme} theme={theme} />
             <div className="app-main" style={{ position: 'relative' }}>
-              <Suspense fallback={<div className="empty-state"><p>Loading...</p></div>}>
-                {visitedTabs.map((tabKey) => {
-                  const Page = pages[tabKey];
-                  if (!Page) return null;
-                  const isActive = tabKey === currentTab;
-                  return (
-                    <div key={tabKey} style={{ display: isActive ? 'block' : 'none' }}>
+              {visitedTabs.map((tabKey) => {
+                const Page = pages[tabKey];
+                if (!Page) return null;
+                const isActive = tabKey === currentTab;
+                return (
+                  <div key={tabKey} style={{ display: isActive ? 'block' : 'none' }}>
+                    {/* Each tab gets its own Suspense boundary. A single shared
+                        boundary would mean loading a brand-new tab's chunk
+                        suspends the WHOLE boundary — React discards and
+                        remounts every already-loaded sibling in it, wiping
+                        out any data/state they were holding. Scoping the
+                        boundary per tab means loading tab B's chunk can never
+                        touch tab A's already-committed state. */}
+                    <Suspense fallback={<div className="empty-state"><p>Loading...</p></div>}>
                       <Page />
-                    </div>
-                  );
-                })}
-              </Suspense>
+                    </Suspense>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
