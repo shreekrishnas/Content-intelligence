@@ -134,7 +134,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             touchLastSeen();
             startHeartbeat();
           }
-          set({ session, user: mapSupabaseUser(session.user), error: null });
+          // TOKEN_REFRESHED fires on every tab-focus via Supabase's visibilitychange
+          // listener. Only update the user object when the user identity actually
+          // changes — otherwise a new object reference triggers AccountContext to
+          // reload all accounts and re-render every page as "loading".
+          if (event === 'TOKEN_REFRESHED') {
+            set({ session });
+          } else {
+            set({ session, user: mapSupabaseUser(session.user), error: null });
+          }
         } else {
           stopHeartbeat();
           set({ session: null, user: null });
