@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { motion, useInView } from 'motion/react';
+import { useInView } from 'motion/react';
 
 interface StatCardProps {
   label: string;
@@ -32,12 +32,9 @@ export default function StatCard({ label, value, color }: StatCardProps) {
   const isNumber = typeof value === 'number';
 
   return (
-    <motion.div
+    <div
       className="glass-card-static"
       style={{ position: 'relative', overflow: 'hidden' }}
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
     >
       <div
         style={{
@@ -63,6 +60,6 @@ export default function StatCard({ label, value, color }: StatCardProps) {
           {isNumber ? <AnimatedNumber target={value} /> : value}
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

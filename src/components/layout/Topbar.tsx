@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import { useAccount } from '@/contexts/AccountContext';
 import { useAuthStore } from '@/stores/authStore';
 
@@ -223,30 +222,8 @@ export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps)
   return (
     <div className="topbar">
       <div style={{ overflow: 'hidden', minWidth: 0 }}>
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={activeTab + '-title'}
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="topbar-title"
-          >
-            {meta.title}
-          </motion.div>
-        </AnimatePresence>
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div
-            key={activeTab + '-sub'}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, delay: 0.05 }}
-            className="topbar-sub"
-          >
-            {meta.subtitle}
-          </motion.div>
-        </AnimatePresence>
+        <div className="topbar-title">{meta.title}</div>
+        <div className="topbar-sub">{meta.subtitle}</div>
       </div>
       <div className="topbar-right">
         <AccountSwitcher />

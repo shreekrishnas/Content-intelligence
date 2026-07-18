@@ -1,4 +1,3 @@
-import { motion } from 'motion/react';
 import type { ReactNode } from 'react';
 
 interface EmptyStateProps {
@@ -72,10 +71,7 @@ const illustrations: Record<string, ReactNode> = {
 
 export default function EmptyState({ icon, title, description, action }: EmptyStateProps) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
+    <div
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -85,13 +81,7 @@ export default function EmptyState({ icon, title, description, action }: EmptySt
         gap: '0.75rem',
       }}
     >
-      <motion.div
-        initial={{ scale: 0.85, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ delay: 0.1, duration: 0.35, ease: [0.34, 1.56, 0.64, 1] }}
-      >
-        {illustrations[icon]}
-      </motion.div>
+      <div>{illustrations[icon]}</div>
       <div style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>{title}</div>
       {description && (
         <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', maxWidth: 320, lineHeight: 1.5 }}>
@@ -99,6 +89,6 @@ export default function EmptyState({ icon, title, description, action }: EmptySt
         </div>
       )}
       {action && <div style={{ marginTop: '0.5rem' }}>{action}</div>}
-    </motion.div>
+    </div>
   );
 }

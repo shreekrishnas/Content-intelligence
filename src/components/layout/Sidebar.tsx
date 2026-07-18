@@ -92,14 +92,11 @@ export default function Sidebar({ activeTab, onTabChange, isAdmin }: SidebarProp
   return (
     <div className="sidebar">
       <Logo size={44} radius={13} style={{ marginBottom: 10 }} />
-      {tabs.map((tab, i) => (
+      {tabs.map((tab) => (
         <Tooltip key={tab.id} content={tab.label} placement="right">
           <motion.div
             className={`sidebar-item${activeTab === tab.id ? " active" : ""}`}
             onClick={() => onTabChange(tab.id)}
-            initial={{ opacity: 0, x: -12 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.045, duration: 0.22, ease: 'easeOut' }}
             whileTap={{ scale: 0.92 }}
           >
             {tab.icon}
@@ -113,9 +110,6 @@ export default function Sidebar({ activeTab, onTabChange, isAdmin }: SidebarProp
           <motion.div
             className={`sidebar-item${activeTab === 'admin' ? " active" : ""}`}
             onClick={() => onTabChange('admin')}
-            initial={{ opacity: 0, x: -12 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: tabs.length * 0.045, duration: 0.22, ease: 'easeOut' }}
             whileTap={{ scale: 0.92 }}
             style={{
               marginTop: 'auto',
