@@ -168,7 +168,22 @@ export default function TrendsPage() {
       if (res.error) { setError(res.error); return; }
       if (res.data?.note) setNote(res.data.note);
       const topics = res.data?.topics || [];
-      if (!topics.length) { setNote(res.data?.note || 'No trends qualified from this scan.'); return; }
+      if (!topics.length) {
+        const reviewed = (res.data as any)?.signals_reviewed;
+        const summary = (res.data as any)?.summary;
+        const parts: string[] = [];
+        if (res.data?.note) parts.push(res.data.note);
+        if (typeof reviewed === 'number' && reviewed > 0) {
+          parts.push(`Supervisor reviewed ${reviewed} signals — all classified as reject.`);
+          if (summary?.generic_filtered) parts.push(`${summary.generic_filtered} filtered as generic.`);
+          if (summary?.duplicates_merged) parts.push(`${summary.duplicates_merged} merged as duplicates.`);
+          parts.push('Try broadening Domain Profile → Core Topics, or lower the specificity by adding brand-name / product terms so the supervisor has more angles to work with.');
+        } else if (!parts.length) {
+          parts.push('No trends qualified from this scan.');
+        }
+        setNote(parts.join(' '));
+        return;
+      }
       if (!res.data?.saved) {
         const { error: saveErr } = await api.trends.saveScan(accountId, res.data?.source || mode, topics);
         if (saveErr) { setError(`Scanned but could not save: ${saveErr}`); return; }
