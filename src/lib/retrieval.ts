@@ -3,9 +3,11 @@ import type { KnowledgeChunk } from '@/types';
 
 const CONSTRAINT_CATEGORIES = (import.meta.env.VITE_CONSTRAINT_CATEGORIES || 'compliance,brand,guidelines').split(',');
 const REQUIRED_CATEGORIES = (import.meta.env.VITE_GENERATION_REQUIRED_CATEGORIES || 'brand').split(',');
-const TOP_K = parseInt(import.meta.env.VITE_RETRIEVAL_TOP_K || '8', 10);
+const TOP_K = parseInt(import.meta.env.VITE_RETRIEVAL_TOP_K || '10', 10);
 const MIN_SIMILARITY = parseFloat(import.meta.env.VITE_RETRIEVAL_MIN_SIMILARITY || '0.25');
 const FETCH_LIMIT = 120;
+// How many candidates to pull from semantic search before diversity cut.
+const SEMANTIC_FETCH_MULT = 3;
 // Adaptive context budget: total characters of chunk text handed to the LLM.
 // Keeps retrieved context + constraints + prompt inside the model window
 // instead of overflowing it on accounts with long chunks.
@@ -139,7 +141,7 @@ async function scoreBySemantic(accountId: string, queryEmbedding: number[], excl
   const { data, error } = await supabase.rpc('match_chunks', {
     p_account_id: accountId,
     p_query_embedding: queryEmbedding as any,
-    p_match_count: TOP_K,
+    p_match_count: TOP_K * SEMANTIC_FETCH_MULT,
     p_exclude_file_ids: excludeFileIds,
   });
   if (error) return null;
@@ -190,6 +192,36 @@ function fitToBudget(chunks: RetrievalChunk[], budgetChars = CONTEXT_BUDGET_CHAR
     if (out.length > 0 && used + len > budgetChars) break;
     out.push(c);
     used += len;
+  }
+  return out;
+}
+
+/** Round-robin file diversification. Given a ranked list, interleave chunks
+ *  from different files so no single document monopolises the context. Each
+ *  file gets at least one slot (if it has relevant chunks) before any file
+ *  gets a second. Within each file's allocation, original rank is preserved. */
+function diversifyByFile(chunks: RetrievalChunk[], limit: number): RetrievalChunk[] {
+  if (chunks.length <= 1) return chunks;
+  const byFile = new Map<string, RetrievalChunk[]>();
+  for (const c of chunks) {
+    const fid = c.file_id || '_';
+    if (!byFile.has(fid)) byFile.set(fid, []);
+    byFile.get(fid)!.push(c);
+  }
+  if (byFile.size <= 1) return chunks.slice(0, limit);
+
+  const out: RetrievalChunk[] = [];
+  const queues = [...byFile.values()];
+  const idx = new Array(queues.length).fill(0);
+  while (out.length < limit) {
+    let added = false;
+    for (let q = 0; q < queues.length; q++) {
+      if (idx[q] < queues[q].length && out.length < limit) {
+        out.push(queues[q][idx[q]++]);
+        added = true;
+      }
+    }
+    if (!added) break;
   }
   return out;
 }
@@ -373,8 +405,9 @@ export async function retrieve(
       retrievalMode = 'semantic';
     }
 
-    // Dedup near-identical passages, then trim to the context budget.
-    chunks = fitToBudget(dedupeChunks(chunks));
+    // Diversify across files so a single document can't monopolise all
+    // slots, then dedup near-identical passages and trim to budget.
+    chunks = fitToBudget(dedupeChunks(diversifyByFile(chunks, TOP_K)));
   }
 
   // Fetch structured metadata for all files used.
