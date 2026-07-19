@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { auditLog } from '@/lib/audit';
 import type { KnowledgeFile, KnowledgeCategory, Priority } from '@/types';
 import { showToast } from '@/lib/toast';
+import AskKB from '@/components/AskKB';
 
 
 const KB_CATEGORIES: { id: KnowledgeCategory; label: string; desc: string }[] = [
@@ -41,7 +42,7 @@ function categoryLabel(id: string) {
 }
 
 export default function KnowledgeBasePage() {
-  const { accountId } = useAccount();
+  const { accountId, account } = useAccount();
   const [files, setFiles] = useState<KnowledgeFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [catFilter, setCatFilter] = useState<string>('all');
@@ -219,6 +220,8 @@ export default function KnowledgeBasePage() {
       <p className="eyebrow">Knowledge Management</p>
       <h1 className="page-title">Knowledge Base</h1>
       <p className="page-desc">Manage the files that ground every piece of content the agent creates.</p>
+
+      <AskKB accountId={accountId} accountName={account?.name} />
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
         <button

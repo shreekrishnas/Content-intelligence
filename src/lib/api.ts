@@ -394,6 +394,34 @@ export const api = {
       if (error) return err(pgError(error));
       return ok(data as KnowledgeChunk[]);
     },
+
+    /** Ask a question grounded in the current account's KB.
+     *  Retrieval runs on the caller (RLS-enforced, account-scoped); this
+     *  hand-off does the LLM step with a strict grounding rule. */
+    async ask(params: {
+      question: string;
+      chunks: Array<{ file_name?: string; category?: string; chunk_text?: string; similarity?: number }>;
+      constraintChunks: Array<{ file_name?: string; category?: string; chunk_text?: string }>;
+      history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    }): Promise<Result<{
+      answer: string;
+      grounded: boolean;
+      sources: Array<{ n: number; file_name: string; category: string }>;
+      retrieval: { chunks: number; constraint_chunks: number; top_similarity: number | null };
+    }>> {
+      try {
+        const { ok: isOk, data } = await fetchAPI('/api/kb-ask', {
+          question: params.question,
+          chunks: params.chunks,
+          constraintChunks: params.constraintChunks,
+          history: params.history,
+        });
+        if (!isOk || data.error) return err(data.error || 'KB assistant failed');
+        return ok(data);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : 'Network error while asking the KB');
+      }
+    },
   },
 
   // --------------------------------------------------------------------------
