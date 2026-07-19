@@ -958,6 +958,19 @@ export const api = {
       return ok(undefined as void);
     },
 
+    /** Bulk-drop every open opportunity for the account. Status change, not
+     *  a delete — each one stays recoverable via Reopen. Returns the count. */
+    async dropAllOpen(accountId: string): Promise<Result<number>> {
+      const { data, error } = await supabase
+        .from('opportunities')
+        .update({ status: 'dropped' })
+        .eq('account_id', accountId)
+        .eq('status', 'open')
+        .select('id');
+      if (error) return err(pgError(error));
+      return ok((data || []).length);
+    },
+
     async createFromAnalysis(
       accountId: string,
       analysisId: string,

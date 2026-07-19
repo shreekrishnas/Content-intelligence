@@ -31,6 +31,8 @@ export default function OpportunitiesPage() {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [confirmDropAll, setConfirmDropAll] = useState(false);
+  const [droppingAll, setDroppingAll] = useState(false);
 
   const loadOpps = useCallback(async () => {
     if (!accountId) return;
@@ -85,6 +87,18 @@ export default function OpportunitiesPage() {
     setActiveTab('studio');
   }
 
+  async function handleDropAll() {
+    if (!accountId || droppingAll) return;
+    setDroppingAll(true);
+    const { data: count, error } = await api.opportunities.dropAllOpen(accountId);
+    setDroppingAll(false);
+    setConfirmDropAll(false);
+    if (error) { showToast(error, 'error'); return; }
+    auditLog({ accountId, action: 'drop_all_opportunities', targetType: 'opportunity', detail: { count } }).catch(() => {});
+    showToast(`Dropped ${count} open opportunit${count === 1 ? 'y' : 'ies'}`);
+    loadOpps();
+  }
+
   if (loading) {
     return (
       <div>
@@ -97,11 +111,53 @@ export default function OpportunitiesPage() {
     );
   }
 
+  const openCount = opportunities.filter((o) => o.status === 'open').length;
+
   return (
     <div>
-      <p className="eyebrow">Content Pipeline</p>
-      <h1 className="page-title">Opportunities</h1>
-      <p className="page-desc">Content opportunities surfaced from analyses. Filter, review, and send to Studio.</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div>
+          <p className="eyebrow">Content Pipeline</p>
+          <h1 className="page-title">Opportunities</h1>
+          <p className="page-desc">Content opportunities surfaced from analyses. Filter, review, and send to Studio.</p>
+        </div>
+        {openCount > 0 && (
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ flexShrink: 0, color: '#DC2626', border: '1px solid #DC262640' }}
+            onClick={() => setConfirmDropAll(true)}
+          >
+            Drop all
+          </button>
+        )}
+      </div>
+
+      {confirmDropAll && (
+        <div className="modal-overlay" onClick={() => !droppingAll && setConfirmDropAll(false)}>
+          <div className="glass-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800, marginBottom: '0.6rem', fontFamily: 'Fraunces, Georgia, serif' }}>
+              Drop all open opportunities?
+            </div>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
+              This will mark all <strong>{openCount}</strong> open opportunit{openCount === 1 ? 'y' : 'ies'} as dropped.
+            </p>
+            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1.2rem' }}>
+              Nothing is deleted — dropped items stay under the &ldquo;Dropped&rdquo; filter and can be reopened one by one. Items already in Studio are not touched.
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setConfirmDropAll(false)} disabled={droppingAll}>Cancel</button>
+              <button
+                className="btn btn-sm"
+                style={{ background: '#DC2626', color: '#fff', fontWeight: 700 }}
+                onClick={handleDropAll}
+                disabled={droppingAll}
+              >
+                {droppingAll ? 'Dropping…' : `Drop ${openCount} opportunit${openCount === 1 ? 'y' : 'ies'}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
         {[
