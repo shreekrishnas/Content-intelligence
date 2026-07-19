@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { chunkText } from '@/lib/chunker';
+import { chunkText, dedupeChunkList } from '@/lib/chunker';
 import { parseFile } from '@/lib/fileParser';
 import type {
   KnowledgeFile,
@@ -142,7 +142,7 @@ export const api = {
 
       try {
         const text = await parseFile(file);
-        const chunks = chunkText(text);
+        const chunks = dedupeChunkList(chunkText(text));
 
         if (chunks.length > 0) {
           const chunkRows = chunks.map((c) => ({
@@ -299,7 +299,7 @@ export const api = {
       try { text = await parseFile(fakeFile); } catch (e) {
         return err(e instanceof Error ? e.message : 'Failed to parse file');
       }
-      const chunks = chunkText(text);
+      const chunks = dedupeChunkList(chunkText(text));
       if (chunks.length === 0) return err('Parsed file produced zero chunks — content may be empty.');
 
       // Delete any orphan chunks for this file first.

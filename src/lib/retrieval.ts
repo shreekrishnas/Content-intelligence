@@ -6,6 +6,12 @@ const REQUIRED_CATEGORIES = (import.meta.env.VITE_GENERATION_REQUIRED_CATEGORIES
 const TOP_K = parseInt(import.meta.env.VITE_RETRIEVAL_TOP_K || '8', 10);
 const MIN_SIMILARITY = parseFloat(import.meta.env.VITE_RETRIEVAL_MIN_SIMILARITY || '0.25');
 const FETCH_LIMIT = 120;
+// Adaptive context budget: total characters of chunk text handed to the LLM.
+// Keeps retrieved context + constraints + prompt inside the model window
+// instead of overflowing it on accounts with long chunks.
+const CONTEXT_BUDGET_CHARS = parseInt(import.meta.env.VITE_RETRIEVAL_CONTEXT_BUDGET || '24000', 10);
+// Reciprocal Rank Fusion constant (standard value from the RRF paper).
+const RRF_K = 60;
 
 export interface RetrievalChunk extends KnowledgeChunk {
   similarity?: number;
@@ -34,7 +40,7 @@ export interface RetrievalResult {
     missingRequired: string[];
   };
   /** How the context chunks were selected — useful for diagnostics/UI. */
-  retrievalMode?: 'semantic' | 'keyword' | 'none';
+  retrievalMode?: 'hybrid' | 'semantic' | 'keyword' | 'rewritten' | 'none';
 }
 
 export async function checkReadiness(accountId: string): Promise<{
@@ -155,6 +161,74 @@ async function scoreBySemantic(accountId: string, queryEmbedding: number[], excl
   return { chunks, topScore };
 }
 
+// ---- Hybrid fusion, dedup, budget ----------------------------------------
+
+/** Normalized key for near-identical chunk detection. */
+function chunkKey(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 300);
+}
+
+/** Drop near-identical chunks (same normalized text) — duplicate uploads and
+ *  chunk overlap otherwise pollute the context with repeated passages. */
+function dedupeChunks(chunks: RetrievalChunk[]): RetrievalChunk[] {
+  const seen = new Set<string>();
+  return chunks.filter((c) => {
+    const key = chunkKey(c.chunk_text || '');
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Trim the chunk list so total text stays inside the context budget.
+ *  Always keeps at least one chunk. */
+function fitToBudget(chunks: RetrievalChunk[], budgetChars = CONTEXT_BUDGET_CHARS): RetrievalChunk[] {
+  const out: RetrievalChunk[] = [];
+  let used = 0;
+  for (const c of chunks) {
+    const len = (c.chunk_text || '').length;
+    if (out.length > 0 && used + len > budgetChars) break;
+    out.push(c);
+    used += len;
+  }
+  return out;
+}
+
+/** Reciprocal Rank Fusion: combines semantic and keyword rankings. Chunks
+ *  that appear in BOTH lists get boosted; either list alone still surfaces
+ *  its top results. This is the standard hybrid-retrieval merge — BM25-style
+ *  keyword match and dense vectors fail on different queries, so fusing them
+ *  beats either alone. */
+function fuseRRF(semantic: RetrievalChunk[], keyword: RetrievalChunk[]): RetrievalChunk[] {
+  const scores = new Map<string, { chunk: RetrievalChunk; score: number }>();
+  const add = (list: RetrievalChunk[]) => {
+    list.forEach((c, rank) => {
+      const key = c.id || chunkKey(c.chunk_text || '');
+      const rrf = 1 / (RRF_K + rank + 1);
+      const existing = scores.get(key);
+      if (existing) existing.score += rrf;
+      else scores.set(key, { chunk: c, score: rrf });
+    });
+  };
+  add(semantic);
+  add(keyword);
+  return [...scores.values()]
+    .sort((a, b) => b.score - a.score)
+    .map((s) => s.chunk);
+}
+
+/** Deterministic query rewrite for the empty-retrieval fallback: keep only
+ *  the most distinctive terms (longest words, deduped, no stopwords). A
+ *  long conversational query often fails keyword matching that its core
+ *  nouns would hit. */
+const REWRITE_STOPWORDS = new Set(['the','a','an','and','or','but','for','with','about','this','that','these','those','from','into','have','has','will','would','could','should','their','there','what','when','where','which','while','been','being','make','made','want','need','like','just','very','really','please','content','create','generate','write']);
+function rewriteQuery(queryText: string): string {
+  const words = [...new Set(
+    queryText.toLowerCase().split(/\W+/).filter((w) => w.length > 3 && !REWRITE_STOPWORDS.has(w)),
+  )];
+  return words.sort((a, b) => b.length - a.length).slice(0, 8).join(' ');
+}
+
 // ---- Main retrieve() ------------------------------------------------------
 
 export async function retrieve(
@@ -227,7 +301,7 @@ export async function retrieve(
       .in('file_id', constraintIds)
       .order('position', { ascending: true })
       .limit(200);
-    constraintChunks = (data || []).map(mapChunk);
+    constraintChunks = dedupeChunks((data || []).map(mapChunk));
   }
 
   const { data: contextFiles } = await supabase
@@ -241,42 +315,66 @@ export async function retrieve(
     .map((f: any) => f.id)
     .filter((id: string) => !constraintIds.includes(id));
 
-  // ---- Semantic retrieval first, keyword fallback ----------------------
+  // ---- Hybrid retrieval: semantic + keyword fused with RRF --------------
+  // The two retrievers fail on different queries: dense vectors miss exact
+  // names/jargon; keyword misses paraphrases. Run both, fuse, then apply a
+  // fallback chain (query rewrite → graceful refuse) so the LLM is never
+  // handed an empty or junk context silently.
   let chunks: RetrievalChunk[] = [];
   let topScore = 0;
-  let retrievalMode: 'semantic' | 'keyword' | 'none' = 'none';
+  let retrievalMode: 'hybrid' | 'semantic' | 'keyword' | 'rewritten' | 'none' = 'none';
 
   if (contextIds.length > 0) {
     const embedding = await embedQuery(queryText);
-    let semanticResult: { chunks: RetrievalChunk[]; topScore: number } | null = null;
-    if (embedding) {
-      semanticResult = await scoreBySemantic(accountId, embedding, constraintIds);
-      if (semanticResult && semanticResult.chunks.length > 0 && semanticResult.topScore >= MIN_SIMILARITY) {
-        chunks = semanticResult.chunks;
-        topScore = semanticResult.topScore;
-        retrievalMode = 'semantic';
+    const [semanticResult, keywordResult] = await Promise.all([
+      embedding ? scoreBySemantic(accountId, embedding, constraintIds) : Promise.resolve(null),
+      scoreByKeywords(accountId, queryText, contextIds),
+    ]);
+
+    // Low-confidence gate: semantic hits below MIN_SIMILARITY are not
+    // trusted on their own; keyword hits need at least one matched term.
+    const semanticOk = !!semanticResult && semanticResult.chunks.length > 0 && semanticResult.topScore >= MIN_SIMILARITY;
+    const keywordOk = keywordResult.chunks.length > 0 && keywordResult.topScore > 0;
+
+    if (semanticOk && keywordOk) {
+      chunks = fuseRRF(semanticResult!.chunks, keywordResult.chunks).slice(0, TOP_K);
+      topScore = semanticResult!.topScore;
+      retrievalMode = 'hybrid';
+    } else if (semanticOk) {
+      chunks = semanticResult!.chunks;
+      topScore = semanticResult!.topScore;
+      retrievalMode = 'semantic';
+    } else if (keywordOk) {
+      chunks = keywordResult.chunks;
+      topScore = keywordResult.topScore;
+      retrievalMode = 'keyword';
+    }
+
+    // Fallback chain step 1: rewrite the query to its distinctive terms and
+    // retry keyword scoring — long conversational queries often fail where
+    // their core nouns would hit.
+    if (chunks.length === 0) {
+      const rewritten = rewriteQuery(queryText);
+      if (rewritten && rewritten !== queryText.toLowerCase().trim()) {
+        const retry = await scoreByKeywords(accountId, rewritten, contextIds);
+        if (retry.chunks.length > 0 && retry.topScore > 0) {
+          chunks = retry.chunks;
+          topScore = retry.topScore;
+          retrievalMode = 'rewritten';
+        }
       }
     }
 
-    // Fallback: keyword search when semantic is absent, failed, or below threshold.
-    // If keyword also finds nothing (topScore === 0), prefer any semantic results
-    // we had over an empty response — below-threshold semantic is still better than nothing.
-    if (chunks.length === 0) {
-      const keyword = await scoreByKeywords(accountId, queryText, contextIds);
-      if (keyword.chunks.length > 0 && keyword.topScore > 0) {
-        chunks = keyword.chunks;
-        topScore = keyword.topScore;
-        retrievalMode = 'keyword';
-      } else if (semanticResult?.chunks.length) {
-        chunks = semanticResult.chunks;
-        topScore = semanticResult.topScore;
-        retrievalMode = 'semantic';
-      } else {
-        chunks = keyword.chunks;
-        topScore = keyword.topScore;
-        retrievalMode = keyword.chunks.length > 0 ? 'keyword' : 'none';
-      }
+    // Fallback chain step 2: below-threshold semantic beats an empty
+    // context — the LLM handles weakly-relevant passages better than none.
+    if (chunks.length === 0 && semanticResult?.chunks.length) {
+      chunks = semanticResult.chunks;
+      topScore = semanticResult.topScore;
+      retrievalMode = 'semantic';
     }
+
+    // Dedup near-identical passages, then trim to the context budget.
+    chunks = fitToBudget(dedupeChunks(chunks));
   }
 
   // Fetch structured metadata for all files used.
