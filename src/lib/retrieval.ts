@@ -113,7 +113,7 @@ async function scoreByKeywords(accountId: string, queryText: string, contextIds:
     .sort((a, b) => b.score - a.score);
   const topScore = scored[0]?.score ?? 0;
   const chunks = scored
-    .slice(0, TOP_K)
+    .slice(0, TOP_K * SEMANTIC_FETCH_MULT)
     .map(s => ({ ...s.chunk, similarity: s.score }));
   return { chunks, topScore };
 }
@@ -369,7 +369,7 @@ export async function retrieve(
     const keywordOk = keywordResult.chunks.length > 0 && keywordResult.topScore > 0;
 
     if (semanticOk && keywordOk) {
-      chunks = fuseRRF(semanticResult!.chunks, keywordResult.chunks).slice(0, TOP_K);
+      chunks = fuseRRF(semanticResult!.chunks, keywordResult.chunks);
       topScore = semanticResult!.topScore;
       retrievalMode = 'hybrid';
     } else if (semanticOk) {
