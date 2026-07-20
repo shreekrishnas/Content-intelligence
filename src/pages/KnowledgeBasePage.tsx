@@ -53,6 +53,7 @@ export default function KnowledgeBasePage() {
   const [uploadPriority, setUploadPriority] = useState<Priority>('standard');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [indexStatus, setIndexStatus] = useState<{ total: number; embedded: number; missing: number; skipped: number; files: number } | null>(null);
@@ -84,7 +85,7 @@ export default function KnowledgeBasePage() {
     let failed = 0;
     try {
       for (const f of files) {
-        const { data, error } = await api.kb.reprocessFile(accountId, f.id);
+        const { data, error } = await api.kb.reprocessFile(accountId, f.id, (msg) => setUploadStatus(`${f.file_name}: ${msg}`));
         if (error) { failed++; showToast(`${f.file_name}: ${error}`, 'error'); continue; }
         totalChunks += data?.chunks || 0;
         processed++;
@@ -148,7 +149,7 @@ export default function KnowledgeBasePage() {
       const { data, error } = await api.kb.upload(accountId, selectedFile, {
         category: uploadCat,
         priority: uploadPriority,
-      });
+      }, (msg) => setUploadStatus(msg));
 
       if (error) throw new Error(error);
 
@@ -171,6 +172,7 @@ export default function KnowledgeBasePage() {
       showToast(err.message || 'Upload failed', 'error');
     } finally {
       setUploading(false);
+      setUploadStatus('');
     }
   }
 
@@ -407,10 +409,15 @@ export default function KnowledgeBasePage() {
               </select>
             </div>
 
+            {uploading && uploadStatus && (
+              <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--color-bg-muted, #F3F4F6)', borderRadius: 8, fontSize: 13, color: 'var(--color-text-muted, #6B7280)' }}>
+                {uploadStatus}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-              <button className="btn btn-ghost" onClick={() => setShowUpload(false)}>Cancel</button>
+              <button className="btn btn-ghost" onClick={() => setShowUpload(false)} disabled={uploading}>Cancel</button>
               <button className="btn btn-primary" onClick={handleUpload} disabled={uploading || !selectedFile}>
-                {uploading ? 'Uploading...' : 'Upload'}
+                {uploading ? 'Processing...' : 'Upload'}
               </button>
             </div>
           </div>

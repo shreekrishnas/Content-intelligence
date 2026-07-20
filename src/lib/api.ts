@@ -108,6 +108,7 @@ export const api = {
         priority: KnowledgeFile['priority'];
         structured?: Record<string, any>;
       },
+      onProgress?: (msg: string) => void,
     ): Promise<Result<KnowledgeFile>> {
       const storagePath = `${accountId}/${Date.now()}_${file.name}`;
 
@@ -141,7 +142,7 @@ export const api = {
       const fileRow = row as KnowledgeFile;
 
       try {
-        const text = await parseFile(file);
+        const text = await parseFile(file, onProgress);
         const chunks = dedupeChunkList(chunkText(text));
 
         if (chunks.length > 0) {
@@ -276,7 +277,7 @@ export const api = {
      * trigger structured extraction + embedding. Used when uploads
      * completed but their chunks never made it into the DB.
      */
-    async reprocessFile(accountId: string, fileId: string): Promise<Result<{ chunks: number }>> {
+    async reprocessFile(accountId: string, fileId: string, onProgress?: (msg: string) => void): Promise<Result<{ chunks: number }>> {
       const { data: fileRow, error: fetchErr } = await supabase
         .from('knowledge_files')
         .select('id, file_name, category, storage_url')
@@ -304,7 +305,7 @@ export const api = {
       const fakeFile = new File([blob], (fileRow as any).file_name);
 
       let text: string;
-      try { text = await parseFile(fakeFile); } catch (e) {
+      try { text = await parseFile(fakeFile, onProgress); } catch (e) {
         return err(e instanceof Error ? e.message : 'Failed to parse file');
       }
       const chunks = dedupeChunkList(chunkText(text));

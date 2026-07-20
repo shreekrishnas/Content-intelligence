@@ -59,9 +59,6 @@ function finalize(text: string, kind: string): string {
     throw new Error(`No readable text found in ${kind} — the file may be scanned/image-based or password-protected. Please paste the text content manually.`);
   }
   const cleaned = collapseWhitespace(sanitize(text)).slice(0, MAX_OUTPUT_CHARS);
-  if (kind === 'PDF' && isGarbledText(cleaned)) {
-    throw new Error(`The ${kind} text appears corrupted (font encoding issue). Try: (1) re-save the PDF from the original app with "Embed fonts" enabled, (2) export as DOCX instead, or (3) copy-paste the text into a .txt file and upload that.`);
-  }
   return cleaned;
 }
 
@@ -149,34 +146,90 @@ async function parseRtf(file: File): Promise<string> {
 }
 
 // ---- PDF via pdfjs-dist (lazy import) ---------------------------------------
+// Strategy: try text extraction first (fast). If the result is empty OR garbled
+// (custom font encodings that don't map to real Unicode), fall back to OCR by
+// rendering each page to a canvas and reading it with Tesseract. That way ANY
+// PDF works — text-based, image-based, or broken font encoding — the user
+// never has to know or care which kind they uploaded.
 
-async function parsePdf(file: File): Promise<string> {
+async function parsePdf(file: File, onProgress?: (msg: string) => void): Promise<string> {
   const buf = await file.arrayBuffer();
+  let pdfDoc: any = null;
+  let extractedText = '';
+
   try {
     const pdfjs: any = await import('pdfjs-dist');
-    // We disable the worker below, so no need to configure workerSrc.
-
-    const doc = await pdfjs.getDocument({
+    pdfDoc = await pdfjs.getDocument({
       data: new Uint8Array(buf),
-      disableWorker: true, // simpler + no CORS surprises; fine for KB uploads
+      disableWorker: true,
       isEvalSupported: false,
     }).promise;
 
     const pages: string[] = [];
-    for (let p = 1; p <= doc.numPages; p++) {
-      const page = await doc.getPage(p);
+    for (let p = 1; p <= pdfDoc.numPages; p++) {
+      const page = await pdfDoc.getPage(p);
       const content = await page.getTextContent();
       const items = (content.items as any[]).map((it) => it.str ?? '').filter(Boolean);
       if (items.length) pages.push(items.join(' '));
     }
-    const joined = pages.join('\n\n');
-    if (joined.trim()) return joined;
+    extractedText = pages.join('\n\n');
   } catch {
-    // fall through to primitive extractor
+    // fall through
   }
 
-  // Fallback: primitive text-object scan (works for many simple PDFs).
-  return primitivePdfText(buf);
+  // If text extraction worked and produced readable content, use it.
+  const cleaned = collapseWhitespace(sanitize(extractedText));
+  if (cleaned && !isGarbledText(cleaned)) return extractedText;
+
+  // Try the primitive scanner as a second attempt (works for some simple PDFs).
+  const primitive = primitivePdfText(buf);
+  const primitiveCleaned = collapseWhitespace(sanitize(primitive));
+  if (primitiveCleaned && primitiveCleaned.length > 200 && !isGarbledText(primitiveCleaned)) {
+    return primitive;
+  }
+
+  // Text extraction failed or produced garbage — OCR the rendered pages.
+  if (!pdfDoc) {
+    try {
+      const pdfjs: any = await import('pdfjs-dist');
+      pdfDoc = await pdfjs.getDocument({
+        data: new Uint8Array(buf),
+        disableWorker: true,
+        isEvalSupported: false,
+      }).promise;
+    } catch (e) {
+      throw new Error(`PDF could not be opened: ${e instanceof Error ? e.message : 'unknown error'}`);
+    }
+  }
+
+  onProgress?.('Text extraction failed — running OCR (this may take a minute)…');
+  return await ocrPdf(pdfDoc, onProgress);
+}
+
+async function ocrPdf(pdfDoc: any, onProgress?: (msg: string) => void): Promise<string> {
+  const tesseract: any = await import('tesseract.js');
+  const numPages = Math.min(pdfDoc.numPages, 50); // safety cap on very long PDFs
+  const worker = await tesseract.createWorker('eng');
+  try {
+    const pageTexts: string[] = [];
+    for (let p = 1; p <= numPages; p++) {
+      onProgress?.(`OCR page ${p} of ${numPages}…`);
+      const page = await pdfDoc.getPage(p);
+      const viewport = page.getViewport({ scale: 2 }); // 2x for sharper OCR
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) continue;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      const { data } = await worker.recognize(canvas);
+      const text = (data?.text ?? '').trim();
+      if (text) pageTexts.push(text);
+    }
+    return pageTexts.join('\n\n');
+  } finally {
+    await worker.terminate().catch(() => {});
+  }
 }
 
 function primitivePdfText(buf: ArrayBuffer): string {
@@ -305,7 +358,7 @@ const FRIENDLY_TYPE: Record<Format, string> = {
   txt: 'text file', unknown: 'file',
 };
 
-export async function parseFile(file: File): Promise<string> {
+export async function parseFile(file: File, onProgress?: (msg: string) => void): Promise<string> {
   if (file.size === 0) throw new Error(`${file.name}: file is empty.`);
   if (file.size > MAX_FILE_BYTES) throw new Error(`${file.name}: file is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max 20 MB.`);
 
@@ -337,7 +390,7 @@ export async function parseFile(file: File): Promise<string> {
         text = await parseRtf(file);
         break;
       case 'pdf':
-        text = await parsePdf(file);
+        text = await parsePdf(file, onProgress);
         break;
       case 'docx':
         text = await parseDocx(file);
