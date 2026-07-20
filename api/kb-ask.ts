@@ -51,7 +51,7 @@ function buildPassageBlock(chunks: NonNullable<AskBody['chunks']>): { block: str
     sources.push({ n, file_name: file, category: cat });
     // Trim each passage — a runaway single chunk shouldn't swallow the
     // context budget for the others.
-    const text = String(c.chunk_text || '').slice(0, 2400).trim();
+    const text = String(c.chunk_text || '').slice(0, 3200).trim();
     parts.push(`[${n}] (${file} · ${cat})\n${text}`);
   });
   return { block: parts.join('\n\n'), sources };
@@ -113,7 +113,7 @@ Answer the question strictly from the passages above. If it isn't in the passage
 
   try {
     const { content } = await callLLM(SYSTEM_PROMPT, user, {
-      maxTokens: 900,
+      maxTokens: 1400,
       temperature: 0.1,
     });
     const answer = content.trim();

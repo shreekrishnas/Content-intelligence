@@ -70,19 +70,26 @@ Does this account have active, ready files? Which required categories (e.g. `bra
 ### Step 2 — Load constraints
 All chunks from brand/compliance/guidelines files are fetched directly (deduplicated, capped at 200). These become non-negotiable instructions in the prompt.
 
-### Step 3 — Hybrid retrieval (the core)
-Two different search strategies run **in parallel** over the remaining files:
+### Step 3 — Smart routing: long context vs RAG
 
-- **Semantic search** — the query is embedded into a vector (via `/api/embed-query`), and pgvector's `match_chunks` returns the nearest chunks by cosine similarity. Good at paraphrases: "retirement corpus planning" finds a chunk about "building a nest egg for your 60s."
-- **Keyword search** — chunks are scored by how many distinctive query words they contain. Good at exact names and jargon that embeddings blur: "ELSS", "Section 80C", a product name.
+The system first measures the total text in the account's non-constraint KB files. This decides the retrieval strategy:
 
-The two ranked lists are merged with **Reciprocal Rank Fusion (RRF)**: each chunk earns `1/(60 + rank)` from every list it appears in. A chunk both retrievers liked beats a chunk only one liked. The top 8 fused chunks win.
+#### Path A — Long context (small KBs, ≤ 60k chars)
+If the entire KB fits under the long-context threshold (`VITE_LONG_CONTEXT_THRESHOLD`, default 60,000 chars), the system **skips retrieval entirely** and sends all chunks to the model in document order. This eliminates the "retrieval lottery" — the model sees the complete knowledge base, can reason across documents, compare information, and spot gaps between files. No embedding model, no semantic search, no risk of silent failure.
 
-### Step 4 — Confidence gates
+#### Path B — Hybrid RAG (large KBs, > 60k chars)
+For accounts with more data than the context window can hold, two search strategies run **in parallel**:
+
+- **Semantic search** — the query is embedded into a vector (via `/api/embed-query`), and pgvector's `match_chunks` returns the nearest chunks by cosine similarity (fetches 3x candidates for diversity). Good at paraphrases: "retirement corpus planning" finds a chunk about "building a nest egg for your 60s."
+- **Keyword search** — chunks are scored by how many distinctive query words they contain (also fetches 3x candidates). Good at exact names and jargon that embeddings blur: "ELSS", "Section 80C", a product name.
+
+The two ranked lists are merged with **Reciprocal Rank Fusion (RRF)**: each chunk earns `1/(60 + rank)` from every list it appears in. A chunk both retrievers liked beats a chunk only one liked.
+
+### Step 4 — Confidence gates (RAG mode only)
 - Semantic results only count if the best similarity ≥ **0.25** (`VITE_RETRIEVAL_MIN_SIMILARITY`) — below that, the "matches" are noise.
 - Keyword results only count if at least one real term matched.
 
-### Step 5 — Fallback chain (never generate from nothing, never fail silently)
+### Step 5 — Fallback chain (RAG mode only)
 
 ```
 hybrid result ──empty?──▶ rewrite query to its distinctive terms,
@@ -100,19 +107,19 @@ hybrid result ──empty?──▶ rewrite query to its distinctive terms,
                            the LLM invent an answer
 ```
 
-### Step 6 — Dedup + context budget
-Near-identical retrieved passages are collapsed, and the chunk list is trimmed so total text stays under **24,000 characters** (`VITE_RETRIEVAL_CONTEXT_BUDGET`) — retrieved context can never overflow the model's window no matter how long an account's chunks are.
+### Step 6 — File diversity + dedup + context budget
+In RAG mode, results are **diversified across files** using round-robin interleaving — no single document can monopolize all context slots. Then near-identical passages are collapsed, and the chunk list is trimmed so total text stays under **24,000 characters** (`VITE_RETRIEVAL_CONTEXT_BUDGET`).
 
 ### What the LLM finally receives
 
 ```
 [system prompt for the task]
 [constraint chunks]        ← brand voice, compliance, guidelines (always)
-[retrieved context chunks] ← the top fused evidence for THIS query
+[context chunks]           ← ALL chunks (long context) or top fused evidence (RAG)
 [the user's actual request]
 ```
 
-The response also reports **which files were used** (`sourcesUsed`) so the UI can show citations, and a `retrievalMode` diagnostic (`hybrid` / `semantic` / `keyword` / `rewritten` / `none`).
+The response also reports **which files were used** (`sourcesUsed`) so the UI can show citations, and a `retrievalMode` diagnostic (`long_context` / `hybrid` / `semantic` / `keyword` / `rewritten` / `none`).
 
 ---
 

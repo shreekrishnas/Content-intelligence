@@ -237,9 +237,14 @@ function TurnBubble({ turn }: { turn: Turn }) {
           ))}
         </div>
       )}
+      {turn.mode && !isError && (
+        <div style={{ marginTop: 4, fontSize: '0.62rem', color: 'var(--text-muted)', opacity: 0.7 }}>
+          {turn.mode === 'long_context' ? 'Full KB context' : `Retrieval: ${turn.mode}`}
+        </div>
+      )}
       {turn.grounded === false && !isError && (
         <div style={{ marginTop: 4, fontSize: '0.64rem', color: '#F59E0B' }}>
-          ⚠️ No passages cited — answer may be low confidence. Consider uploading more relevant files.
+          No passages cited — answer may be low confidence. Consider uploading more relevant files.
         </div>
       )}
     </div>

@@ -12,6 +12,11 @@ const SEMANTIC_FETCH_MULT = 3;
 // Keeps retrieved context + constraints + prompt inside the model window
 // instead of overflowing it on accounts with long chunks.
 const CONTEXT_BUDGET_CHARS = parseInt(import.meta.env.VITE_RETRIEVAL_CONTEXT_BUDGET || '24000', 10);
+// Long-context threshold: if total KB text (non-constraint) is under this,
+// skip retrieval entirely and send everything — no retrieval lottery, the
+// model sees the complete knowledge base. Set slightly above context budget
+// so the budget trimmer still enforces a hard cap.
+const LONG_CONTEXT_THRESHOLD = parseInt(import.meta.env.VITE_LONG_CONTEXT_THRESHOLD || '60000', 10);
 // Reciprocal Rank Fusion constant (standard value from the RRF paper).
 const RRF_K = 60;
 
@@ -42,7 +47,7 @@ export interface RetrievalResult {
     missingRequired: string[];
   };
   /** How the context chunks were selected — useful for diagnostics/UI. */
-  retrievalMode?: 'hybrid' | 'semantic' | 'keyword' | 'rewritten' | 'none';
+  retrievalMode?: 'hybrid' | 'semantic' | 'keyword' | 'rewritten' | 'long_context' | 'none';
 }
 
 export async function checkReadiness(accountId: string): Promise<{
@@ -347,67 +352,82 @@ export async function retrieve(
     .map((f: any) => f.id)
     .filter((id: string) => !constraintIds.includes(id));
 
-  // ---- Hybrid retrieval: semantic + keyword fused with RRF --------------
-  // The two retrievers fail on different queries: dense vectors miss exact
-  // names/jargon; keyword misses paraphrases. Run both, fuse, then apply a
-  // fallback chain (query rewrite → graceful refuse) so the LLM is never
-  // handed an empty or junk context silently.
+  // ---- Smart routing: long context vs RAG ----------------------------------
+  // If the account's KB is small enough, skip retrieval entirely and send
+  // ALL chunks to the model. This eliminates the retrieval lottery — the
+  // model sees the complete knowledge base and can reason across documents,
+  // spot gaps, and compare data. Only fall back to RAG when the KB exceeds
+  // the long-context threshold.
   let chunks: RetrievalChunk[] = [];
   let topScore = 0;
-  let retrievalMode: 'hybrid' | 'semantic' | 'keyword' | 'rewritten' | 'none' = 'none';
+  let retrievalMode: RetrievalResult['retrievalMode'] = 'none';
 
   if (contextIds.length > 0) {
-    const embedding = await embedQuery(queryText);
-    const [semanticResult, keywordResult] = await Promise.all([
-      embedding ? scoreBySemantic(accountId, embedding, constraintIds) : Promise.resolve(null),
-      scoreByKeywords(accountId, queryText, contextIds),
-    ]);
+    // Probe total KB size to decide: long context vs RAG.
+    const { data: allChunks } = await supabase
+      .from('knowledge_chunks')
+      .select('id, file_id, account_id, chunk_text, embed_model, token_count, position, created_at, knowledge_files!inner(file_name, category)')
+      .eq('account_id', accountId)
+      .in('file_id', contextIds)
+      .order('position', { ascending: true })
+      .limit(2000);
 
-    // Low-confidence gate: semantic hits below MIN_SIMILARITY are not
-    // trusted on their own; keyword hits need at least one matched term.
-    const semanticOk = !!semanticResult && semanticResult.chunks.length > 0 && semanticResult.topScore >= MIN_SIMILARITY;
-    const keywordOk = keywordResult.chunks.length > 0 && keywordResult.topScore > 0;
+    const allMapped = dedupeChunks((allChunks || []).map(mapChunk));
+    const totalChars = allMapped.reduce((sum, c) => sum + (c.chunk_text || '').length, 0);
 
-    if (semanticOk && keywordOk) {
-      chunks = fuseRRF(semanticResult!.chunks, keywordResult.chunks);
-      topScore = semanticResult!.topScore;
-      retrievalMode = 'hybrid';
-    } else if (semanticOk) {
-      chunks = semanticResult!.chunks;
-      topScore = semanticResult!.topScore;
-      retrievalMode = 'semantic';
-    } else if (keywordOk) {
-      chunks = keywordResult.chunks;
-      topScore = keywordResult.topScore;
-      retrievalMode = 'keyword';
-    }
+    if (totalChars <= LONG_CONTEXT_THRESHOLD) {
+      // ---- Long-context mode: send everything, no retrieval lottery ------
+      chunks = fitToBudget(allMapped, CONTEXT_BUDGET_CHARS);
+      topScore = 1;
+      retrievalMode = 'long_context';
+    } else {
+      // ---- RAG mode: hybrid retrieval for large KBs ---------------------
+      const embedding = await embedQuery(queryText);
+      const [semanticResult, keywordResult] = await Promise.all([
+        embedding ? scoreBySemantic(accountId, embedding, constraintIds) : Promise.resolve(null),
+        scoreByKeywords(accountId, queryText, contextIds),
+      ]);
 
-    // Fallback chain step 1: rewrite the query to its distinctive terms and
-    // retry keyword scoring — long conversational queries often fail where
-    // their core nouns would hit.
-    if (chunks.length === 0) {
-      const rewritten = rewriteQuery(queryText);
-      if (rewritten && rewritten !== queryText.toLowerCase().trim()) {
-        const retry = await scoreByKeywords(accountId, rewritten, contextIds);
-        if (retry.chunks.length > 0 && retry.topScore > 0) {
-          chunks = retry.chunks;
-          topScore = retry.topScore;
-          retrievalMode = 'rewritten';
+      const semanticOk = !!semanticResult && semanticResult.chunks.length > 0 && semanticResult.topScore >= MIN_SIMILARITY;
+      const keywordOk = keywordResult.chunks.length > 0 && keywordResult.topScore > 0;
+
+      if (semanticOk && keywordOk) {
+        chunks = fuseRRF(semanticResult!.chunks, keywordResult.chunks);
+        topScore = semanticResult!.topScore;
+        retrievalMode = 'hybrid';
+      } else if (semanticOk) {
+        chunks = semanticResult!.chunks;
+        topScore = semanticResult!.topScore;
+        retrievalMode = 'semantic';
+      } else if (keywordOk) {
+        chunks = keywordResult.chunks;
+        topScore = keywordResult.topScore;
+        retrievalMode = 'keyword';
+      }
+
+      // Fallback chain step 1: rewrite query to distinctive terms.
+      if (chunks.length === 0) {
+        const rewritten = rewriteQuery(queryText);
+        if (rewritten && rewritten !== queryText.toLowerCase().trim()) {
+          const retry = await scoreByKeywords(accountId, rewritten, contextIds);
+          if (retry.chunks.length > 0 && retry.topScore > 0) {
+            chunks = retry.chunks;
+            topScore = retry.topScore;
+            retrievalMode = 'rewritten';
+          }
         }
       }
-    }
 
-    // Fallback chain step 2: below-threshold semantic beats an empty
-    // context — the LLM handles weakly-relevant passages better than none.
-    if (chunks.length === 0 && semanticResult?.chunks.length) {
-      chunks = semanticResult.chunks;
-      topScore = semanticResult.topScore;
-      retrievalMode = 'semantic';
-    }
+      // Fallback chain step 2: below-threshold semantic beats empty context.
+      if (chunks.length === 0 && semanticResult?.chunks.length) {
+        chunks = semanticResult.chunks;
+        topScore = semanticResult.topScore;
+        retrievalMode = 'semantic';
+      }
 
-    // Diversify across files so a single document can't monopolise all
-    // slots, then dedup near-identical passages and trim to budget.
-    chunks = fitToBudget(dedupeChunks(diversifyByFile(chunks, TOP_K)));
+      // Diversify across files, dedup, and trim to budget.
+      chunks = fitToBudget(dedupeChunks(diversifyByFile(chunks, TOP_K)));
+    }
   }
 
   // Fetch structured metadata for all files used.
