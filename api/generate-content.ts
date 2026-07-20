@@ -20,6 +20,7 @@ YOUR APPROACH:
 
 interface GenerateRequest {
   task: 'outline' | 'draft' | 'regenerate' | 'quality_review';
+  account_id?: string;
   file_context?: (FileContext & { structured?: Record<string, unknown> })[];
   opportunity: {
     title: string;
@@ -299,7 +300,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       maxTokens,
       temperature: body.task === 'quality_review' ? 0.1 : 0.45,
     });
-    logUsage(null, 'generate-content', usage);
+    logUsage({ accountId: body.account_id }, 'generate-content', usage);
 
     let output;
     try {

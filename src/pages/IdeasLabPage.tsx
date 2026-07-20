@@ -365,6 +365,7 @@ export default function IdeasLabPage() {
     try {
       const kb = await getKbChunks(`${topic} ${audience} ${context}`);
       const res = await api.ideas.generate({
+        accountId: accountId || undefined,
         accountLabel: account?.name,
         topic, audience, contentType, goal, source, context,
         avoidTitles: [...ideas, ...saved].map((i) => i.title || '').filter(Boolean),
@@ -388,7 +389,7 @@ export default function IdeasLabPage() {
     setLoading(true); setError(null);
     try {
       const kb = await getKbChunks(`${account?.name || ''} seasonal timely`);
-      const res = await api.ideas.seasonal({ accountLabel: account?.name, month: new Date().toISOString().slice(0, 7), context, knowledgeChunks: kb });
+      const res = await api.ideas.seasonal({ accountId: accountId || undefined, accountLabel: account?.name, month: new Date().toISOString().slice(0, 7), context, knowledgeChunks: kb });
       if (res.error) setError(res.error);
       else setSeasonal(withIds(res.data || []));
     } finally { setLoading(false); }

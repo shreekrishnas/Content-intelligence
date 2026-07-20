@@ -45,6 +45,7 @@ interface IdeasRequest {
   output_type?: 'brief' | 'carousel' | 'blog' | 'caption';
   avoid_titles?: string[];
   knowledge_chunks?: KnowledgeChunk[];
+  account_id?: string;
 }
 
 function kbSection(chunks?: KnowledgeChunk[]): string {
@@ -257,7 +258,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const { content: raw, usage } = await callLLM(IDEAS_SYSTEM_PROMPT, userPrompt, { maxTokens, temperature });
-    logUsage(null, 'ideas-lab', usage);
+    logUsage({ accountId: body.account_id }, 'ideas-lab', usage);
 
     let parsed: any;
     try {

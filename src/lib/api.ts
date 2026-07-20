@@ -177,16 +177,24 @@ export const api = {
             account_id: accountId,
           })
           .then(({ data }) => data)
-          .then(({ structured }) => {
-            if (structured) {
+          .then((result) => {
+            if (result?.structured) {
               supabase
                 .from('knowledge_files')
-                .update({ structured })
+                .update({ structured: result.structured })
                 .eq('id', fileRow.id)
                 .then(() => {});
             }
+            if (result?.embed_error) {
+              console.warn(`[KB] Embedding error for ${file.name}: ${result.embed_error}`);
+            }
+            if (result?.structured_error) {
+              console.warn(`[KB] Metadata extraction error for ${file.name}: ${result.structured_error}`);
+            }
           })
-          .catch(() => {});
+          .catch((e) => {
+            console.warn(`[KB] extract-knowledge failed for ${file.name}:`, e);
+          });
 
         fileRow.ingest_status = 'ready';
       } catch {
@@ -345,7 +353,7 @@ export const api = {
      * on the server; without those the request 503s and the client should
      * surface the reason.
      */
-    async rebuildIndexStep(accountId: string): Promise<Result<{ embedded: number; remaining: number; total: number; done: boolean; error?: string }>> {
+    async rebuildIndexStep(accountId: string): Promise<Result<{ embedded: number; skipped?: number; remaining: number; total: number; done: boolean; error?: string }>> {
       try {
         const { ok: isOk, data } = await fetchAPI('/api/backfill-embeddings', { account_id: accountId });
         if (!isOk || (data.error && data.done !== true)) return err(data.error || 'Backfill failed');
@@ -465,7 +473,7 @@ export const api = {
           account_id: params.accountId,
         });
         if (!isOk || data.error) return err(data.error || 'Analysis failed');
-        return ok(data as Analysis);
+        return ok((data.analysis ?? data) as Analysis);
       } catch (e) {
         return err(e instanceof Error ? e.message : 'Network error during analysis');
       }
@@ -487,12 +495,12 @@ export const api = {
   // --------------------------------------------------------------------------
   studio: {
     async generateOutline(
-      _accountId: string,
+      accountId: string,
       opportunity: Opportunity,
       kbChunks: string[],
       fileContext?: KBFileContext[],
     ): Promise<Result<any>> {
-      return this._callGenerate({
+      return this._callGenerate(accountId, {
         task: 'outline',
         opportunity: {
           title: opportunity.title,
@@ -509,13 +517,13 @@ export const api = {
     },
 
     async generateDraft(
-      _accountId: string,
+      accountId: string,
       opportunity: Opportunity,
       outline: string,
       kbChunks: string[],
       fileContext?: KBFileContext[],
     ): Promise<Result<any>> {
-      return this._callGenerate({
+      return this._callGenerate(accountId, {
         task: 'draft',
         opportunity: {
           title: opportunity.title,
@@ -533,14 +541,14 @@ export const api = {
     },
 
     async regenerate(
-      _accountId: string,
+      accountId: string,
       opportunity: Opportunity,
       content: string,
       feedback: string,
       kbChunks: string[],
       fileContext?: KBFileContext[],
     ): Promise<Result<any>> {
-      return this._callGenerate({
+      return this._callGenerate(accountId, {
         task: 'regenerate',
         opportunity: {
           title: opportunity.title,
@@ -555,13 +563,13 @@ export const api = {
     },
 
     async qualityReview(
-      _accountId: string,
+      accountId: string,
       opportunity: Opportunity,
       draft: string,
       kbChunks: string[],
       fileContext?: KBFileContext[],
     ): Promise<Result<any>> {
-      return this._callGenerate({
+      return this._callGenerate(accountId, {
         task: 'quality_review',
         opportunity: {
           title: opportunity.title,
@@ -575,9 +583,9 @@ export const api = {
       });
     },
 
-    async _callGenerate(body: Record<string, any>): Promise<Result<any>> {
+    async _callGenerate(accountId: string, body: Record<string, any>): Promise<Result<any>> {
       try {
-        const { ok: isOk, data } = await fetchAPI('/api/generate-content', body);
+        const { ok: isOk, data } = await fetchAPI('/api/generate-content', { ...body, account_id: accountId });
         if (!isOk || data.error) return err(data.error || 'Generation failed');
         return ok(data.output);
       } catch (e) {
@@ -590,10 +598,11 @@ export const api = {
   // Ideas Lab — calls ideas-lab Edge Function
   // --------------------------------------------------------------------------
   ideas: {
-    async _call(body: Record<string, any>): Promise<Result<any>> {
+    async _call(body: Record<string, any>, accountId?: string): Promise<Result<any>> {
       try {
         const { ok: isOk, data } = await fetchAPI('/api/ideas-lab', {
           ...body,
+          account_id: accountId || body.account_id,
           knowledge_chunks: (body.knowledge_chunks as string[] | undefined)
             ?.slice(0, 25)
             .map((text, i) => ({ id: `chunk-${i}`, content: String(text).slice(0, 500) })),
@@ -606,6 +615,7 @@ export const api = {
     },
 
     async generate(params: {
+      accountId?: string;
       accountLabel?: string;
       topic?: string;
       audience?: string;
@@ -627,7 +637,7 @@ export const api = {
         context: params.context,
         avoid_titles: params.avoidTitles,
         knowledge_chunks: params.knowledgeChunks,
-      });
+      }, params.accountId);
       if (res.error) return err(res.error);
       return ok((res.data?.ideas as any[]) || []);
     },
@@ -644,14 +654,14 @@ export const api = {
       return ok((res.data?.ideas as any[]) || []);
     },
 
-    async seasonal(params: { accountLabel?: string; month?: string; context?: string; knowledgeChunks?: string[] }): Promise<Result<any[]>> {
+    async seasonal(params: { accountId?: string; accountLabel?: string; month?: string; context?: string; knowledgeChunks?: string[] }): Promise<Result<any[]>> {
       const res = await this._call({
         task: 'seasonal',
         account_label: params.accountLabel,
         month: params.month,
         context: params.context,
         knowledge_chunks: params.knowledgeChunks,
-      });
+      }, params.accountId);
       if (res.error) return err(res.error);
       return ok((res.data?.ideas as any[]) || []);
     },
@@ -688,7 +698,7 @@ export const api = {
 
     // Run a live scan on the server (collect signals + supervise). Returns the
     // supervised topics; the caller persists them via saveScan().
-    async runScan(params: { accountId?: string; accountLabel?: string; profile: TrendProfile; mode?: 'live' | 'suggest' }): Promise<Result<{ topics: any[]; summary: any; source: string; note?: string; signals_reviewed?: number; saved?: boolean; saved_records?: any[] }>> {
+    async runScan(params: { accountId?: string; accountLabel?: string; profile: TrendProfile; mode?: 'live' | 'suggest' }): Promise<Result<{ topics: any[]; summary: any; source: string; note?: string; signals_reviewed?: number; saved?: boolean; saved_records?: any[]; save_error?: string; stats?: any; analysis_date?: string }>> {
       try {
         const { ok: isOk, data } = await fetchAPI('/api/trend-scan', {
           account_id: params.accountId,
