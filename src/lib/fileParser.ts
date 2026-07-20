@@ -31,11 +31,38 @@ function collapseWhitespace(text: string): string {
     .trim();
 }
 
+/**
+ * Heuristic to detect garbled PDF text extraction. PDFs with custom font
+ * encodings produce "text" that is technically non-empty but is gibberish
+ * (high ratio of non-ASCII, control-like, or uncommon Unicode chars).
+ * Catches the problem at upload time instead of storing garbage chunks.
+ */
+function isGarbledText(text: string): boolean {
+  const sample = text.slice(0, 4000);
+  if (!sample) return true;
+  let readable = 0;
+  let total = 0;
+  for (const ch of sample) {
+    total++;
+    const code = ch.charCodeAt(0);
+    if ((code >= 0x20 && code <= 0x7E) || code === 0x0A || code === 0x0D || code === 0x09) {
+      readable++;
+    } else if (code >= 0x00A0 && code <= 0x024F) {
+      readable++;
+    }
+  }
+  return total > 50 && (readable / total) < 0.7;
+}
+
 function finalize(text: string, kind: string): string {
   if (!text || !text.trim()) {
     throw new Error(`No readable text found in ${kind} — the file may be scanned/image-based or password-protected. Please paste the text content manually.`);
   }
-  return collapseWhitespace(sanitize(text)).slice(0, MAX_OUTPUT_CHARS);
+  const cleaned = collapseWhitespace(sanitize(text)).slice(0, MAX_OUTPUT_CHARS);
+  if (kind === 'PDF' && isGarbledText(cleaned)) {
+    throw new Error(`The ${kind} text appears corrupted (font encoding issue). Try: (1) re-save the PDF from the original app with "Embed fonts" enabled, (2) export as DOCX instead, or (3) copy-paste the text into a .txt file and upload that.`);
+  }
+  return cleaned;
 }
 
 // ---- Format detection --------------------------------------------------------
