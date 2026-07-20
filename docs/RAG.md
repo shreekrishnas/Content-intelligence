@@ -74,8 +74,8 @@ All chunks from brand/compliance/guidelines files are fetched directly (deduplic
 
 The system first measures the total text in the account's non-constraint KB files. This decides the retrieval strategy:
 
-#### Path A — Long context (small KBs, ≤ 60k chars)
-If the entire KB fits under the long-context threshold (`VITE_LONG_CONTEXT_THRESHOLD`, default 60,000 chars), the system **skips retrieval entirely** and sends all chunks to the model in document order. This eliminates the "retrieval lottery" — the model sees the complete knowledge base, can reason across documents, compare information, and spot gaps between files. No embedding model, no semantic search, no risk of silent failure.
+#### Path A — Long context (small KBs, ≤ 500 chunks)
+If the account has fewer than `VITE_LONG_CONTEXT_MAX_CHUNKS` (default 500) non-constraint chunks, the system **skips retrieval entirely** and sends all chunks to the model ordered by file then position. This eliminates the "retrieval lottery" — the model sees the complete knowledge base, can reason across documents, compare information, and spot gaps between files. No embedding lookup, no semantic search, no risk of silent failure. Long-context mode uses a higher budget (`VITE_LONG_CONTEXT_BUDGET`, default 120k chars) so most of the KB actually reaches the model.
 
 #### Path B — Hybrid RAG (large KBs, > 60k chars)
 For accounts with more data than the context window can hold, two search strategies run **in parallel**:
@@ -108,7 +108,7 @@ hybrid result ──empty?──▶ rewrite query to its distinctive terms,
 ```
 
 ### Step 6 — File diversity + dedup + context budget
-In RAG mode, results are **diversified across files** using round-robin interleaving — no single document can monopolize all context slots. Then near-identical passages are collapsed, and the chunk list is trimmed so total text stays under **24,000 characters** (`VITE_RETRIEVAL_CONTEXT_BUDGET`).
+In RAG mode, results are **diversified across files** using round-robin interleaving — no single document can monopolize all context slots. Then near-identical passages are collapsed, and the chunk list is trimmed so total text stays under **24,000 characters** (`VITE_RETRIEVAL_CONTEXT_BUDGET`). In long-context mode, the budget is **120,000 characters** (`VITE_LONG_CONTEXT_BUDGET`) to let the model see most of the KB.
 
 ### What the LLM finally receives
 

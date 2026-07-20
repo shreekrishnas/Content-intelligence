@@ -12,11 +12,13 @@ const SEMANTIC_FETCH_MULT = 3;
 // Keeps retrieved context + constraints + prompt inside the model window
 // instead of overflowing it on accounts with long chunks.
 const CONTEXT_BUDGET_CHARS = parseInt(import.meta.env.VITE_RETRIEVAL_CONTEXT_BUDGET || '24000', 10);
-// Long-context threshold: if total KB text (non-constraint) is under this,
-// skip retrieval entirely and send everything — no retrieval lottery, the
-// model sees the complete knowledge base. Set slightly above context budget
-// so the budget trimmer still enforces a hard cap.
-const LONG_CONTEXT_THRESHOLD = parseInt(import.meta.env.VITE_LONG_CONTEXT_THRESHOLD || '60000', 10);
+// Long-context mode: if the account has fewer than this many non-constraint
+// chunks, skip retrieval and send everything. ~500 chunks × ~600 tokens
+// each = ~300k tokens, well within modern model windows.
+const LONG_CONTEXT_MAX_CHUNKS = parseInt(import.meta.env.VITE_LONG_CONTEXT_MAX_CHUNKS || '500', 10);
+// Higher budget for long-context mode so the model actually sees most of
+// the KB, not just the first 24k chars.
+const LONG_CONTEXT_BUDGET = parseInt(import.meta.env.VITE_LONG_CONTEXT_BUDGET || '120000', 10);
 // Reciprocal Rank Fusion constant (standard value from the RRF paper).
 const RRF_K = 60;
 
@@ -353,35 +355,39 @@ export async function retrieve(
     .filter((id: string) => !constraintIds.includes(id));
 
   // ---- Smart routing: long context vs RAG ----------------------------------
-  // If the account's KB is small enough, skip retrieval entirely and send
-  // ALL chunks to the model. This eliminates the retrieval lottery — the
-  // model sees the complete knowledge base and can reason across documents,
-  // spot gaps, and compare data. Only fall back to RAG when the KB exceeds
-  // the long-context threshold.
   let chunks: RetrievalChunk[] = [];
   let topScore = 0;
   let retrievalMode: RetrievalResult['retrievalMode'] = 'none';
 
   if (contextIds.length > 0) {
-    // Probe total KB size to decide: long context vs RAG.
-    const { data: allChunks } = await supabase
+    // Cheap probe: count chunks without downloading text.
+    const { count: chunkCount } = await supabase
       .from('knowledge_chunks')
-      .select('id, file_id, account_id, chunk_text, embed_model, token_count, position, created_at, knowledge_files!inner(file_name, category)')
+      .select('id', { count: 'exact', head: true })
       .eq('account_id', accountId)
-      .in('file_id', contextIds)
-      .order('position', { ascending: true })
-      .limit(2000);
+      .in('file_id', contextIds);
 
-    const allMapped = dedupeChunks((allChunks || []).map(mapChunk));
-    const totalChars = allMapped.reduce((sum, c) => sum + (c.chunk_text || '').length, 0);
+    const totalChunks = chunkCount ?? 0;
 
-    if (totalChars <= LONG_CONTEXT_THRESHOLD) {
-      // ---- Long-context mode: send everything, no retrieval lottery ------
-      chunks = fitToBudget(allMapped, CONTEXT_BUDGET_CHARS);
+    if (totalChunks > 0 && totalChunks <= LONG_CONTEXT_MAX_CHUNKS) {
+      // ---- Long-context mode: KB is small, send everything ----------------
+      // No retrieval lottery — the model sees the complete KB and can reason
+      // across documents, compare data, and spot gaps between files.
+      const { data: allChunks } = await supabase
+        .from('knowledge_chunks')
+        .select('*, knowledge_files!inner(file_name, category)')
+        .eq('account_id', accountId)
+        .in('file_id', contextIds)
+        .order('file_id', { ascending: true })
+        .order('position', { ascending: true })
+        .limit(LONG_CONTEXT_MAX_CHUNKS);
+
+      const allMapped = dedupeChunks((allChunks || []).map(mapChunk));
+      chunks = fitToBudget(allMapped, LONG_CONTEXT_BUDGET);
       topScore = 1;
       retrievalMode = 'long_context';
-    } else {
-      // ---- RAG mode: hybrid retrieval for large KBs ---------------------
+    } else if (totalChunks > 0) {
+      // ---- RAG mode: KB is large, use hybrid retrieval --------------------
       const embedding = await embedQuery(queryText);
       const [semanticResult, keywordResult] = await Promise.all([
         embedding ? scoreBySemantic(accountId, embedding, constraintIds) : Promise.resolve(null),
@@ -405,7 +411,6 @@ export async function retrieve(
         retrievalMode = 'keyword';
       }
 
-      // Fallback chain step 1: rewrite query to distinctive terms.
       if (chunks.length === 0) {
         const rewritten = rewriteQuery(queryText);
         if (rewritten && rewritten !== queryText.toLowerCase().trim()) {
@@ -418,14 +423,12 @@ export async function retrieve(
         }
       }
 
-      // Fallback chain step 2: below-threshold semantic beats empty context.
       if (chunks.length === 0 && semanticResult?.chunks.length) {
         chunks = semanticResult.chunks;
         topScore = semanticResult.topScore;
         retrievalMode = 'semantic';
       }
 
-      // Diversify across files, dedup, and trim to budget.
       chunks = fitToBudget(dedupeChunks(diversifyByFile(chunks, TOP_K)));
     }
   }
