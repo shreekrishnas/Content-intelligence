@@ -64,7 +64,7 @@ function finalize(text: string, kind: string): string {
 
 // ---- Format detection --------------------------------------------------------
 
-type Format = 'txt' | 'md' | 'csv' | 'tsv' | 'json' | 'html' | 'xml' | 'pdf' | 'docx' | 'doc' | 'xlsx' | 'xls' | 'rtf' | 'unknown';
+type Format = 'txt' | 'md' | 'csv' | 'tsv' | 'json' | 'html' | 'xml' | 'pdf' | 'docx' | 'doc' | 'xlsx' | 'xls' | 'rtf' | 'pptx' | 'ppt' | 'image' | 'unknown';
 
 function detectFormat(file: File): Format {
   const name = file.name.toLowerCase();
@@ -72,9 +72,11 @@ function detectFormat(file: File): Format {
 
   if (name.endsWith('.pdf') || mime === 'application/pdf') return 'pdf';
   if (name.endsWith('.docx') || mime.includes('wordprocessingml')) return 'docx';
-  if (name.endsWith('.doc')) return 'doc';
+  if (name.endsWith('.doc') || mime === 'application/msword') return 'doc';
   if (name.endsWith('.xlsx') || mime.includes('spreadsheetml')) return 'xlsx';
   if (name.endsWith('.xls') || mime === 'application/vnd.ms-excel') return 'xls';
+  if (name.endsWith('.pptx') || mime.includes('presentationml')) return 'pptx';
+  if (name.endsWith('.ppt') || mime === 'application/vnd.ms-powerpoint') return 'ppt';
   if (name.endsWith('.csv') || mime === 'text/csv') return 'csv';
   if (name.endsWith('.tsv') || name.endsWith('.tab')) return 'tsv';
   if (name.endsWith('.json') || mime === 'application/json') return 'json';
@@ -82,6 +84,8 @@ function detectFormat(file: File): Format {
   if (name.endsWith('.xml') || mime.includes('xml')) return 'xml';
   if (name.endsWith('.rtf') || mime === 'application/rtf') return 'rtf';
   if (name.endsWith('.md') || name.endsWith('.markdown')) return 'md';
+  if (mime.startsWith('image/')) return 'image';
+  if (/\.(png|jpe?g|gif|bmp|webp|tiff?)$/i.test(name)) return 'image';
   if (name.endsWith('.txt') || name.endsWith('.log') || mime.startsWith('text/')) return 'txt';
   return 'unknown';
 }
@@ -232,6 +236,23 @@ async function ocrPdf(pdfDoc: any, onProgress?: (msg: string) => void): Promise<
   }
 }
 
+async function ocrImage(file: File, onProgress?: (msg: string) => void): Promise<string> {
+  onProgress?.('Reading image with OCR…');
+  const tesseract: any = await import('tesseract.js');
+  const worker = await tesseract.createWorker('eng');
+  try {
+    const bitmapSrc = URL.createObjectURL(file);
+    try {
+      const { data } = await worker.recognize(bitmapSrc);
+      return (data?.text ?? '').trim();
+    } finally {
+      URL.revokeObjectURL(bitmapSrc);
+    }
+  } finally {
+    await worker.terminate().catch(() => {});
+  }
+}
+
 function primitivePdfText(buf: ArrayBuffer): string {
   const raw = new TextDecoder('latin1').decode(new Uint8Array(buf));
   const lines: string[] = [];
@@ -299,8 +320,13 @@ async function inflateRaw(data: Uint8Array): Promise<Uint8Array | null> {
 }
 
 async function findDocxXml(bytes: Uint8Array): Promise<string | null> {
-  const target = 'word/document.xml';
+  const map = await extractZipEntries(bytes, (n) => n === 'word/document.xml');
+  return map.get('word/document.xml') ?? null;
+}
+
+async function extractZipEntries(bytes: Uint8Array, keep: (name: string) => boolean): Promise<Map<string, string>> {
   const decoder = new TextDecoder('utf-8');
+  const out = new Map<string, string>();
   for (let i = 0; i < bytes.length - 30; i++) {
     if (bytes[i] !== 0x50 || bytes[i + 1] !== 0x4b ||
         bytes[i + 2] !== 0x03 || bytes[i + 3] !== 0x04) continue;
@@ -310,17 +336,89 @@ async function findDocxXml(bytes: Uint8Array): Promise<string | null> {
     const extraLen = bytes[i + 28]! | (bytes[i + 29]! << 8);
     const nameStart = i + 30;
     const name = decoder.decode(bytes.slice(nameStart, nameStart + nameLen));
-    if (name !== target) continue;
     const dataStart = nameStart + nameLen + extraLen;
-    if (compMethod === 0) return decoder.decode(bytes.slice(dataStart, dataStart + compSize));
-    if (compMethod === 8) {
-      const end = compSize > 0 ? dataStart + compSize : bytes.length;
-      const inflated = await inflateRaw(bytes.slice(dataStart, end));
-      if (inflated) return decoder.decode(inflated);
+    if (keep(name)) {
+      if (compMethod === 0) {
+        out.set(name, decoder.decode(bytes.slice(dataStart, dataStart + compSize)));
+      } else if (compMethod === 8) {
+        const end = compSize > 0 ? dataStart + compSize : Math.min(dataStart + 20 * 1024 * 1024, bytes.length);
+        const inflated = await inflateRaw(bytes.slice(dataStart, end));
+        if (inflated) out.set(name, decoder.decode(inflated));
+      }
     }
-    return null;
+    // Advance past this entry to keep scanning for more matches.
+    if (compSize > 0) {
+      i = dataStart + compSize - 1; // -1 because loop will ++
+    }
   }
-  return null;
+  return out;
+}
+
+// ---- PPTX (PowerPoint) via primitive ZIP + XML strip -------------------------
+
+async function parsePptx(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const entries = await extractZipEntries(bytes, (n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
+  if (entries.size === 0) return '';
+  const slideNames = Array.from(entries.keys()).sort((a, b) => {
+    const na = parseInt(a.match(/slide(\d+)\.xml/)?.[1] ?? '0', 10);
+    const nb = parseInt(b.match(/slide(\d+)\.xml/)?.[1] ?? '0', 10);
+    return na - nb;
+  });
+  const parts: string[] = [];
+  for (let idx = 0; idx < slideNames.length; idx++) {
+    const xml = entries.get(slideNames[idx]!) ?? '';
+    const text = xml
+      .replace(/<a:tab[^>]*\/?>/g, '\t')
+      .replace(/<a:br[^>]*\/?>/g, '\n')
+      .replace(/<\/a:p[^>]*>/g, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .trim();
+    if (text) parts.push(`# Slide ${idx + 1}\n${text}`);
+  }
+  return parts.join('\n\n');
+}
+
+// ---- Legacy .doc — extract printable-ASCII runs from the binary --------------
+
+async function parseLegacyDoc(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  // Look for runs of printable text. Old .doc files store text as UTF-16LE in
+  // the WordDocument stream; a byte-level scan for readable runs recovers most
+  // prose, which is good enough for a knowledge base.
+  const chunks: string[] = [];
+  let run = '';
+  for (let i = 0; i < bytes.length - 1; i += 2) {
+    const lo = bytes[i]!;
+    const hi = bytes[i + 1]!;
+    if (hi === 0 && ((lo >= 0x20 && lo <= 0x7E) || lo === 0x0A || lo === 0x0D || lo === 0x09)) {
+      run += String.fromCharCode(lo);
+    } else {
+      if (run.length >= 4) chunks.push(run);
+      run = '';
+    }
+  }
+  if (run.length >= 4) chunks.push(run);
+  // Fall back to single-byte scan if UTF-16LE produced nothing.
+  if (chunks.length === 0) {
+    let single = '';
+    for (let i = 0; i < bytes.length; i++) {
+      const b = bytes[i]!;
+      if ((b >= 0x20 && b <= 0x7E) || b === 0x0A || b === 0x0D || b === 0x09) {
+        single += String.fromCharCode(b);
+      } else {
+        if (single.length >= 6) chunks.push(single);
+        single = '';
+      }
+    }
+    if (single.length >= 6) chunks.push(single);
+  }
+  return chunks.join('\n').trim();
 }
 
 // ---- XLSX / XLS via SheetJS (lazy import) ------------------------------------
@@ -353,8 +451,11 @@ async function parseSpreadsheet(file: File): Promise<string> {
 
 const FRIENDLY_TYPE: Record<Format, string> = {
   pdf: 'PDF', docx: 'Word document', doc: 'legacy .doc',
-  xlsx: 'Excel spreadsheet', xls: 'legacy .xls', csv: 'CSV', tsv: 'TSV',
+  xlsx: 'Excel spreadsheet', xls: 'legacy .xls',
+  pptx: 'PowerPoint', ppt: 'legacy .ppt',
+  csv: 'CSV', tsv: 'TSV',
   json: 'JSON', html: 'HTML', xml: 'XML', rtf: 'RTF', md: 'Markdown',
+  image: 'image',
   txt: 'text file', unknown: 'file',
 };
 
@@ -396,10 +497,20 @@ export async function parseFile(file: File, onProgress?: (msg: string) => void):
         text = await parseDocx(file);
         break;
       case 'doc':
-        throw new Error(`${file.name}: legacy .doc format is not supported. Re-save as .docx and try again.`);
+        text = await parseLegacyDoc(file);
+        break;
       case 'xlsx':
       case 'xls':
         text = await parseSpreadsheet(file);
+        break;
+      case 'pptx':
+        text = await parsePptx(file);
+        break;
+      case 'ppt':
+        text = await parseLegacyDoc(file); // same binary-scan strategy
+        break;
+      case 'image':
+        text = await ocrImage(file, onProgress);
         break;
       case 'unknown':
       default: {
@@ -411,7 +522,7 @@ export async function parseFile(file: File, onProgress?: (msg: string) => void):
             break;
           }
         } catch { /* fall through */ }
-        throw new Error(`${file.name}: unsupported file type. Supported: PDF, DOCX, XLSX/XLS, CSV, TSV, JSON, HTML, XML, RTF, TXT, MD.`);
+        throw new Error(`${file.name}: unsupported file type. Supported: PDF, DOCX, PPTX, XLSX, CSV, images (JPG/PNG), and text formats.`);
       }
     }
   } catch (e) {

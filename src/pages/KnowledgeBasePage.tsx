@@ -28,7 +28,7 @@ const PRIORITY_COLORS: Record<string, string> = {
   low: '#9CA3AF',
 };
 
-const ACCEPTED_TYPES = '.pdf,.docx,.xlsx,.xls,.csv,.tsv,.json,.html,.htm,.xml,.rtf,.txt,.md,.log,.markdown';
+const ACCEPTED_TYPES = '.pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.csv,.tsv,.json,.html,.htm,.xml,.rtf,.txt,.md,.log,.markdown,.png,.jpg,.jpeg,.gif,.bmp,.webp,.tif,.tiff';
 
 const STATUS_COLORS: Record<string, { bg: string; color: string; label: string }> = {
   pending: { bg: '#9CA3AF18', color: '#9CA3AF', label: 'Pending' },
