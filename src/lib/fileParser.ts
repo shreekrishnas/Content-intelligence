@@ -31,15 +31,22 @@ function collapseWhitespace(text: string): string {
     .trim();
 }
 
+// A handful of the most common English words. If a large text sample contains
+// none of these, the text isn't real English (typical PDF font-mapping garble).
+const COMMON_WORDS = ['the', 'and', 'of', 'to', 'in', 'is', 'that', 'for', 'with', 'on', 'as', 'it', 'this', 'be', 'are', 'from', 'or', 'an', 'by', 'we', 'you', 'have', 'has', 'not', 'will', 'can'];
+
 /**
- * Heuristic to detect garbled PDF text extraction. PDFs with custom font
- * encodings produce "text" that is technically non-empty but is gibberish
- * (high ratio of non-ASCII, control-like, or uncommon Unicode chars).
- * Catches the problem at upload time instead of storing garbage chunks.
+ * Heuristic to detect garbled text extraction. Two failure modes:
+ *  1) Low ratio of printable ASCII/Latin chars (control chars, weird Unicode).
+ *  2) Printable but meaningless — wrong glyph→char mapping in a PDF produces
+ *     "text" that looks like `Xhbfha eijasld` with no real words.
+ * We flag either case.
  */
 function isGarbledText(text: string): boolean {
-  const sample = text.slice(0, 4000);
-  if (!sample) return true;
+  const sample = text.slice(0, 6000);
+  if (!sample || sample.length < 50) return true;
+
+  // Check 1: printable ratio.
   let readable = 0;
   let total = 0;
   for (const ch of sample) {
@@ -51,7 +58,16 @@ function isGarbledText(text: string): boolean {
       readable++;
     }
   }
-  return total > 50 && (readable / total) < 0.7;
+  if (total > 50 && (readable / total) < 0.7) return true;
+
+  // Check 2: real-word content. Split on non-letters, lowercase, look for
+  // common English words. Require at least a few hits per 1000 chars of sample.
+  const words = sample.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 2);
+  if (words.length < 20) return false; // too little text to judge — trust it
+  const wordSet = new Set(words);
+  const commonHits = COMMON_WORDS.reduce((n, w) => n + (wordSet.has(w) ? 1 : 0), 0);
+  const requiredHits = Math.max(3, Math.floor(sample.length / 2000));
+  return commonHits < requiredHits;
 }
 
 function finalize(text: string, kind: string): string {
