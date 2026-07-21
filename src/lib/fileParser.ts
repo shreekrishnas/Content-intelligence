@@ -179,9 +179,14 @@ async function parsePdf(file: File, onProgress?: (msg: string) => void): Promise
 
   try {
     const pdfjs: any = await import('pdfjs-dist');
+
+    // Configure worker - required for pdfjs-dist 4.x
+    if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+    }
+
     pdfDoc = await pdfjs.getDocument({
       data: new Uint8Array(buf),
-      disableWorker: true,
       isEvalSupported: false,
     }).promise;
 
@@ -212,9 +217,14 @@ async function parsePdf(file: File, onProgress?: (msg: string) => void): Promise
   if (!pdfDoc) {
     try {
       const pdfjs: any = await import('pdfjs-dist');
+
+      // Configure worker - required for pdfjs-dist 4.x
+      if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+        pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+      }
+
       pdfDoc = await pdfjs.getDocument({
         data: new Uint8Array(buf),
-        disableWorker: true,
         isEvalSupported: false,
       }).promise;
     } catch (e) {
