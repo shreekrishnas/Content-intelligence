@@ -14,9 +14,7 @@
     "api/auto-profile.ts": { "maxDuration": 120 },
     "api/kb-ask.ts": { "maxDuration": 60 }
   },
-  "crons": [
-    { "path": "/api/trend-scan", "schedule": "0 6 * * *" }
-  ],
+  "crons": [],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
