@@ -165,7 +165,11 @@ export default function KnowledgeBasePage() {
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       const status = data?.ingest_status;
-      showToast(status === 'ready' ? 'File uploaded and chunked successfully' : status === 'failed' ? 'File uploaded but parsing failed' : 'File uploaded successfully');
+      const parseErr = (data?.structured as any)?.parse_error as string | undefined;
+      if (status === 'ready') showToast('File uploaded and chunked successfully');
+      else if (status === 'failed' && parseErr) showToast(`Parse failed: ${parseErr}`, 'error');
+      else if (status === 'failed') showToast('File uploaded but text extraction failed', 'error');
+      else showToast('File uploaded successfully');
       loadFiles();
       loadIndexStatus();
     } catch (err: any) {
@@ -174,6 +178,21 @@ export default function KnowledgeBasePage() {
       setUploading(false);
       setUploadStatus('');
     }
+  }
+
+  const [reprocessingFile, setReprocessingFile] = useState<string | null>(null);
+
+  async function handleReprocessFile(file: KnowledgeFile) {
+    if (!accountId || reprocessingFile) return;
+    setReprocessingFile(file.id);
+    setUploadStatus(`${file.file_name}: downloading…`);
+    const { data, error } = await api.kb.reprocessFile(accountId, file.id, (msg) => setUploadStatus(`${file.file_name}: ${msg}`));
+    setReprocessingFile(null);
+    setUploadStatus('');
+    if (error) { showToast(`Reprocess failed: ${error}`, 'error'); return; }
+    showToast(`Reprocessed → ${data?.chunks ?? 0} chunks`);
+    loadFiles();
+    loadIndexStatus();
   }
 
   async function handleToggleActive(file: KnowledgeFile) {
@@ -300,6 +319,12 @@ export default function KnowledgeBasePage() {
         <button className="btn btn-primary" onClick={() => setShowUpload(true)}>Upload File</button>
       </div>
 
+      {(reprocessingFile || (reprocessing && uploadStatus)) && uploadStatus && (
+        <div style={{ margin: '0 0 12px', padding: '10px 14px', background: 'var(--color-bg-muted, #F3F4F6)', borderRadius: 8, fontSize: 13, color: 'var(--color-text-muted, #6B7280)' }}>
+          {uploadStatus}
+        </div>
+      )}
+
       <div className="glass-card-static" style={{ padding: 0 }}>
         {filtered.length === 0 ? (
           <EmptyState
@@ -311,27 +336,36 @@ export default function KnowledgeBasePage() {
           filtered.map((file, i) => {
             const pc = PRIORITY_COLORS[file.priority] || '#9CA3AF';
             const sc = STATUS_COLORS[file.ingest_status] || STATUS_COLORS.pending;
+            const parseError = (file.structured as any)?.parse_error as string | undefined;
             return (
-              <div key={file.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : undefined, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 20, opacity: 0.5, flexShrink: 0 }}>&#128196;</span>
-                <div style={{ flex: 1, minWidth: 180 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{file.file_name}</span>
-                    <span className="badge" style={{ fontSize: 10 }}>v{file.version}</span>
-                    <span className="badge" style={{ fontSize: 10, background: sc.bg, color: sc.color }}>{sc.label}</span>
+              <div key={file.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : undefined }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 20, opacity: 0.5, flexShrink: 0 }}>&#128196;</span>
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{file.file_name}</span>
+                      <span className="badge" style={{ fontSize: 10 }}>v{file.version}</span>
+                      <span className="badge" style={{ fontSize: 10, background: sc.bg, color: sc.color }}>{sc.label}</span>
+                    </div>
+                    <p style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
+                      {new Date(file.created_at).toLocaleDateString()}
+                    </p>
                   </div>
-                  <p style={{ fontSize: 12, opacity: 0.6, marginTop: 2 }}>
-                    {new Date(file.created_at).toLocaleDateString()}
-                  </p>
+                  <span className="badge">{categoryLabel(file.category)}</span>
+                  <span className="badge" style={{ background: pc + '18', color: pc, fontWeight: 600 }}>{file.priority}</span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
+                    <input type="checkbox" checked={file.active} onChange={() => handleToggleActive(file)} />
+                    Active
+                  </label>
+                  <button className="btn btn-ghost btn-sm" onClick={() => handleReprocessFile(file)} title="Re-extract text and rebuild chunks (runs OCR if needed)">Reprocess</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setPreviewFile(file)}>Details</button>
+                  <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(file)}>Delete</button>
                 </div>
-                <span className="badge">{categoryLabel(file.category)}</span>
-                <span className="badge" style={{ background: pc + '18', color: pc, fontWeight: 600 }}>{file.priority}</span>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12 }}>
-                  <input type="checkbox" checked={file.active} onChange={() => handleToggleActive(file)} />
-                  Active
-                </label>
-                <button className="btn btn-ghost btn-sm" onClick={() => setPreviewFile(file)}>Details</button>
-                <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(file)}>Delete</button>
+                {parseError && (
+                  <div style={{ margin: '0 20px 12px', padding: '8px 12px', background: '#DC262610', border: '1px solid #DC262630', borderRadius: 6, fontSize: 12, color: '#DC2626' }}>
+                    Parse error: {parseError}
+                  </div>
+                )}
               </div>
             );
           })

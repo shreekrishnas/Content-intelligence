@@ -198,12 +198,14 @@ export const api = {
           });
 
         fileRow.ingest_status = 'ready';
-      } catch {
+      } catch (parseErr) {
+        const reason = parseErr instanceof Error ? parseErr.message : 'Failed to extract text from file';
         await supabase
           .from('knowledge_files')
-          .update({ ingest_status: 'failed' })
+          .update({ ingest_status: 'failed', structured: { parse_error: reason } })
           .eq('id', fileRow.id);
         fileRow.ingest_status = 'failed';
+        (fileRow as any).structured = { parse_error: reason };
       }
 
       return ok(fileRow);

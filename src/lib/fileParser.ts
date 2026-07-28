@@ -31,43 +31,50 @@ function collapseWhitespace(text: string): string {
     .trim();
 }
 
-// A handful of the most common English words. If a large text sample contains
-// none of these, the text isn't real English (typical PDF font-mapping garble).
-const COMMON_WORDS = ['the', 'and', 'of', 'to', 'in', 'is', 'that', 'for', 'with', 'on', 'as', 'it', 'this', 'be', 'are', 'from', 'or', 'an', 'by', 'we', 'you', 'have', 'has', 'not', 'will', 'can'];
+// The 15 most frequent English words — any English text of 1000+ chars will
+// contain multiple of these. Garbled font-mapping output virtually never does.
+const VERY_COMMON = new Set(['the', 'and', 'of', 'to', 'in', 'is', 'a', 'that', 'for', 'it', 'as', 'are', 'be', 'or', 'an']);
 
 /**
- * Heuristic to detect garbled text extraction. Two failure modes:
- *  1) Low ratio of printable ASCII/Latin chars (control chars, weird Unicode).
- *  2) Printable but meaningless — wrong glyph→char mapping in a PDF produces
- *     "text" that looks like `Xhbfha eijasld` with no real words.
- * We flag either case.
+ * Returns true when text is too garbled to be useful — either low printable
+ * ratio OR no recognisable English words (typical of broken PDF font encoding).
+ * Three independent checks; any one can flag garbled:
+ *   1. Printable-char ratio < 70%
+ *   2. Fewer than 3 of the 15 most-common English words in 3000 chars
+ *   3. Average token length < 2 (mostly single-char glyph IDs)
  */
 function isGarbledText(text: string): boolean {
-  const sample = text.slice(0, 6000);
-  if (!sample || sample.length < 50) return true;
+  const sample = text.slice(0, 3000);
+  if (!sample || sample.length < 40) return true;
 
-  // Check 1: printable ratio.
+  // Check 1: printable ratio
   let readable = 0;
   let total = 0;
   for (const ch of sample) {
     total++;
     const code = ch.charCodeAt(0);
-    if ((code >= 0x20 && code <= 0x7E) || code === 0x0A || code === 0x0D || code === 0x09) {
-      readable++;
-    } else if (code >= 0x00A0 && code <= 0x024F) {
-      readable++;
-    }
+    if ((code >= 0x20 && code <= 0x7E) || code === 0x0A || code === 0x0D || code === 0x09) readable++;
+    else if (code >= 0x00A0 && code <= 0x024F) readable++;
   }
-  if (total > 50 && (readable / total) < 0.7) return true;
+  if (total > 40 && (readable / total) < 0.7) return true;
 
-  // Check 2: real-word content. Split on non-letters, lowercase, look for
-  // common English words. Require at least a few hits per 1000 chars of sample.
-  const words = sample.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 2);
-  if (words.length < 20) return false; // too little text to judge — trust it
-  const wordSet = new Set(words);
-  const commonHits = COMMON_WORDS.reduce((n, w) => n + (wordSet.has(w) ? 1 : 0), 0);
-  const requiredHits = Math.max(3, Math.floor(sample.length / 2000));
-  return commonHits < requiredHits;
+  // Check 2: common English word presence
+  const tokens = sample.toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 2);
+  if (tokens.length >= 15) {
+    const tokenSet = new Set(tokens);
+    let hits = 0;
+    for (const w of VERY_COMMON) { if (tokenSet.has(w)) hits++; }
+    if (hits < 3) return true;
+  }
+
+  // Check 3: average token length — real English averages ~4-5 chars/word;
+  // glyph-ID garble tends to produce very short tokens
+  if (tokens.length >= 10) {
+    const avgLen = tokens.reduce((s, w) => s + w.length, 0) / tokens.length;
+    if (avgLen < 2.0) return true;
+  }
+
+  return false;
 }
 
 function finalize(text: string, kind: string): string {
@@ -245,7 +252,7 @@ async function ocrPdf(pdfDoc: any, onProgress?: (msg: string) => void): Promise<
     for (let p = 1; p <= numPages; p++) {
       onProgress?.(`OCR page ${p} of ${numPages}…`);
       const page = await pdfDoc.getPage(p);
-      const viewport = page.getViewport({ scale: 2 }); // 2x for sharper OCR
+      const viewport = page.getViewport({ scale: 3 }); // 3x = ~216dpi, better OCR accuracy
       const canvas = document.createElement('canvas');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
