@@ -9,7 +9,7 @@ import { handleOptions, sendError, cors } from './_lib/http.js';
 // feedback is user-scoped, not account-scoped.
 // ============================================================
 
-const DESTINATION = 'shreekrishna.basri@trilliantdigital.com';
+const DEFAULT_DESTINATION = 'shreekrishna.basri@trilliantdigital.com';
 const MAX_MESSAGE_CHARS = 5000;
 
 function escapeHtml(s: string): string {
@@ -75,6 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // shared onboarding sender so feedback works out of the box before a
   // domain is verified.
   const fromAddress = process.env.FEEDBACK_FROM_ADDRESS || 'Content Intelligence <onboarding@resend.dev>';
+  const destination = process.env.FEEDBACK_TO_ADDRESS || DEFAULT_DESTINATION;
 
   const subject = `[Content Intelligence] Feedback from ${senderName || senderEmail}`;
   const meta = [
@@ -104,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
       body: JSON.stringify({
         from: fromAddress,
-        to: [DESTINATION],
+        to: [destination],
         reply_to: senderEmail,
         subject,
         text,
@@ -121,7 +122,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({
       success: true,
       message_id: (result as any)?.id ?? null,
-      delivered_to: DESTINATION,
+      delivered_to: destination,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unknown error contacting the email provider.';
