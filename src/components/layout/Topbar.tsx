@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAccount } from '@/contexts/AccountContext';
 import { useAuthStore } from '@/stores/authStore';
+import { api } from '@/lib/api';
+import { showToast } from '@/lib/toast';
 
 interface TopbarProps {
   activeTab: string;
@@ -212,6 +214,162 @@ function AccountSwitcher() {
   );
 }
 
+function FeedbackButton({ activeTab }: { activeTab: string }) {
+  const [open, setOpen] = useState(false);
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const user = useAuthStore((s) => s.user);
+  const { account } = useAccount();
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (cardRef.current && !cardRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    function handleKey(e: KeyboardEvent) { if (e.key === 'Escape') setOpen(false); }
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [open]);
+
+  async function submit() {
+    const text = message.trim();
+    if (!text) { showToast('Please write a message before sending.', 'error'); return; }
+    if (!user) { showToast('You must be signed in to send feedback.', 'error'); return; }
+    setSending(true);
+    const { data, error } = await api.feedback.send({
+      message: text,
+      account_label: account?.name || '',
+      page: activeTab,
+    });
+    setSending(false);
+    if (error) { showToast(error, 'error'); return; }
+    showToast(`Feedback sent to ${data?.delivered_to || 'the team'}. Thanks!`);
+    setMessage('');
+    setOpen(false);
+  }
+
+  const remaining = 5000 - message.length;
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Send feedback"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '6px 12px',
+          borderRadius: 8,
+          border: '1px solid var(--border)',
+          background: 'var(--surface-card)',
+          color: 'var(--text-primary)',
+          fontSize: '0.78rem',
+          fontWeight: 600,
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+        <span>Feedback</span>
+      </button>
+
+      {open && (
+        <div
+          ref={cardRef}
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            right: 0,
+            width: 340,
+            background: 'var(--surface-card)',
+            border: '1px solid var(--border)',
+            borderRadius: 12,
+            boxShadow: '0 12px 40px rgba(0,0,0,0.22)',
+            zIndex: 200,
+            padding: 14,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>Send feedback</div>
+            <button
+              onClick={() => setOpen(false)}
+              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, lineHeight: 1, cursor: 'pointer' }}
+              title="Close"
+            >&times;</button>
+          </div>
+
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
+            Tell us what's working, what isn't, or what you'd like to see next.
+            {user?.email && (
+              <> Sent from <strong style={{ color: 'var(--text-primary)' }}>{user.email}</strong>.</>
+            )}
+          </div>
+
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value.slice(0, 5000))}
+            placeholder="What would you like to share?"
+            rows={6}
+            autoFocus
+            disabled={sending}
+            style={{
+              width: '100%',
+              padding: '10px 12px',
+              borderRadius: 8,
+              border: '1px solid var(--border)',
+              background: 'var(--surface-hover)',
+              color: 'var(--text-primary)',
+              fontSize: '0.82rem',
+              lineHeight: 1.5,
+              resize: 'vertical',
+              minHeight: 110,
+              outline: 'none',
+              fontFamily: 'inherit',
+              boxSizing: 'border-box',
+            }}
+            onKeyDown={(e) => {
+              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submit(); }
+            }}
+          />
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span style={{ fontSize: '0.68rem', color: remaining < 200 ? '#F59E0B' : 'var(--text-muted)' }}>
+              {remaining} chars left · ⌘/Ctrl+Enter to send
+            </span>
+            <button
+              onClick={submit}
+              disabled={sending || !message.trim()}
+              style={{
+                padding: '7px 14px',
+                borderRadius: 7,
+                border: 'none',
+                background: sending || !message.trim() ? 'var(--surface-hover)' : 'var(--accent-primary)',
+                color: sending || !message.trim() ? 'var(--text-muted)' : '#fff',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: sending || !message.trim() ? 'default' : 'pointer',
+              }}
+            >
+              {sending ? 'Sending…' : 'Send'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps) {
   const meta = tabMeta[activeTab] ?? { title: activeTab, subtitle: '' };
   const user = useAuthStore((s) => s.user);
@@ -227,6 +385,7 @@ export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps)
       </div>
       <div className="topbar-right">
         <AccountSwitcher />
+        <FeedbackButton activeTab={activeTab} />
         {user && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
             <span style={{ fontSize: '0.72rem', color: 'var(--text-primary)', fontWeight: 500 }}>

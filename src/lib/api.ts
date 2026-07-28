@@ -1137,4 +1137,29 @@ export const api = {
       return ok(undefined as void);
     },
   },
+
+  // --------------------------------------------------------------------------
+  // Feedback — sends to the fixed destination via email
+  // --------------------------------------------------------------------------
+  feedback: {
+    async send(input: { message: string; account_label?: string; page?: string }): Promise<Result<{ delivered_to: string }>> {
+      const jwt = await getJwt();
+      if (!jwt) return err('You must be signed in to send feedback.');
+      const resp = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${jwt}`,
+        },
+        body: JSON.stringify(input),
+      });
+      const raw = await resp.text();
+      let data: any = null;
+      try { data = raw ? JSON.parse(raw) : null; } catch { /* raw non-JSON */ }
+      if (!resp.ok) {
+        return err(data?.error || `Feedback failed (${resp.status}).`);
+      }
+      return ok({ delivered_to: data?.delivered_to || '' });
+    },
+  },
 };
