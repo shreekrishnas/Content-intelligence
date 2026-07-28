@@ -118,21 +118,33 @@ Answer the question strictly from the passages above. If it isn't in the passage
     });
     const answer = content.trim();
 
-    // Post-hoc grounding heuristic: if the model never cited any passage
-    // AND the answer isn't the explicit "I don't have that" refusal, flag
-    // it as low-confidence so the UI can warn the user.
-    const cited = /\[\d+\]/.test(answer);
+    // Extract the citation numbers the model actually used. We return only
+    // the sources it cited — retrieval may surface loosely-related chunks,
+    // and citing them all when the model didn't use them creates false
+    // confidence and misleading provenance.
+    const citedNums = new Set<number>();
+    for (const m of answer.matchAll(/\[(\d+)\]/g)) {
+      const n = parseInt(m[1], 10);
+      if (n >= 1 && n <= sources.length) citedNums.add(n);
+    }
+    const citedSources = [...citedNums].sort((a, b) => a - b).map((n) => sources[n - 1]).filter(Boolean);
+
     const refusedInline = /don'?t have|not (in|covered|available)/i.test(answer.slice(0, 200));
-    const grounded = cited || refusedInline;
+    const grounded = citedSources.length > 0 || refusedInline;
 
     return res.status(200).json({
       answer,
       grounded,
-      sources,
+      // The sources the model actually cited. If nothing was cited but the
+      // answer is a refusal, this is intentionally empty.
+      sources: citedSources,
+      // All retrieved sources, for diagnostics / "what was considered".
+      sourcesRetrieved: sources,
       retrieval: {
         chunks: chunks.length,
         constraint_chunks: constraintChunks.length,
         top_similarity: chunks[0]?.similarity ?? null,
+        cited: citedSources.length,
       },
     });
   } catch (e) {

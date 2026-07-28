@@ -3,11 +3,16 @@ import type { KnowledgeChunk } from '@/types';
 
 const CONSTRAINT_CATEGORIES = (import.meta.env.VITE_CONSTRAINT_CATEGORIES || 'compliance,brand,guidelines').split(',');
 const REQUIRED_CATEGORIES = (import.meta.env.VITE_GENERATION_REQUIRED_CATEGORIES || 'brand').split(',');
-const TOP_K = parseInt(import.meta.env.VITE_RETRIEVAL_TOP_K || '10', 10);
+// Final chunk cap AFTER rerank. Fewer, stronger chunks beats many loose ones —
+// the LLM otherwise mixes documents and cites everything it saw.
+const TOP_K = parseInt(import.meta.env.VITE_RETRIEVAL_TOP_K || '6', 10);
 const MIN_SIMILARITY = parseFloat(import.meta.env.VITE_RETRIEVAL_MIN_SIMILARITY || '0.25');
+// After rerank, chunks below this score are dropped — prevents padding the
+// context with loosely-related material just because the top slot was strong.
+const MIN_RERANK_SCORE = parseFloat(import.meta.env.VITE_RETRIEVAL_MIN_RERANK || '1.2');
 const FETCH_LIMIT = 120;
-// How many candidates to pull from semantic search before diversity cut.
-const SEMANTIC_FETCH_MULT = 3;
+// How many candidates to pull from semantic search before rerank / diversity cut.
+const SEMANTIC_FETCH_MULT = 4;
 // Adaptive context budget: total characters of chunk text handed to the LLM.
 // Keeps retrieved context + constraints + prompt inside the model window
 // instead of overflowing it on accounts with long chunks.
@@ -50,6 +55,13 @@ export interface RetrievalResult {
   };
   /** How the context chunks were selected — useful for diagnostics/UI. */
   retrievalMode?: 'hybrid' | 'semantic' | 'keyword' | 'rewritten' | 'long_context' | 'none';
+  /** Extracted intent applied as a metadata filter, for debugging/UI. */
+  intent?: {
+    fileNames: string[];
+    categories: string[];
+    entities: string[];
+    phrases: string[];
+  };
 }
 
 export async function checkReadiness(accountId: string): Promise<{
@@ -170,23 +182,166 @@ async function scoreBySemantic(accountId: string, queryEmbedding: number[], excl
   return { chunks, topScore };
 }
 
-// ---- Hybrid fusion, dedup, budget ----------------------------------------
+// ---- Intent parsing, rerank, dedup, budget --------------------------------
 
-/** Normalized key for near-identical chunk detection. */
+/** Normalized key for exact-duplicate chunk detection. */
 function chunkKey(text: string): string {
   return text.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 300);
 }
 
-/** Drop near-identical chunks (same normalized text) — duplicate uploads and
- *  chunk overlap otherwise pollute the context with repeated passages. */
-function dedupeChunks(chunks: RetrievalChunk[]): RetrievalChunk[] {
-  const seen = new Set<string>();
-  return chunks.filter((c) => {
-    const key = chunkKey(c.chunk_text || '');
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+/** 5-word shingles for near-duplicate detection via Jaccard similarity. */
+function shingles(text: string, n = 5): Set<string> {
+  const words = text.toLowerCase().split(/\W+/).filter(Boolean);
+  const out = new Set<string>();
+  for (let i = 0; i + n <= words.length; i++) out.add(words.slice(i, i + n).join(' '));
+  return out;
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  for (const s of a) if (b.has(s)) inter++;
+  return inter / (a.size + b.size - inter);
+}
+
+/** Drop near-identical chunks (Jaccard ≥ 0.55 on 5-shingles). Chunk overlap
+ *  and duplicate uploads otherwise pollute the context with repeated passages
+ *  and inflate the citation list. */
+function dedupeChunks(chunks: RetrievalChunk[], threshold = 0.55): RetrievalChunk[] {
+  const kept: Array<{ chunk: RetrievalChunk; sh: Set<string>; key: string }> = [];
+  for (const c of chunks) {
+    const text = c.chunk_text || '';
+    const key = chunkKey(text);
+    if (!key) continue;
+    if (kept.some((k) => k.key === key)) continue;
+    const sh = shingles(text);
+    if (sh.size < 3) {
+      kept.push({ chunk: c, sh, key });
+      continue;
+    }
+    let dup = false;
+    for (const k of kept) {
+      if (k.sh.size >= 3 && jaccard(sh, k.sh) >= threshold) { dup = true; break; }
+    }
+    if (!dup) kept.push({ chunk: c, sh, key });
+  }
+  return kept.map((k) => k.chunk);
+}
+
+/** Parse the user query into a metadata filter + rerank signals. Extracted
+ *  without an LLM call — cheap, deterministic, and enough to catch the
+ *  common cases: "the persona file", "in ICP.pdf", '"exact phrase"',
+ *  named entities like company/product names. */
+async function extractIntent(
+  accountId: string,
+  queryText: string,
+): Promise<{
+  fileIds: string[] | null;
+  fileNames: string[];
+  categories: string[];
+  entities: string[];
+  phrases: string[];
+}> {
+  const phrases = [...queryText.matchAll(/"([^"]{3,})"/g)].map((m) => m[1].trim()).filter(Boolean);
+
+  const lower = queryText.toLowerCase();
+  const CAT_HINTS: Record<string, string> = {
+    brand: 'brand',
+    compliance: 'compliance',
+    guideline: 'guidelines',
+    guidelines: 'guidelines',
+    persona: 'persona',
+    icp: 'persona',
+    expert: 'expert',
+    example: 'example',
+  };
+  const categories = [...new Set(
+    Object.keys(CAT_HINTS).filter((k) => new RegExp(`\\b${k}\\b`).test(lower)).map((k) => CAT_HINTS[k]),
+  )];
+
+  const fileIds: string[] = [];
+  const fileNames: string[] = [];
+  const { data: files } = await supabase
+    .from('knowledge_files')
+    .select('id, file_name')
+    .eq('account_id', accountId)
+    .eq('active', true)
+    .eq('ingest_status', 'ready');
+
+  for (const f of (files || []) as Array<{ id: string; file_name: string }>) {
+    const stem = f.file_name.replace(/\.[a-z0-9]{2,5}$/i, '').toLowerCase();
+    if (!stem) continue;
+    if (lower.includes(f.file_name.toLowerCase()) || lower.includes(stem)) {
+      fileIds.push(f.id);
+      fileNames.push(f.file_name);
+      continue;
+    }
+    const stemWords = stem.split(/[\s_\-.]+/).filter((w) => w.length >= 4);
+    if (stemWords.length >= 2) {
+      const hits = stemWords.filter((w) => lower.includes(w)).length;
+      if (hits >= 2) {
+        fileIds.push(f.id);
+        fileNames.push(f.file_name);
+      }
+    }
+  }
+
+  const entityRe = /\b[A-Z][a-zA-Z0-9]{2,}(?:\s+[A-Z][a-zA-Z0-9]+){0,3}\b/g;
+  const rawEntities = [...queryText.matchAll(entityRe)].map((m) => m[0].trim());
+  const entities = [...new Set(rawEntities.filter((_e, i) => !(i === 0 && rawEntities.length === 1)))];
+
+  return {
+    fileIds: fileIds.length > 0 ? [...new Set(fileIds)] : null,
+    fileNames: [...new Set(fileNames)],
+    categories,
+    entities,
+    phrases,
+  };
+}
+
+/** Lexical reranker: score candidates by how directly they answer the query,
+ *  not just embedding neighbourhood. Weights (highest → lowest):
+ *   • exact quoted phrase present → +10
+ *   • named entity present → +3
+ *   • query-word coverage ratio → +5 × ratio
+ *   • embedding similarity carried forward → +2 × sim
+ *  Then applies a light length penalty for stubs and a small boost for
+ *  chunks whose file was named in the query. */
+function rerank(
+  chunks: RetrievalChunk[],
+  queryText: string,
+  phrases: string[],
+  entities: string[],
+  filteredFileIds: Set<string> | null,
+): Array<RetrievalChunk & { rerankScore: number }> {
+  const qWords = [...new Set(
+    queryText.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !REWRITE_STOPWORDS.has(w)),
+  )];
+  const phrasesLower = phrases.map((p) => p.toLowerCase());
+  const entitiesLower = entities.map((e) => e.toLowerCase());
+
+  return chunks
+    .map((c) => {
+      const text = (c.chunk_text || '').toLowerCase();
+      if (!text) return { ...c, rerankScore: 0 };
+
+      let score = 0;
+      for (const p of phrasesLower) if (text.includes(p)) score += 10;
+      for (const e of entitiesLower) if (text.includes(e)) score += 3;
+
+      if (qWords.length) {
+        const hits = qWords.filter((w) => text.includes(w)).length;
+        score += (hits / qWords.length) * 5;
+      }
+
+      score += Math.max(0, Math.min(1, c.similarity ?? 0)) * 2;
+
+      if (filteredFileIds && c.file_id && filteredFileIds.has(c.file_id)) score += 1;
+      if (text.length < 120) score *= 0.5;
+
+      return { ...c, rerankScore: score };
+    })
+    .sort((a, b) => b.rerankScore - a.rerankScore);
 }
 
 /** Trim the chunk list so total text stays inside the context budget.
@@ -345,14 +500,36 @@ export async function retrieve(
 
   const { data: contextFiles } = await supabase
     .from('knowledge_files')
-    .select('id')
+    .select('id, category')
     .eq('account_id', accountId)
     .eq('active', true)
     .eq('ingest_status', 'ready');
 
-  const contextIds = (contextFiles || [])
-    .map((f: any) => f.id)
+  const allContextRows = (contextFiles || []) as Array<{ id: string; category: string | null }>;
+  const allContextIds = allContextRows
+    .map((f) => f.id)
     .filter((id: string) => !constraintIds.includes(id));
+
+  // Step 1 (intent) — parse the query into a metadata filter.
+  const intent = await extractIntent(accountId, queryText);
+  const intentFileIdSet = intent.fileIds ? new Set(intent.fileIds) : null;
+
+  // Step 2 (metadata filter) — narrow the retrieval pool BEFORE scoring.
+  // If the query names a specific file, restrict to those files.
+  // Otherwise, if it names a category (persona/expert/example), restrict
+  // to files in those categories. Falls back to the full pool if the
+  // narrowed set would be empty, so filter mistakes never zero-out results.
+  let contextIds = allContextIds;
+  if (intentFileIdSet) {
+    const narrowed = allContextIds.filter((id) => intentFileIdSet.has(id));
+    if (narrowed.length > 0) contextIds = narrowed;
+  } else if (intent.categories.length > 0) {
+    const wanted = new Set(intent.categories);
+    const narrowed = allContextRows
+      .filter((f) => f.category && wanted.has(f.category) && !constraintIds.includes(f.id))
+      .map((f) => f.id);
+    if (narrowed.length > 0) contextIds = narrowed;
+  }
 
   // ---- Smart routing: long context vs RAG ----------------------------------
   let chunks: RetrievalChunk[] = [];
@@ -394,16 +571,25 @@ export async function retrieve(
         scoreByKeywords(accountId, queryText, contextIds),
       ]);
 
-      const semanticOk = !!semanticResult && semanticResult.chunks.length > 0 && semanticResult.topScore >= MIN_SIMILARITY;
+      // Apply the file-scope filter to semantic results (RPC can't filter by
+      // arbitrary file IDs — we do it here). Keyword search already scoped
+      // via contextIds. If the filter zeroes out semantic, fall through so
+      // downstream logic still works.
+      const contextIdSet = new Set(contextIds);
+      const scopedSemantic = semanticResult
+        ? { ...semanticResult, chunks: semanticResult.chunks.filter((c) => c.file_id && contextIdSet.has(c.file_id)) }
+        : null;
+
+      const semanticOk = !!scopedSemantic && scopedSemantic.chunks.length > 0 && scopedSemantic.topScore >= MIN_SIMILARITY;
       const keywordOk = keywordResult.chunks.length > 0 && keywordResult.topScore > 0;
 
       if (semanticOk && keywordOk) {
-        chunks = fuseRRF(semanticResult!.chunks, keywordResult.chunks);
-        topScore = semanticResult!.topScore;
+        chunks = fuseRRF(scopedSemantic!.chunks, keywordResult.chunks);
+        topScore = scopedSemantic!.topScore;
         retrievalMode = 'hybrid';
       } else if (semanticOk) {
-        chunks = semanticResult!.chunks;
-        topScore = semanticResult!.topScore;
+        chunks = scopedSemantic!.chunks;
+        topScore = scopedSemantic!.topScore;
         retrievalMode = 'semantic';
       } else if (keywordOk) {
         chunks = keywordResult.chunks;
@@ -423,13 +609,30 @@ export async function retrieve(
         }
       }
 
-      if (chunks.length === 0 && semanticResult?.chunks.length) {
-        chunks = semanticResult.chunks;
-        topScore = semanticResult.topScore;
+      if (chunks.length === 0 && scopedSemantic?.chunks.length) {
+        chunks = scopedSemantic.chunks;
+        topScore = scopedSemantic.topScore;
         retrievalMode = 'semantic';
       }
 
-      chunks = fitToBudget(dedupeChunks(diversifyByFile(chunks, TOP_K)));
+      // Step 3 (dedup) — remove near-identical passages before rerank so the
+      // reranker doesn't waste slots comparing the same content twice.
+      chunks = dedupeChunks(chunks);
+
+      // Step 4 (rerank) — score by direct query match, not just embedding
+      // neighbourhood. This is the critical step that stops loosely-related
+      // chunks from leaking through just because they share vector-space
+      // vicinity with the true answer.
+      const reranked = rerank(chunks, queryText, intent.phrases, intent.entities, intentFileIdSet);
+
+      // Step 5 (score floor) — drop anything below the minimum. Prevents the
+      // "top slot was strong so we padded the rest" failure mode.
+      const strong = reranked.filter((c) => c.rerankScore >= MIN_RERANK_SCORE);
+      const kept = strong.length > 0 ? strong : reranked.slice(0, Math.min(3, reranked.length));
+
+      // Step 6 (diversity + budget) — round-robin across files so a single
+      // document can't monopolise the answer, then trim to context budget.
+      chunks = fitToBudget(diversifyByFile(kept, TOP_K));
     }
   }
 
@@ -502,5 +705,11 @@ export async function retrieve(
     topScore,
     readiness,
     retrievalMode,
+    intent: {
+      fileNames: intent.fileNames,
+      categories: intent.categories,
+      entities: intent.entities,
+      phrases: intent.phrases,
+    },
   };
 }
