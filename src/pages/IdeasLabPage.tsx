@@ -24,6 +24,10 @@ interface Idea {
   cta?: string;
   visual_direction?: string;
   why_it_works?: string;
+  core_insight?: string;
+  why_it_matters?: string;
+  source_support?: string;
+  claims_to_verify?: string[];
   compliance_reminder?: string;
   slide_flow?: string[];
   structure?: string[];
@@ -624,12 +628,15 @@ export default function IdeasLabPage() {
 
             <h3 style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 12, lineHeight: 1.3 }}>{selected.title}</h3>
 
+            <Row label="Core Insight / POV" value={selected.core_insight} />
+            <Row label="Why It Matters" value={selected.why_it_matters} />
             <Row label="Hook" value={selected.hook} />
             <Row label="Audience" value={selected.audience} />
             <Row label="Angle" value={selected.angle} />
             <Row label="Description" value={selected.description} />
             <Row label="Key Insight" value={selected.key_insight} />
             <Row label="Why It Works" value={selected.why_it_works} />
+            <Row label="Source Support" value={selected.source_support} />
             <Row label="Occasion" value={selected.occasion} />
             <Row label="Timing" value={selected.timing} />
             <Row label="Keyword" value={selected.keyword} />
@@ -655,6 +662,15 @@ export default function IdeasLabPage() {
                 <ol style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.8rem', lineHeight: 1.6 }}>
                   {selected.slide_flow.map((s, i) => <li key={i}>{s}</li>)}
                 </ol>
+              </div>
+            )}
+
+            {selected.claims_to_verify && selected.claims_to_verify.length > 0 && (
+              <div style={{ marginBottom: 10, padding: '0.6rem 0.75rem', background: '#F59E0B12', border: '1px solid #F59E0B33', borderRadius: 8 }}>
+                <div style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#B45309', marginBottom: 4 }}>Verify before publishing</div>
+                <ul style={{ margin: 0, paddingLeft: '1.1rem', fontSize: '0.8rem', lineHeight: 1.6 }}>
+                  {selected.claims_to_verify.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
               </div>
             )}
 

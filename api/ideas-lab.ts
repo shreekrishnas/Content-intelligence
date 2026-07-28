@@ -9,25 +9,25 @@ import type { KnowledgeChunk } from './_lib/types.js';
 // Brand-agnostic content strategist. This app is multi-account (finance,
 // eyewear, water treatment, etc.), so the DNA stays generic and leans on the
 // brief + knowledge base for brand specifics rather than hardcoding a vertical.
-const IDEAS_SYSTEM_PROMPT = `You are a senior content strategist and ideation engine for a marketing team. You turn a brief into specific, production-ready content ideas that a team can execute immediately.
+const IDEAS_SYSTEM_PROMPT = `You are a senior content strategist writing a repurposing plan an experienced marketing lead would sign off on. Output feels like a professional plan, not a brainstorm dump.
 
 CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after. Your entire response must be parseable by JSON.parse().
 
-HOW YOU WORK:
-- Every idea must be specific and concrete — a real headline, a real angle, a real hook. Never generic templates.
-- Ground brand voice, product facts, and compliance in the provided knowledge base when available; otherwise use the brief and your expertise.
-- Vary format, angle, funnel stage, and audience segment across the batch — no two ideas should feel like the same idea reworded.
-- Write hooks that lead with a specific number, tension, or insight — not a vague promise.
-- Be honest about compliance: flag risky claims rather than making them.
+QUALITY BAR — every idea must clear all of these:
+- Fewer, stronger ideas beats a padded list. If you only have 3 defensible ideas, return 3. Never invent an idea just to hit a count.
+- Anchored in the source material. If a knowledge base is provided, every idea must lean on a specific fact, quote, framework, data point, or POV drawn from it. Name what you used in "source_support".
+- Fits THIS account, THIS speaker/brand voice, THIS audience, THIS industry. Reject any idea that would work equally well for a random other brand — that's the tell for generic.
+- Has a real point of view. Every idea states its core insight or thesis in one line — not a topic label ("we'll talk about X"), a claim ("X is wrong because Y").
+- Different format for different ideas. Choose from: LinkedIn post, LinkedIn carousel, short video / Reel, blog article, email, FAQ, thought-leadership essay, quote card. Vary formats across the batch so it reads like a real content plan.
+- Honest about verification. If a claim needs a stat, a source, or a legal check, call it out in "claims_to_verify" — don't launder it into the copy as if it were confirmed.
 
-TITLES AND HOOKS MUST BE SPECIFIC, NOT GENERIC TEMPLATES. Reject your own draft and rewrite if the title matches any of these evasion patterns:
+TITLES AND HOOKS MUST BE SPECIFIC — not category labels dressed as headlines. Reject and rewrite any title matching:
 - "The Ultimate/Complete Guide to X"
 - "Everything You Need to Know About X"
 - "Top N Tips/Ways/Reasons for X"
 - "The Growing Importance/Rise/Future of X"
-- "Why X Matters"
-- "Understanding X" / "Navigating X"
-A specific title names a fact, a number, a named product/feature, or a concrete scenario — not a category label wearing a headline's clothes. If the brief or knowledge base gives you nothing specific to hook into, say so via a thin idea rather than padding with a generic template.`;
+- "Why X Matters" / "Understanding X" / "Navigating X"
+A specific title names a fact, a number, a named product/feature, a real objection, or a concrete scenario — something a reader could not have predicted before seeing the source. If the source doesn't give you enough to hook into for a slot, drop that slot instead of padding.`;
 
 interface IdeasRequest {
   task: 'generate' | 'webinar' | 'seo' | 'seasonal' | 'expand';
@@ -62,15 +62,19 @@ function avoidSection(titles?: string[]): string {
 const IDEA_CARD_SCHEMA = `Each idea object must have EXACTLY these fields. Every field must be specific enough that a writer opens the card and can start producing — no vague labels, no topic strings.
 
 {
-  "title": "The exact publishable headline (a writer uses this verbatim, max ~90 chars)",
-  "format": "One concrete format: LinkedIn carousel | Instagram Reel | Blog post | Email | Short video | Quote card | ...",
+  "title": "The exact publishable headline (writer uses verbatim, max ~90 chars). Specific — not a category label.",
+  "core_insight": "One sentence stating the point of view or thesis. A real claim, not a topic. E.g. 'Most X onboarding fails because Y, not Z.' — not 'A guide to onboarding.'",
+  "why_it_matters": "One or two sentences on why THIS specific audience needs to hear this now — the concrete pain, decision, or moment it speaks to.",
+  "format": "Pick the format that best fits the insight: LinkedIn post | LinkedIn carousel | Short video / Reel | Blog article | Email | FAQ | Thought-leadership essay | Quote card",
   "group": "Social | Video | Blog | Email | Seasonal",
-  "audience": "The specific target segment (persona name or precise segment — not 'business owners')",
+  "audience": "The specific target segment (persona name, role, or precise segment — not 'business owners')",
   "hook": "The exact first sentence of the piece. Specific number, tension, or insight. No clichés. Max 200 chars.",
   "structure": ["Beat 1 label", "Beat 2 label", "Beat 3 label", "..."],
-  "slide_flow": ["For carousels/videos ONLY: per-slide script line. Empty array for single-post formats."],
+  "source_support": "Which source material this leans on. Reference the KB chunk or webinar section, and quote or paraphrase the specific fact/quote/framework you're using. If no KB was provided, name the brief element you're anchored to.",
+  "claims_to_verify": ["Any statistic, benchmark, legal claim, or attribution in this idea that needs fact-check or source before publishing. Empty array if everything is directly from the source."],
+  "slide_flow": ["For carousels/videos/reels ONLY: per-slide/scene script line. Empty array for single-post formats."],
   "angle": "Data-backed | Myth-buster | Contrarian | Case study | Framework | FAQ | Story | Comparison | ...",
-  "why_it_works": "One sentence — the psychological or strategic reason this lands with THIS audience.",
+  "why_it_works": "One sentence — the strategic reason this lands with THIS audience.",
   "cta": "One specific next-action: verb + object + destination. Not 'Learn more'.",
   "visual_direction": "One sentence a designer can execute directly.",
   "compliance_reminder": "Any disclaimer or claim risk to watch (empty string if none)",
@@ -89,9 +93,9 @@ All score values are integers 0-100.
 Structure rules:
 - "structure" is the beat-by-beat outline of the piece (3-6 beats). Beat labels, not summary sentences.
 - "sequence_rank" is 1..N — 1 = ship this FIRST. Rank by timeliness and production readiness.
-- No two ideas may share the same hook or the same structure. Every idea is materially different.
+- No two ideas share the same hook, structure, format, OR angle. Vary the mix.
 - Every hook must be publishable AS-IS. If you cannot write a specific hook, don't include the idea.
-- "prerequisites" is honest — empty array only when the writer could truly ship today.`;
+- "prerequisites" and "claims_to_verify" are honest — empty arrays only when truly nothing needs it.`;
 
 function buildGenerate(b: IdeasRequest): string {
   return `Brand/Account: ${b.account_label || 'General'}
@@ -103,32 +107,49 @@ Idea source: ${b.source || 'Manual topic'}
 Extra direction: ${b.context || 'none'}
 ${kbSection(b.knowledge_chunks)}${avoidSection(b.avoid_titles)}
 
-Generate 6 diverse, production-ready content ideas. ${IDEA_CARD_SCHEMA}
+Generate UP TO 4 content ideas — fewer if the source or brief can only honestly support fewer. Each must clear the quality bar. Better to return 3 sharp ideas than 4 with one padded.
 
-Return ONLY: {"ideas": [ ...6 idea objects... ]}`;
+Diversity requirement: across the batch, span at least 3 different formats from {LinkedIn post, LinkedIn carousel, Short video / Reel, Blog article, Email, FAQ, Thought-leadership essay, Quote card}. Don't return 4 blog posts.
+
+${IDEA_CARD_SCHEMA}
+
+Return ONLY: {"ideas": [ ...ideas... ]}`;
 }
 
 function buildWebinar(b: IdeasRequest): string {
-  return `Repurpose the following webinar/long-form content into 15-18 diverse content pieces spanning the funnel.
-Aim for a mix: ~4 LinkedIn posts, ~3 carousels, ~3 short videos, ~2 blog articles, ~2 email sequences, ~2 quote cards.
+  return `Build a professional content repurposing plan from the source below. You are the senior strategist — the deliverable should read like a plan you'd present to the client, not a brainstorm list.
+
+Account/brand: ${b.account_label || 'General'}
 ${kbSection(b.knowledge_chunks)}
 
-SOURCE CONTENT:
+SOURCE CONTENT (webinar / long-form):
 ${String(b.text || '').slice(0, 12000)}
+
+PLAN RULES:
+- Produce 6 to 10 ideas. Fewer if the source honestly only supports fewer. Never invent an idea just to hit a count.
+- Every idea must anchor to a SPECIFIC moment, quote, framework, statistic, or example from the source above. Reference it explicitly in "source_support".
+- Vary formats across the plan — include a mix from {LinkedIn post, LinkedIn carousel, Short video / Reel, Blog article, Email, FAQ, Thought-leadership essay, Quote card}. Choose the format that best fits each insight; don't force-fit.
+- Ideas must fit THIS speaker's POV, THIS audience, THIS industry. If it would work for any random brand, it's generic — drop it.
+- Every idea has a real point of view — a claim, not a topic label.
+- Flag anything that needs verification in "claims_to_verify".
 
 Each idea object must have these fields:
 {
-  "title": "Specific headline",
-  "format": "LinkedIn post | Carousel | Short video | Blog article | Email sequence | Quote card",
+  "title": "Specific, publishable headline. Not a category label.",
+  "core_insight": "One sentence stating the POV / thesis. A claim, not a topic.",
+  "why_it_matters": "One or two sentences on why THIS audience needs this now — the concrete decision, pain, or moment it addresses.",
+  "format": "LinkedIn post | LinkedIn carousel | Short video / Reel | Blog article | Email | FAQ | Thought-leadership essay | Quote card",
   "group": "Social | Video | Blog | Email",
   "funnel_stage": "TOFU | MOFU | BOFU",
   "priority": "high | medium | low",
   "effort": "quick | moderate | substantial",
-  "audience": "Target segment",
-  "hook": "Scroll-stopping opener",
-  "description": "80+ words on what this piece is and how to make it",
-  "key_insight": "The core takeaway drawn from the source",
-  "compliance_reminder": "Claim/disclaimer risk (empty if none)",
+  "audience": "The specific target segment (persona/role — not 'business owners')",
+  "hook": "The exact first line, publishable as-is. Specific — number, tension, or insight.",
+  "structure": ["3-6 beat labels for how this piece flows"],
+  "source_support": "The specific webinar moment/quote/framework this leans on. Quote or paraphrase the source snippet and (if applicable) name the KB chunk that backs the brand voice or facts.",
+  "claims_to_verify": ["Any statistic, benchmark, legal or attribution claim that must be fact-checked before publishing. Empty array if the source directly supports everything."],
+  "key_insight": "One-sentence takeaway a reader walks away with",
+  "compliance_reminder": "Claim/disclaimer risk (empty string if none)",
   "content_pillar": "Theme"
 }
 
