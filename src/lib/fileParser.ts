@@ -7,6 +7,9 @@
 // lone UTF-16 surrogates, or other Postgres-breaking characters.
 // ============================================================
 
+// Bundled worker URL (resolved by Vite at build time — avoids CDN fetch failures)
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
 const MAX_FILE_BYTES = 20 * 1024 * 1024; // 20 MB safety cap
 const MAX_OUTPUT_CHARS = 500_000; // ~125k tokens — plenty for chunking
 
@@ -187,10 +190,7 @@ async function parsePdf(file: File, onProgress?: (msg: string) => void): Promise
   try {
     const pdfjs: any = await import('pdfjs-dist');
 
-    // Configure worker - required for pdfjs-dist 4.x
-    if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-    }
+    pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
     pdfDoc = await pdfjs.getDocument({
       data: new Uint8Array(buf),
@@ -225,10 +225,7 @@ async function parsePdf(file: File, onProgress?: (msg: string) => void): Promise
     try {
       const pdfjs: any = await import('pdfjs-dist');
 
-      // Configure worker - required for pdfjs-dist 4.x
-      if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-        pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
-      }
+      pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
       pdfDoc = await pdfjs.getDocument({
         data: new Uint8Array(buf),
