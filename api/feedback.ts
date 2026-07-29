@@ -96,6 +96,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     <div style="font-size:15px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(message)}</div>
   </div>`;
 
+  // Send email + persist to feedback table in parallel. The DB row is the
+  // durable record — even if email delivery breaks, the admin can still see
+  // the submission in Settings. deliver_error captures the mail failure.
+  let deliverError: string | null = null;
+  let messageId: string | null = null;
   try {
     const resp = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -112,20 +117,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         html,
       }),
     });
-
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');
-      return sendError(res, 502, 'email_send_failed', `Could not deliver feedback: ${errText.slice(0, 300) || resp.statusText}`);
+      deliverError = errText.slice(0, 500) || resp.statusText;
+    } else {
+      const result = await resp.json().catch(() => ({}));
+      messageId = (result as any)?.id ?? null;
     }
-
-    const result = await resp.json().catch(() => ({}));
-    return res.status(200).json({
-      success: true,
-      message_id: (result as any)?.id ?? null,
-      delivered_to: destination,
-    });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Unknown error contacting the email provider.';
-    return sendError(res, 502, 'email_send_failed', msg);
+    deliverError = e instanceof Error ? e.message : 'Unknown error contacting the email provider.';
   }
+
+  await admin.from('feedback').insert({
+    sender_user_id: user.id,
+    sender_email: senderEmail,
+    sender_name: senderName || null,
+    account_label: accountLabel || null,
+    page: page || null,
+    message,
+    delivered: !deliverError,
+    deliver_error: deliverError,
+  });
+
+  if (deliverError) {
+    return sendError(res, 502, 'email_send_failed', `Feedback was saved but email delivery failed: ${deliverError}`);
+  }
+
+  return res.status(200).json({
+    success: true,
+    message_id: messageId,
+    delivered_to: destination,
+  });
 }

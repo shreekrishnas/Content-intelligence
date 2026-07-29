@@ -1161,5 +1161,31 @@ export const api = {
       }
       return ok({ delivered_to: data?.delivered_to || '' });
     },
+
+    async list(): Promise<Result<FeedbackItem[]>> {
+      const jwt = await getJwt();
+      if (!jwt) return err('You must be signed in.');
+      const resp = await fetch('/api/feedback-list', {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${jwt}` },
+      });
+      const raw = await resp.text();
+      let data: any = null;
+      try { data = raw ? JSON.parse(raw) : null; } catch { /* raw non-JSON */ }
+      if (!resp.ok) return err(data?.error || `Feedback list failed (${resp.status}).`);
+      return ok((data?.items || []) as FeedbackItem[]);
+    },
   },
 };
+
+export interface FeedbackItem {
+  id: string;
+  sender_email: string;
+  sender_name: string | null;
+  account_label: string | null;
+  page: string | null;
+  message: string;
+  delivered: boolean;
+  deliver_error: string | null;
+  created_at: string;
+}
