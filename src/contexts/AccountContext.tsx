@@ -205,28 +205,51 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     await loadAccounts();
   }, [loadAccounts]);
 
+  // Initial load + reload on user/viewMode change. When the account pool
+  // changes (mode toggle or first mount), pick the current account if it's
+  // still in the pool, otherwise auto-switch to the first available one AND
+  // reset per-account cached state in the app store so the whole app follows.
   useEffect(() => {
     if (!user) {
       setLoading(false);
       return;
     }
 
+    let cancelled = false;
     (async () => {
+      setLoading(true);
       const list = await loadAccounts();
-      if (!list.length) return;
+      if (cancelled) return;
+      if (!list.length) {
+        setAccountId(null);
+        setAccount(null);
+        return;
+      }
 
       const storedId = localStorage.getItem('ci_account_id');
       const params = new URLSearchParams(window.location.search);
       const urlId = params.get('account_id');
 
       const preferred = urlId || storedId;
-      const hasAccess = preferred && list.some((a) => a.id === preferred);
-      const id = hasAccess ? preferred! : list[0].id;
+      const stillInPool = preferred && list.some((a) => a.id === preferred);
+      const nextId = stillInPool ? preferred! : list[0].id;
 
-      localStorage.setItem('ci_account_id', id);
-      await fetchAccount(id);
+      if (nextId !== accountId) {
+        // The account is changing (mode-flip evicted the old one, or first
+        // mount). Wipe per-account cached state so downstream sections
+        // reload against the new account instead of showing stale data.
+        useAppStore.getState().resetAccountState();
+      }
+
+      localStorage.setItem('ci_account_id', nextId);
+      await fetchAccount(nextId);
     })();
-  }, [user, loadAccounts, fetchAccount]);
+
+    return () => { cancelled = true; };
+    // accountId is intentionally not a dep: we don't want a manual switch
+    // (which sets accountId) to re-trigger this reload effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, effectiveViewMode, loadAccounts, fetchAccount]);
 
   return (
     <AccountContext.Provider value={{

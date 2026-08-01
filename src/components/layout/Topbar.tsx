@@ -215,15 +215,19 @@ function AccountSwitcher() {
 }
 
 function ViewModeToggle() {
-  const { isMasterAdmin, viewMode, setViewMode } = useAccount();
+  const { isMasterAdmin, viewMode, setViewMode, accounts } = useAccount();
   if (!isMasterAdmin) return null;
 
   const Button = ({ mode, label }: { mode: 'admin' | 'personal'; label: string }) => {
     const active = viewMode === mode;
     return (
       <button
-        onClick={() => setViewMode(mode)}
-        title={mode === 'admin' ? 'See every account in the org' : 'See only accounts you have explicit access to'}
+        onClick={() => {
+          if (active) return;
+          setViewMode(mode);
+          showToast(mode === 'admin' ? 'Admin view — loading all accounts…' : 'Personal view — loading your accounts…', 'success');
+        }}
+        title={mode === 'admin' ? `See every account in the org (currently ${accounts.length})` : 'See only accounts you have explicit access to'}
         style={{
           padding: '5px 12px',
           borderRadius: 6,
