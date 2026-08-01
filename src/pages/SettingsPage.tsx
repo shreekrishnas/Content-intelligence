@@ -1,13 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useAccount } from '@/contexts/AccountContext';
+import { useAccount, MASTER_ADMIN_EMAIL } from '@/contexts/AccountContext';
 import { useAuthStore } from '@/stores/authStore';
 import { api } from '@/lib/api';
 import type { FeedbackItem } from '@/lib/api';
 import { supabaseConfigured } from '@/lib/supabase';
 import type { Integration } from '@/types';
 import { showToast } from '@/lib/toast';
-
-const FEEDBACK_ADMIN_EMAIL = 'shreekrishna.basri@trilliantdigital.com';
 
 
 const STATUS_COLORS: Record<string, string> = {
@@ -19,7 +17,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function SettingsPage() {
-  const { account, accountId } = useAccount();
+  const { account, accountId, isMasterAdmin, viewMode } = useAccount();
   const user = useAuthStore((s) => s.user);
 
   const [integrations, setIntegrations] = useState<Integration[]>([]);
@@ -28,7 +26,9 @@ export default function SettingsPage() {
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<string | null>(null);
 
-  const isFeedbackAdmin = (user?.email || '').toLowerCase() === FEEDBACK_ADMIN_EMAIL.toLowerCase();
+  // Feedback inbox is shown only to the master admin AND only when they're in Admin view.
+  // In Personal view the section is hidden so the app feels like a normal user's app.
+  const isFeedbackAdmin = isMasterAdmin && viewMode === 'admin';
   const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>([]);
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -170,7 +170,7 @@ export default function SettingsPage() {
             </button>
           </div>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: -6, marginBottom: 12 }}>
-            Only visible to <strong>{FEEDBACK_ADMIN_EMAIL}</strong>. Each row shows who sent the message and what account/page they were on.
+            Only visible to <strong>{MASTER_ADMIN_EMAIL}</strong> in Admin view. Each row shows who sent the message and what account/page they were on.
           </p>
 
           {feedbackError ? (

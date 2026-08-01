@@ -8,7 +8,7 @@ import { handleOptions, sendError, cors } from './_lib/http.js';
 // feedback table also enforces this at the row level.
 // ============================================================
 
-const ADMIN_EMAIL = 'shreekrishna.basri@trilliantdigital.com';
+const ADMIN_EMAIL = 'shreekrishnabhasri07@gmail.com';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;

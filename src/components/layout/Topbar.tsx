@@ -214,6 +214,53 @@ function AccountSwitcher() {
   );
 }
 
+function ViewModeToggle() {
+  const { isMasterAdmin, viewMode, setViewMode } = useAccount();
+  if (!isMasterAdmin) return null;
+
+  const Button = ({ mode, label }: { mode: 'admin' | 'personal'; label: string }) => {
+    const active = viewMode === mode;
+    return (
+      <button
+        onClick={() => setViewMode(mode)}
+        title={mode === 'admin' ? 'See every account in the org' : 'See only accounts you have explicit access to'}
+        style={{
+          padding: '5px 12px',
+          borderRadius: 6,
+          border: 'none',
+          background: active ? 'var(--accent-primary)' : 'transparent',
+          color: active ? '#fff' : 'var(--text-secondary)',
+          fontSize: '0.72rem',
+          fontWeight: 600,
+          cursor: active ? 'default' : 'pointer',
+          transition: 'background 120ms ease',
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+        }}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 2,
+        padding: 3,
+        borderRadius: 8,
+        border: '1px solid var(--border)',
+        background: 'var(--surface-card)',
+      }}
+    >
+      <Button mode="admin" label="Admin" />
+      <Button mode="personal" label="Personal" />
+    </div>
+  );
+}
+
 function FeedbackButton({ activeTab }: { activeTab: string }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState('');
@@ -384,6 +431,7 @@ export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps)
         <div className="topbar-sub">{meta.subtitle}</div>
       </div>
       <div className="topbar-right">
+        <ViewModeToggle />
         <AccountSwitcher />
         <FeedbackButton activeTab={activeTab} />
         {user && (
