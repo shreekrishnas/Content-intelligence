@@ -9,7 +9,11 @@ import { handleOptions, sendError, cors } from './_lib/http.js';
 // feedback is user-scoped, not account-scoped.
 // ============================================================
 
-const DEFAULT_DESTINATION = 'shreekrishna.basri@trilliantdigital.com';
+// Resend sandbox mode (before a domain is verified) rejects any recipient
+// that isn't the Resend account's signup email. Default to that address so
+// feedback delivers out of the box; once trilliantdigital.com is verified
+// at resend.com/domains, set FEEDBACK_TO_ADDRESS to the trilliant address.
+const DEFAULT_DESTINATION = 'shreekrishnabhasri07@gmail.com';
 const MAX_MESSAGE_CHARS = 5000;
 
 function escapeHtml(s: string): string {
