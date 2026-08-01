@@ -8,7 +8,7 @@ const ORG_ID = '00000000-0000-0000-0000-000000000001';
 
 // Master admin: only this login sees the Admin/Personal view toggle and the
 // feedback inbox. Change here if the master account ever moves.
-export const MASTER_ADMIN_EMAIL = 'shreekrishnabhasri07@gmail.com';
+export const MASTER_ADMIN_EMAIL = 'shreekrishna.basri@trilliantdigital.com';
 
 export type ViewMode = 'admin' | 'personal';
 const VIEW_MODE_KEY = 'ci_view_mode';
