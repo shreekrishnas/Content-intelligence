@@ -75,8 +75,6 @@ function LoadingScreen() {
 }
 
 function AuthGate({ children }: { children: ReactNode }) {
-  const user = useAuthStore((s) => s.user);
-  if (supabaseConfigured && !user) return <LoginPage />;
   return <>{children}</>;
 }
 
