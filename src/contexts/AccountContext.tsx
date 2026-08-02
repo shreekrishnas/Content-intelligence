@@ -6,9 +6,17 @@ import type { Account } from '@/types';
 
 const ORG_ID = '00000000-0000-0000-0000-000000000001';
 
-// Master admin: only this login sees the Admin/Personal view toggle and the
-// feedback inbox. Change here if the master account ever moves.
-export const MASTER_ADMIN_EMAIL = 'shreekrishna.basri@trilliantdigital.com';
+// Master admin: any of these logins sees the Admin/Personal view toggle
+// and the feedback inbox. Keep both the gmail login (Resend sandbox owner,
+// used for outbound feedback delivery) and the trilliant login (identity
+// on record) so switching between them doesn't hide the admin UI.
+export const MASTER_ADMIN_EMAILS = [
+  'shreekrishna.basri@trilliantdigital.com',
+  'shreekrishnabhasri07@gmail.com',
+] as const;
+// Kept as an export for compatibility with anything that imports the
+// singular constant — refers to the primary identity.
+export const MASTER_ADMIN_EMAIL = MASTER_ADMIN_EMAILS[0];
 
 export type ViewMode = 'admin' | 'personal';
 const VIEW_MODE_KEY = 'ci_view_mode';
@@ -67,7 +75,9 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
 
-  const isMasterAdmin = (user?.email || '').toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
+  const isMasterAdmin = MASTER_ADMIN_EMAILS.some(
+    (e) => e.toLowerCase() === (user?.email || '').toLowerCase(),
+  );
 
   // Master admin defaults to admin view unless they've switched. Non-admins
   // are always locked to personal view — the setter is a no-op for them.

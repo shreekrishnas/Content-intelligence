@@ -8,7 +8,10 @@ import { handleOptions, sendError, cors } from './_lib/http.js';
 // feedback table also enforces this at the row level.
 // ============================================================
 
-const ADMIN_EMAIL = 'shreekrishna.basri@trilliantdigital.com';
+const ADMIN_EMAILS = [
+  'shreekrishna.basri@trilliantdigital.com',
+  'shreekrishnabhasri07@gmail.com',
+];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;
@@ -34,7 +37,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (authErr || !user) {
     return sendError(res, 401, 'invalid_token', 'Your session has expired. Please sign in again.');
   }
-  if ((user.email || '').toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+  const callerEmail = (user.email || '').toLowerCase();
+  const isAdmin = ADMIN_EMAILS.some((e) => e.toLowerCase() === callerEmail);
+  if (!isAdmin) {
     return sendError(res, 403, 'not_admin', 'Only the feedback admin can view submissions.');
   }
 
