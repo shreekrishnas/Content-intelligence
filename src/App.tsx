@@ -5,8 +5,6 @@ import { AccountProvider, useAccount } from './contexts/AccountContext';
 import AppShell from './components/layout/AppShell';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/Toast';
-import LoginPage from './pages/LoginPage';
-import { supabaseConfigured } from './lib/supabase';
 
 function ErrorScreen({ title, message }: { title: string; message: string }) {
   return (
