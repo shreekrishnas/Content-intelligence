@@ -15,11 +15,64 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-
-      - name: Apply migrations
+      - name: Apply migrations via Management API
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: supabase db push --project-ref kzyddmejffqrjpwwduyo
+        run: |
+          python3 - << 'PYEOF'
+          import os, json, glob, urllib.request, urllib.error, sys
+
+          token = os.environ['SUPABASE_ACCESS_TOKEN']
+          ref   = 'kzyddmejffqrjpwwduyo'
+
+          def query(sql):
+              url  = f'https://api.supabase.com/v1/projects/{ref}/database/query'
+              body = json.dumps({'query': sql}).encode()
+              req  = urllib.request.Request(url, data=body, headers={
+                  'Authorization': f'Bearer {token}',
+                  'Content-Type': 'application/json',
+              })
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as r:
+                      return json.loads(r.read()), None
+              except urllib.error.HTTPError as e:
+                  return None, f'HTTP {e.code}: {e.read().decode()}'
+
+          # Fetch already-applied migrations
+          result, err = query(
+              'SELECT version FROM supabase_migrations.schema_migrations ORDER BY version'
+          )
+          applied = set()
+          if isinstance(result, list):
+              applied = {r.get('version', '') for r in result}
+          elif err:
+              print(f'Migration history unavailable ({err}); will attempt all files.')
+
+          files = sorted(glob.glob('supabase/migrations/*.sql'))
+          if not files:
+              print('No migration files found.')
+              sys.exit(0)
+
+          ok = True
+          for fpath in files:
+              name    = os.path.basename(fpath)
+              version = name.split('_')[0]
+              if version in applied:
+                  print(f'skip  {name}')
+                  continue
+              print(f'apply {name} ...', end=' ', flush=True)
+              _, err = query(open(fpath).read())
+              if err:
+                  print(f'FAILED: {err}')
+                  ok = False
+                  break
+              safe = name.replace("'", "''")
+              query(
+                  f"INSERT INTO supabase_migrations.schema_migrations"
+                  f"(version, name, statements) VALUES ('{version}', '{safe}', ARRAY[]::text[])"
+                  f" ON CONFLICT DO NOTHING"
+              )
+              print('done')
+
+          sys.exit(0 if ok else 1)
+          PYEOF
