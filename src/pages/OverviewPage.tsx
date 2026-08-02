@@ -13,10 +13,6 @@ function greeting() {
   return 'Good evening';
 }
 
-function getWeekNum(d: Date) {
-  const jan1 = new Date(d.getFullYear(), 0, 1);
-  return Math.ceil(((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7);
-}
 
 function formatRelative(d: Date) {
   const diffMs = Date.now() - d.getTime();
