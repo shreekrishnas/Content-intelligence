@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import EmptyState from '@/components/ui/EmptyState';
 import { CardSkeleton } from '@/components/ui/Skeleton';
 import { useAppStore } from '@/store';
@@ -142,7 +142,7 @@ export default function OpportunitiesPage() {
               This will mark all <strong>{openCount}</strong> open opportunit{openCount === 1 ? 'y' : 'ies'} as dropped.
             </p>
             <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1.2rem' }}>
-              Nothing is deleted — dropped items stay under the &ldquo;Dropped&rdquo; filter and can be reopened one by one. Items already in Studio are not touched.
+              Nothing is deleted - dropped items stay under the &ldquo;Dropped&rdquo; filter and can be reopened one by one. Items already in Studio are not touched.
             </p>
             <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary btn-sm" onClick={() => setConfirmDropAll(false)} disabled={droppingAll}>Cancel</button>
@@ -206,7 +206,7 @@ export default function OpportunitiesPage() {
                 {opp.persona_name && (
                   <p style={{ fontSize: 13, opacity: 0.75, marginBottom: 4 }}>
                     {opp.persona_name}
-                    {opp.persona_relevance_score != null && ` — relevance ${opp.persona_relevance_score}`}
+                    {opp.persona_relevance_score != null && ` - relevance ${opp.persona_relevance_score}`}
                   </p>
                 )}
 

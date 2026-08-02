@@ -74,7 +74,7 @@ export default function AskKB({ accountId, accountName, storageKey }: AskKBProps
 
     try {
       // The same retrieval every other feature uses. It is account_id
-      // scoped and RLS-enforced — nothing from another account can leak.
+      // scoped and RLS-enforced -nothing from another account can leak.
       const result = await retrieve(accountId, q, 'kb_ask');
 
       if (result.refused) {
@@ -149,7 +149,7 @@ export default function AskKB({ accountId, accountName, storageKey }: AskKBProps
             Ask this Knowledge Base
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 2 }}>
-            Grounded answers from {accountName ? <strong>{accountName}</strong> : 'the active account'}'s uploaded files only — no cross-account bleed, no invented facts.
+            Grounded answers from {accountName ? <strong>{accountName}</strong> : 'the active account'}'s uploaded files only -no cross-account bleed, no invented facts.
           </div>
         </div>
         {turns.length > 0 && (
@@ -184,7 +184,7 @@ export default function AskKB({ accountId, accountName, storageKey }: AskKBProps
           className="glass-textarea"
           rows={2}
           style={{ flex: 1, minHeight: 44, resize: 'vertical' }}
-          placeholder={accountId ? 'Ask a question about this account\'s knowledge — e.g. "What products do we recommend for NRIs?"' : 'Pick an account first.'}
+          placeholder={accountId ? 'Ask a question about this account\'s knowledge -e.g. "What products do we recommend for NRIs?"' : 'Pick an account first.'}
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={onKeyDown}
@@ -244,7 +244,7 @@ function TurnBubble({ turn }: { turn: Turn }) {
       )}
       {turn.grounded === false && !isError && (
         <div style={{ marginTop: 4, fontSize: '0.64rem', color: '#F59E0B' }}>
-          No passages cited — answer may be low confidence. Consider uploading more relevant files.
+          No passages cited -answer may be low confidence. Consider uploading more relevant files.
         </div>
       )}
     </div>

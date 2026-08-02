@@ -80,8 +80,8 @@ function AccountGate() {
   const { accountId, account, loading, error } = useAccount();
 
   // Only unmount AppShell for the FIRST-time load (no account object yet).
-  // Once an account has landed, transient loading flips — e.g. switching
-  // accounts, background refetches — must NOT swap AppShell for a
+  // Once an account has landed, transient loading flips -e.g. switching
+  // accounts, background refetches -must NOT swap AppShell for a
   // LoadingScreen, because that unmount destroys AppShell's visitedTabs
   // keep-alive state and remounts every visited page from scratch. That
   // remount is what the user perceives as the whole app "refreshing" when
@@ -96,7 +96,7 @@ function AccountGate() {
     return (
       <ErrorScreen
         title="No Accounts Assigned"
-        message="Your profile has no client accounts linked yet. This usually resolves after your first sign-in — try refreshing. If the issue persists, contact your administrator."
+        message="Your profile has no client accounts linked yet. This usually resolves after your first sign-in -try refreshing. If the issue persists, contact your administrator."
       />
     );
   }

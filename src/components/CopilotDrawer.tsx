@@ -54,7 +54,7 @@ export default function CopilotDrawer({ open, onClose }: Props) {
         <div className="drawer-body" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div className="glass-card-static" style={{ padding: '.9rem', background: 'var(--surface-card-header)' }}>
             <p style={{ fontSize: '.83rem', color: 'var(--text-secondary)', lineHeight: 1.5, margin: 0 }}>
-              I can see your pipeline, draft plans, and surface content gaps — all grounded in your Knowledge Base.
+              I can see your pipeline, draft plans, and surface content gaps -all grounded in your Knowledge Base.
               What would you like help with?
             </p>
           </div>

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+﻿import { useState, useRef, useEffect, useCallback } from 'react';
 import EmptyState from '@/components/ui/EmptyState';
 import { RowSkeleton } from '@/components/ui/Skeleton';
 import { useAccount } from '@/contexts/AccountContext';
@@ -12,8 +12,8 @@ import AskKB from '@/components/AskKB';
 const KB_CATEGORIES: { id: KnowledgeCategory; label: string; desc: string }[] = [
   { id: 'persona', label: 'Persona / ICP Files', desc: 'Customer ICP docs, segmentation, interview insights' },
   { id: 'brand', label: 'Brand Tone of Voice', desc: 'Writing guidelines, approved messaging' },
-  { id: 'expert', label: 'Expert Voice Files', desc: 'Voice of experts — transcripts and writing samples' },
-  { id: 'guidelines', label: 'Content & Creative Guidelines', desc: 'Platform rules — LinkedIn, Instagram, blog' },
+  { id: 'expert', label: 'Expert Voice Files', desc: 'Voice of experts - transcripts and writing samples' },
+  { id: 'guidelines', label: 'Content & Creative Guidelines', desc: 'Platform rules - LinkedIn, Instagram, blog' },
   { id: 'compliance', label: 'Compliance / Restrictions', desc: 'Claims restrictions, disclaimers, legal rules' },
   { id: 'terminology', label: 'Terminology', desc: 'Preferred terms and approved explanations' },
   { id: 'raw_notes', label: 'Raw Notes', desc: 'Unstructured notes and research' },
@@ -113,12 +113,12 @@ export default function KnowledgeBasePage() {
         totalCount = data.total || totalCount;
         setRebuildProgress({ embedded: totalEmbedded, total: totalCount });
         if (data.done || data.remaining <= 0) {
-          showToast(`Search index ready — embedded ${totalEmbedded} chunks`, 'success');
+          showToast(`Search index ready - embedded ${totalEmbedded} chunks`, 'success');
           break;
         }
         if (data.embedded === 0) {
-          // Nothing was written in the last iteration — bail to avoid a loop.
-          showToast(data.error || 'Rebuild stalled — try again', 'warn');
+          // Nothing was written in the last iteration - bail to avoid a loop.
+          showToast(data.error || 'Rebuild stalled - try again', 'warn');
           break;
         }
       }
@@ -284,18 +284,18 @@ export default function KnowledgeBasePage() {
             {rebuilding && rebuildProgress
               ? `Embedding… ${rebuildProgress.embedded} of ${rebuildProgress.total}`
               : reprocessing
-                ? 'Reprocessing files — re-parsing and chunking…'
+                ? 'Reprocessing files - re-parsing and chunking…'
                 : indexStatus === null
                   ? 'Checking index status…'
                   : indexStatus.total === 0 && indexStatus.files === 0
                     ? 'No files uploaded yet. Upload knowledge files to build a semantic index.'
                     : indexStatus.total === 0 && indexStatus.files > 0
-                      ? `${indexStatus.files} file${indexStatus.files === 1 ? '' : 's'} uploaded but no chunks found. Older uploads may have skipped chunking — click Reprocess to re-parse and index them.`
+                      ? `${indexStatus.files} file${indexStatus.files === 1 ? '' : 's'} uploaded but no chunks found. Older uploads may have skipped chunking - click Reprocess to re-parse and index them.`
                       : indexStatus.missing === 0
                         ? indexStatus.skipped > 0
                           ? `${indexStatus.embedded} of ${indexStatus.total} chunks embedded. ${indexStatus.skipped} skipped (provider couldn't process). Semantic retrieval active for the embedded set.`
                           : `All ${indexStatus.total} chunks embedded. Semantic retrieval active.`
-                        : `${indexStatus.embedded} of ${indexStatus.total} chunks embedded. ${indexStatus.missing} pending${indexStatus.skipped > 0 ? `, ${indexStatus.skipped} skipped` : ''} — keyword fallback in use for those.`}
+                        : `${indexStatus.embedded} of ${indexStatus.total} chunks embedded. ${indexStatus.missing} pending${indexStatus.skipped > 0 ? `, ${indexStatus.skipped} skipped` : ''} - keyword fallback in use for those.`}
           </div>
           {indexStatus && indexStatus.total > 0 && (
             <div style={{ marginTop: 6, height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>

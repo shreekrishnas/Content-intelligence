@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+﻿import { useState, useCallback, useRef, useEffect } from 'react';
 import { useAppStore } from '@/store';
 import { useAccount } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
@@ -25,9 +25,9 @@ const ACTIVITY_LABELS = [
 type Step = 'source' | 'details' | 'content' | 'context' | 'review';
 
 const STEPS: { id: Step; label: string; heading: string; hint: string }[] = [
-  { id: 'source', label: 'Source', heading: 'What are you analyzing?', hint: 'Pick the type of source — the engine adapts how it reads it.' },
+  { id: 'source', label: 'Source', heading: 'What are you analyzing?', hint: 'Pick the type of source -the engine adapts how it reads it.' },
   { id: 'details', label: 'Details', heading: 'Tell us about this piece', hint: 'A clear title helps the engine anchor its topic extraction.' },
-  { id: 'content', label: 'Content', heading: 'Add your content', hint: 'Paste a transcript, article, or script — length is not limited.' },
+  { id: 'content', label: 'Content', heading: 'Add your content', hint: 'Paste a transcript, article, or script -length is not limited.' },
   { id: 'context', label: 'Context', heading: 'Any campaign context?', hint: 'Optional. Steers the opportunities toward your current goals.' },
   { id: 'review', label: 'Review', heading: 'Ready to analyze', hint: 'Confirm the setup below, then run the engine.' },
 ];
@@ -78,7 +78,7 @@ function RailRow({ label, value, pending, last }: { label: string; value?: strin
         color: pending ? 'var(--text-muted)' : 'var(--text-primary)',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>
-        {pending ? '—' : value}
+        {pending ? '-' : value}
       </span>
     </div>
   );
@@ -118,7 +118,7 @@ function AddSourceTypeModal({ onClose, onSave }: { onClose: () => void; onSave: 
         <div className="field">
           <label className="field-label">Description</label>
           <textarea className="glass-textarea" rows={3} style={{ minHeight: 72 }} placeholder="Describe what this source type is…" value={description} onChange={(e) => setDescription(e.target.value)} />
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>The engine infers an archetype from the name — this sharpens the interpretation.</div>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>The engine infers an archetype from the name -this sharpens the interpretation.</div>
         </div>
         <div className="field">
           <label className="field-label">Output Formats</label>
@@ -203,12 +203,12 @@ export default function AnalyzePage() {
   // Returns null on success, or a user-facing error message. The modal
   // stays open on failure so the typed values aren't lost.
   const handleAddSourceType = useCallback(async (name: string, description: string, formats: string[], guidance: string): Promise<string | null> => {
-    if (!accountId) return 'No account selected — pick an account first.';
+    if (!accountId) return 'No account selected -pick an account first.';
     const { data, error: apiErr } = await api.sourceTypes.create(accountId, name, description, formats, guidance);
     if (apiErr || !data) {
       const msg = apiErr || 'Could not create the source type.';
       if (/duplicate|unique|uq_source_type/i.test(msg)) {
-        return `A source type named like "${name}" already exists for this account — pick a different name.`;
+        return `A source type named like "${name}" already exists for this account -pick a different name.`;
       }
       if (/row-level security|permission|policy/i.test(msg)) {
         return 'You don\'t have permission to add source types on this account (editor or manager role required).';
@@ -310,7 +310,7 @@ export default function AnalyzePage() {
         const cleanName = f.file_name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
         return {
           name: cleanName || f.file_name,
-          description: [str.summary, str.audience ? `Audience: ${str.audience}` : null].filter(Boolean).join(' — ') || cleanName,
+          description: [str.summary, str.audience ? `Audience: ${str.audience}` : null].filter(Boolean).join(' -') || cleanName,
           pain_points: (str.important_facts || str.key_messages || []).slice(0, 5),
           goals: (str.main_topics || []).slice(0, 5),
         };
@@ -452,7 +452,7 @@ export default function AnalyzePage() {
         <>
           <div className="eyebrow">Analysis Engine</div>
           <h1 className="page-title">New Analysis</h1>
-          <p className="page-desc">Give the engine a source — it reads, extracts topics, matches personas, and returns a ranked repurposing plan.</p>
+          <p className="page-desc">Give the engine a source -it reads, extracts topics, matches personas, and returns a ranked repurposing plan.</p>
 
           <div className="az-layout">
             {/* ── Main column ── */}
@@ -461,9 +461,9 @@ export default function AnalyzePage() {
               <div className="hairline" style={{ margin: '0.9rem 0 1.35rem' }} />
 
               {/* Previously wrapped in AnimatePresence + motion.div keyed on
-                  step. That fade replayed whenever the div remounted — which
+                  step. That fade replayed whenever the div remounted -which
                   looks like the "New Analysis" section flashing/refreshing on
-                  every tab return. Static render — the step change alone is a
+                  every tab return. Static render -the step change alone is a
                   clear-enough transition. */}
               <div>
                   <div style={{ marginBottom: '1.35rem' }}>
@@ -473,7 +473,7 @@ export default function AnalyzePage() {
                     <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, lineHeight: 1.5 }}>{meta.hint}</p>
                   </div>
 
-                  {/* Step 1 — Source */}
+                  {/* Step 1 -Source */}
                   {step === 'source' && (
                     loadingTypes ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2rem 0', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
@@ -521,7 +521,7 @@ export default function AnalyzePage() {
                     )
                   )}
 
-                  {/* Step 2 — Details */}
+                  {/* Step 2 -Details */}
                   {step === 'details' && (
                     <div className="grid grid-2" style={{ gap: '1rem' }}>
                       <div className="field" style={{ marginBottom: 0 }}>
@@ -548,7 +548,7 @@ export default function AnalyzePage() {
                     </div>
                   )}
 
-                  {/* Step 3 — Content */}
+                  {/* Step 3 -Content */}
                   {step === 'content' && (
                     <div>
                       <div className="underline-tabs" style={{ marginBottom: '1rem' }}>
@@ -592,7 +592,7 @@ export default function AnalyzePage() {
                     </div>
                   )}
 
-                  {/* Step 4 — Context */}
+                  {/* Step 4 -Context */}
                   {step === 'context' && (
                     <div className="field" style={{ marginBottom: 0 }}>
                       <label className="field-label">Marketing notes <span style={{ fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>· optional</span></label>
@@ -600,14 +600,14 @@ export default function AnalyzePage() {
                         autoFocus
                         className="glass-textarea"
                         style={{ minHeight: 150 }}
-                        placeholder="e.g. Pushing brand awareness this quarter — prioritise LinkedIn and thought-leadership angles."
+                        placeholder="e.g. Pushing brand awareness this quarter -prioritise LinkedIn and thought-leadership angles."
                         value={marketingNotes}
                         onChange={(e) => setMarketingNotes(e.target.value)}
                       />
                     </div>
                   )}
 
-                  {/* Step 5 — Review */}
+                  {/* Step 5 -Review */}
                   {step === 'review' && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem' }}>
                       {[

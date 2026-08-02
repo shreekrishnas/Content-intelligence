@@ -10,10 +10,10 @@ function greeting() {
 }
 
 const KPI_CARDS = [
-  { label: 'Open Opportunities', value: '—', meta: 'Loading…', accent: '#7C3AED' },
-  { label: 'In Studio', value: '—', meta: 'Loading…', accent: '#0EA5E9' },
-  { label: 'Scheduled This Week', value: '—', meta: 'Loading…', accent: '#F59E0B' },
-  { label: 'Avg Quality Score', value: '—', meta: 'Loading…', accent: '#10B981' },
+  { label: 'Open Opportunities', value: '-', meta: 'Loading…', accent: '#7C3AED' },
+  { label: 'In Studio', value: '-', meta: 'Loading…', accent: '#0EA5E9' },
+  { label: 'Scheduled This Week', value: '-', meta: 'Loading…', accent: '#F59E0B' },
+  { label: 'Avg Quality Score', value: '-', meta: 'Loading…', accent: '#10B981' },
 ];
 
 const ACTIVITY = [
@@ -63,7 +63,7 @@ export default function OverviewPage() {
       <div className="eyebrow">COMMAND CENTER</div>
       <div className="page-title">{greeting()}, {firstName}</div>
       <p className="page-desc" style={{ marginBottom: '1.5rem' }}>
-        {account?.name ? `${account.name}'s` : 'Your'} content pipeline at a glance — sourced from live analyses, trends, and studio activity.
+        {account?.name ? `${account.name}'s` : 'Your'} content pipeline at a glance -sourced from live analyses, trends, and studio activity.
       </p>
 
       {/* KPI Grid */}

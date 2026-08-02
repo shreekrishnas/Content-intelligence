@@ -1,4 +1,4 @@
-import { useAuthStore } from '@/stores/authStore';
+﻿import { useAuthStore } from '@/stores/authStore';
 import Logo from '@/components/Logo';
 
 export default function LoginPage() {
@@ -25,7 +25,7 @@ export default function LoginPage() {
             </h1>
             <p className="login-brand__sub">
               Analyze transcripts, surface opportunities, generate on-brand drafts,
-              and track live trends — every step grounded in your knowledge base.
+              and track live trends - every step grounded in your knowledge base.
             </p>
 
             <ul className="login-brand__features">

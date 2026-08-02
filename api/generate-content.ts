@@ -1,21 +1,23 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+﻿import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { callLLM } from './_lib/llm.js';
 import { extractJSON } from './_lib/json.js';
 import { handleOptions, sendError } from './_lib/http.js';
 import { logUsage } from './_lib/usage.js';
 import type { FileContext, KnowledgeChunk } from './_lib/types.js';
 
-const GROUNDING_SYSTEM_PROMPT = `You are a senior content creator and editor. You write high-quality, publication-ready content that marketing teams can use immediately — across any industry, brand, or audience.
+const GROUNDING_SYSTEM_PROMPT = `You are a senior content creator and editor. You write high-quality, publication-ready content that marketing teams can use immediately - across any industry, brand, or audience.
 
-CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Your entire response must be parseable by JSON.parse().
+CRITICAL OUTPUT RULE: respond with ONLY raw JSON - no markdown fences, no prose before or after, no explanation. Your entire response must be parseable by JSON.parse().
+
+WRITING RULE - NO EM DASHES: Never use em dashes (-) anywhere in the content you write. Use a hyphen (-), a colon, or restructure the sentence instead.
 
 YOUR APPROACH:
-- Write content that is specific, concrete, and actionable — not generic or template-like
+- Write content that is specific, concrete, and actionable - not generic or template-like
 - Use the opportunity's title, angle, persona, and source context as your primary creative brief
 - Where knowledge base material is provided, use it for brand voice, compliance guardrails, facts, and supporting detail
 - Where knowledge base material is absent, draw on the opportunity data and your content expertise
 - Every section heading and key point should be a specific claim or insight, not a placeholder like "Introduction" or "Benefits"
-- Write in a tone that suits the target persona — not corporate jargon, not overly casual
+- Write in a tone that suits the target persona - not corporate jargon, not overly casual
 - Cite sources where available using [Source: <title>] or [KB: <chunk_id>], but do not block content creation on having citations
 
 FORMAT STANDARDS YOU MUST FOLLOW:
@@ -25,9 +27,9 @@ BLOG POST / ARTICLE:
 - Structure: Exactly ONE H1 (the title). H2s divide major sections (4–6 sections). H3s for subsections within H2s.
 - Paragraphs: 2–3 sentences maximum. Never exceed 4.
 - Hook intro: First paragraph must state the problem or insight directly. No "In today's world…" or "Have you ever wondered…" openers.
-- Include a FAQ section (5–8 Q&As targeting People Also Ask variants) — highest-leverage addition for SEO and AI overviews.
+- Include a FAQ section (5–8 Q&As targeting People Also Ask variants) - highest-leverage addition for SEO and AI overviews.
 - Internal link slots: note [INTERNAL LINK: topic] every 300–400 words where a related article would fit.
-- End with ONE specific CTA — not vague "learn more" — tied to the persona's next logical step.
+- End with ONE specific CTA - not vague "learn more" - tied to the persona's next logical step.
 - SEO: primary keyword in H1, first 100 words, at least 2 H2s, and the meta description (under 160 chars).
 
 LINKEDIN POST:
@@ -35,12 +37,12 @@ LINKEDIN POST:
 - First line (hook): must be a specific stat, bold claim, or sharp question. No "I'm excited to share…"
 - Structure: Hook → 3–5 short insight lines (one idea per line, line break after each) → CTA.
 - Every line break = one idea. Never paragraph-dump.
-- CTA: specific action (comment, link, DM) — not "what do you think?"
+- CTA: specific action (comment, link, DM) - not "what do you think?"
 
 LINKEDIN CAROUSEL:
-- Slide 1 (hook): bold claim or problem statement — makes someone stop scrolling.
+- Slide 1 (hook): bold claim or problem statement - makes someone stop scrolling.
 - Slides 2–8: ONE insight or step per slide. Headline + 1–2 sentences of body. No slide should have more than 40 words.
-- Last slide: CTA slide — what to do next.
+- Last slide: CTA slide - what to do next.
 - Caption: 100–200 words with the hook from slide 1 restated, brief context, and CTA.
 
 EMAIL:
@@ -54,10 +56,10 @@ SHORT VIDEO / REEL SCRIPT:
 - Hook (0–3 seconds): spoken line + visual action that stops scrolling. Must address a pain or curiosity immediately.
 - Structure: Hook → Problem → Insight/Solution → Proof or Example → CTA.
 - Total length: 30–90 seconds. Write as a verbatim script with [VISUAL: ...] stage directions.
-- Captions: assume 80% of viewers watch on mute — every key point must appear as on-screen text.
+- Captions: assume 80% of viewers watch on mute - every key point must appear as on-screen text.
 
 QUOTE CARD:
-- One powerful sentence — a specific claim, stat, or insight from the source. Not a motivational platitude.
+- One powerful sentence - a specific claim, stat, or insight from the source. Not a motivational platitude.
 - Attribution: name + role/brand.
 - Visual note: background mood, typography guidance.
 
@@ -193,7 +195,7 @@ function buildOutlinePrompt(body: GenerateRequest, context: string): string {
 - 4 sections. Estimated word count: 600–1,000 words. First-person POV.`
     : `FORMAT RULES: Aim for 3–6 logical sections appropriate to the format. Each section has a clear purpose.`;
 
-  return `Create a detailed content outline for this specific content opportunity. The outline must be publication-ready — specific section headings, concrete talking points, and a clear narrative arc.
+  return `Create a detailed content outline for this specific content opportunity. The outline must be publication-ready - specific section headings, concrete talking points, and a clear narrative arc.
 
 CONTENT BRIEF:
 - Title: ${body.opportunity.title}
@@ -205,10 +207,10 @@ CONTENT BRIEF:
 
 ${formatGuidance}
 
-${context || 'No knowledge base files provided — use the content brief and your expertise.'}
+${context || 'No knowledge base files provided - use the content brief and your expertise.'}
 
 Requirements:
-- Each section heading must be a specific, descriptive claim — NOT a generic label like "Introduction" or "Benefits"
+- Each section heading must be a specific, descriptive claim - NOT a generic label like "Introduction" or "Benefits"
 - Key points must be concrete talking points a writer can expand, not vague topics
 - The outline must flow logically and build a persuasive case for the target persona
 
@@ -220,7 +222,7 @@ Return ONLY a JSON object (no markdown fences) with this structure:
   "target_persona": "${body.opportunity.persona_match ?? 'General'}",
   "sections": [
     {
-      "heading": "Specific section heading — a claim or question, not a label",
+      "heading": "Specific section heading - a claim or question, not a label",
       "purpose": "What this section achieves for the reader",
       "key_points": ["Specific talking point with concrete detail", "Another concrete point"],
       "estimated_words": 0
@@ -262,7 +264,7 @@ function buildDraftPrompt(body: GenerateRequest, context: string): string {
 5. Sign-off: brief, personal. No "Best regards" boilerplate.`
     : isCarousel
     ? `CAROUSEL DRAFT RULES (apply strictly):
-1. Slide 1 (Hook): A bold claim, stat, or sharp question — makes someone stop scrolling. 10–15 words headline + 1 sentence body max.
+1. Slide 1 (Hook): A bold claim, stat, or sharp question - makes someone stop scrolling. 10–15 words headline + 1 sentence body max.
 2. Slides 2–8: ONE insight per slide. Headline (8–12 words) + 1–2 sentence body (max 40 words per slide). No slide should try to cover two ideas.
 3. Final slide (CTA): what to do next. Clear verb + destination.
 4. Post Caption: 100–200 words. Restate hook, brief context, CTA, 3–5 relevant hashtags.
@@ -272,9 +274,9 @@ function buildDraftPrompt(body: GenerateRequest, context: string): string {
 1. Hook (0–3s): the FIRST spoken line + a [VISUAL: ...] direction. Must address a pain or curiosity immediately. No "Hey guys" or channel intros.
 2. Problem (3–15s): state the problem or tension concisely.
 3. Insight/Solution (15–45s): deliver the core value. Use specific examples.
-4. Proof/Example (45–70s): one concrete proof point — a stat, story beat, or before/after.
+4. Proof/Example (45–70s): one concrete proof point - a stat, story beat, or before/after.
 5. CTA (last 5s): one action. Clear and specific.
-6. Write as a verbatim script. Every key point gets an [ON-SCREEN TEXT: ...] note — assume 80% of viewers watch on mute.
+6. Write as a verbatim script. Every key point gets an [ON-SCREEN TEXT: ...] note - assume 80% of viewers watch on mute.
 7. Target runtime: 30–90 seconds.`
     : isLinkedIn
     ? `LINKEDIN POST RULES (apply strictly):
@@ -286,17 +288,17 @@ function buildDraftPrompt(body: GenerateRequest, context: string): string {
 6. No hashtags in body. Max 3 hashtags at the very end if used.`
     : isEssay
     ? `THOUGHT-LEADERSHIP ESSAY RULES (apply strictly):
-1. Open with your POV — a specific, arguable claim in the first sentence. Not a question. Not context-setting.
+1. Open with your POV - a specific, arguable claim in the first sentence. Not a question. Not context-setting.
 2. Structure: Claim → Evidence → Implication → Call to rethink.
 3. First-person voice throughout. Specific examples over abstract principles.
 4. 600–1,000 words.
-5. No bullet lists — this is prose. Arguments, not tips.
+5. No bullet lists - this is prose. Arguments, not tips.
 6. End by restating the claim and why it matters NOW.`
     : isQuote
-    ? `QUOTE CARD RULES: One powerful, specific sentence from the source (a claim, stat, or insight — not a platitude). Attribution on next line. Visual note on third line.`
+    ? `QUOTE CARD RULES: One powerful, specific sentence from the source (a claim, stat, or insight - not a platitude). Attribution on next line. Visual note on third line.`
     : `Write using the format standards described in your system prompt. Apply the appropriate structure for this content type.`;
 
-  return `Write a complete, publication-ready draft based on the outline below. This must be content a marketing team can publish with minimal editing — not a template, not placeholder text.
+  return `Write a complete, publication-ready draft based on the outline below. This must be content a marketing team can publish with minimal editing - not a template, not placeholder text.
 
 CONTENT BRIEF:
 - Title: ${body.opportunity.title}
@@ -308,17 +310,17 @@ CONTENT BRIEF:
 ${formatDraftRules}
 
 ${body.existing_content ? `OUTLINE TO EXPAND:\n${body.existing_content}\n` : ''}
-${context || 'No knowledge base files provided — write from the brief and your expertise.'}
+${context || 'No knowledge base files provided - write from the brief and your expertise.'}
 
 Universal writing standards (apply on top of format rules):
-- Use specific numbers, names, and scenarios — avoid vague generalities
+- Use specific numbers, names, and scenarios - avoid vague generalities
 - Write in active voice
 - Cite sources where available as [Source: title] or [KB: chunk_id]
 
 Return ONLY a JSON object (no markdown fences) with this structure:
 {
   "title": "Final published title",
-  "content": "Full content in markdown — complete, ready to publish",
+  "content": "Full content in markdown - complete, ready to publish",
   "meta_description": "SEO meta description under 160 chars",
   "excerpt": "Preview text under 300 chars",
   "estimated_read_time_minutes": 0,
@@ -331,7 +333,7 @@ Return ONLY a JSON object (no markdown fences) with this structure:
 }
 
 function buildRegeneratePrompt(body: GenerateRequest, context: string): string {
-  return `Revise the content below based on the feedback. Make targeted, substantive improvements — do not just rephrase.
+  return `Revise the content below based on the feedback. Make targeted, substantive improvements - do not just rephrase.
 
 CONTENT BRIEF:
 - Title: ${body.opportunity.title}
@@ -471,8 +473,8 @@ Score descriptions:
 - persona_fit: How well the content speaks to the target persona's pain points and goals (1.0 = perfect)
 - specificity: Use of concrete numbers, examples, scenarios vs vague generalities (1.0 = highly specific)
 - cta_clarity: How clear and specific the call-to-action is (1.0 = crystal clear next step)
-- sales_pressure: Inverse — 1.0 means no pushy language, 0.0 means overly salesy
-- source_support: If KB sources were provided, how well claims are grounded (1.0 = well supported). If NO sources were provided, score 1.0 — do not penalize.
+- sales_pressure: Inverse - 1.0 means no pushy language, 0.0 means overly salesy
+- source_support: If KB sources were provided, how well claims are grounded (1.0 = well supported). If NO sources were provided, score 1.0 - do not penalize.
 
 Only flag missing citations when knowledge base sources were actually provided above. Flag any compliance rule violations. Focus issues on hook strength, specificity, structure, persona fit, and CTA clarity.`;
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo } from 'react';
 import EmptyState from '@/components/ui/EmptyState';
 import { useAppStore } from '@/store';
 import { useAccount } from '@/contexts/AccountContext';
@@ -339,7 +339,7 @@ export default function IdeasLabPage() {
     if (ideasSeed.audience) setAudience(ideasSeed.audience);
     if (ideasSeed.context) setContext(ideasSeed.context);
     setIdeasSeed(null);
-    showToast('Brief prefilled from trend — review and generate');
+    showToast('Brief prefilled from trend -review and generate');
   }, [ideasSeed, setIdeasSeed]);
 
   useEffect(() => {
@@ -354,7 +354,7 @@ export default function IdeasLabPage() {
     try { localStorage.setItem(lsKey, JSON.stringify(next)); } catch { /* quota */ }
   }, [lsKey]);
 
-  // Optional, non-blocking KB grounding — ignored if unavailable
+  // Optional, non-blocking KB grounding -ignored if unavailable
   const getKbChunks = useCallback(async (query: string): Promise<string[]> => {
     if (!accountId || !supabaseConfigured) return [];
     try {
@@ -390,7 +390,7 @@ export default function IdeasLabPage() {
       if (res.error) {
         // graceful fallback so the user still gets something usable
         setIdeas(fallbackIdeas(topic, audience));
-        setError(`${res.error} — showing template ideas as a fallback.`);
+        setError(`${res.error} -showing template ideas as a fallback.`);
       } else {
         setIdeas(withIds(res.data || []));
         if (!res.data?.length) setError('No ideas returned. Try a more specific topic.');
@@ -515,7 +515,7 @@ export default function IdeasLabPage() {
     <div>
       <p className="eyebrow">Ideation Engine</p>
       <h1 className="page-title">Ideas Lab</h1>
-      <p className="page-desc">Generate specific, production-ready content ideas — grounded in your Knowledge Base when available.</p>
+      <p className="page-desc">Generate specific, production-ready content ideas -grounded in your Knowledge Base when available.</p>
 
       {/* sub-tabs */}
       <div className="underline-tabs" style={{ marginBottom: '1.2rem', flexWrap: 'wrap' }}>
@@ -582,7 +582,7 @@ export default function IdeasLabPage() {
         <>
           <div className="grid grid-3" style={{ gap: '0.8rem', marginBottom: '1rem' }}>
             <div className="glass-card-static" style={{ padding: '0.7rem 1rem' }}><div style={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Ideas</div><div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{metrics.count}</div></div>
-            <div className="glass-card-static" style={{ padding: '0.7rem 1rem' }}><div style={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Top Score</div><div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{metrics.top || '—'}</div></div>
+            <div className="glass-card-static" style={{ padding: '0.7rem 1rem' }}><div style={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Top Score</div><div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{metrics.top || '-'}</div></div>
             <div className="glass-card-static" style={{ padding: '0.7rem 1rem' }}><div style={{ fontSize: '0.62rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>Saved</div><div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{metrics.saved}</div></div>
           </div>
           {groups.length > 1 && (

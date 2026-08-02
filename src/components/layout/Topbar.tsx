@@ -16,7 +16,7 @@ interface TopbarProps {
 const tabMeta: Record<string, { title: string; subtitle: string }> = {
   overview: {
     title: 'Overview',
-    subtitle: "Your content pipeline at a glance — sourced from live analyses, trends, and studio activity.",
+    subtitle: "Your content pipeline at a glance -sourced from live analyses, trends, and studio activity.",
   },
   admin: {
     title: 'Admin Panel',
@@ -24,7 +24,7 @@ const tabMeta: Record<string, { title: string; subtitle: string }> = {
   },
   analyze: {
     title: 'New Analysis',
-    subtitle: 'Give the agent a source — it reads, understands and routes before recommending anything.',
+    subtitle: 'Give the agent a source -it reads, understands and routes before recommending anything.',
   },
   opportunities: {
     title: 'Opportunities',
@@ -32,7 +32,7 @@ const tabMeta: Record<string, { title: string; subtitle: string }> = {
   },
   studio: {
     title: 'Studio',
-    subtitle: 'Two-stage generation with a visible quality panel — nothing skips human review.',
+    subtitle: 'Two-stage generation with a visible quality panel -nothing skips human review.',
   },
   kb: {
     title: 'Knowledge Base',
@@ -40,7 +40,7 @@ const tabMeta: Record<string, { title: string; subtitle: string }> = {
   },
   ideas: {
     title: 'Ideas Lab',
-    subtitle: 'Generate, repurpose, and plan content ideas — grounded in your Knowledge Base.',
+    subtitle: 'Generate, repurpose, and plan content ideas -grounded in your Knowledge Base.',
   },
   trends: {
     title: 'Trends & Alerts',
@@ -224,7 +224,7 @@ function ViewModeToggle() {
         onClick={() => {
           if (active) return;
           setViewMode(mode);
-          showToast(mode === 'admin' ? 'Admin view — loading all accounts…' : 'Personal view — loading your accounts…', 'success');
+          showToast(mode === 'admin' ? 'Admin view -loading all accounts…' : 'Personal view -loading your accounts…', 'success');
         }}
         title={mode === 'admin' ? `See every account in the org (currently ${accounts.length})` : 'See only accounts you have explicit access to'}
         style={{

@@ -4,9 +4,9 @@ interface Props {
 }
 
 const NOTIFS = [
-  { title: 'Draft ready for review', desc: 'Quality score 94% — ready for your approval', time: '8m ago', color: '#7C3AED' },
-  { title: 'New strong trend detected', desc: 'Score 75 — optical retail service shift', time: '2h ago', color: '#10B981' },
-  { title: 'Integration reminder', desc: "HubSpot isn't connected — lead sync is paused", time: '1d ago', color: '#F59E0B' },
+  { title: 'Draft ready for review', desc: 'Quality score 94% -ready for your approval', time: '8m ago', color: '#7C3AED' },
+  { title: 'New strong trend detected', desc: 'Score 75 -optical retail service shift', time: '2h ago', color: '#10B981' },
+  { title: 'Integration reminder', desc: "HubSpot isn't connected -lead sync is paused", time: '1d ago', color: '#F59E0B' },
 ];
 
 export default function NotificationsDrawer({ open, onClose }: Props) {

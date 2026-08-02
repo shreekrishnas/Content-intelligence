@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+﻿import { useState, useRef, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/store';
 import { useAccount } from '@/contexts/AccountContext';
 import { api } from '@/lib/api';
@@ -196,7 +196,7 @@ export default function StudioPage() {
           fileContext = ctx.fileContext;
           setSourcesUsed(fileContext);
         } catch {
-          // KB is missing — proceed without it; generate-content will use opportunity data
+          // KB is missing - proceed without it; generate-content will use opportunity data
         }
         const res = await api.studio.generateOutline(accountId!, activeOpp!, kbChunks, fileContext);
         if (res.error) throw new Error(res.error);
@@ -388,7 +388,7 @@ export default function StudioPage() {
       await navigator.clipboard.writeText(asset.draft || '');
       showToast('Draft copied to clipboard');
     } catch {
-      showToast('Could not copy — select the text manually', 'warn');
+      showToast('Could not copy - select the text manually', 'warn');
     }
   }
 

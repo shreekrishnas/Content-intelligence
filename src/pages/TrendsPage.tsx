@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+﻿import { useState, useEffect, useMemo, useRef } from 'react';
 import EmptyState from '@/components/ui/EmptyState';
 import { useAppStore } from '@/store';
 import { useAccount } from '@/contexts/AccountContext';
@@ -63,7 +63,7 @@ export default function TrendsPage() {
   const accountMeta = useMemo(() => {
     const p = (account?.profile as any) || {};
     // Accounts created via different flows store their site under different
-    // keys — website_url (trend setup) or domain_url (account creation).
+    // keys - website_url (trend setup) or domain_url (account creation).
     return { url: p.website_url || p.domain_url || '', name: account?.name || '' };
   }, [account]);
 
@@ -125,7 +125,7 @@ export default function TrendsPage() {
         if (stale) return;
         showToast('Domain profile auto-detected');
 
-        // 2b: Profile saved — do NOT auto-run AI-suggest scan.
+        // 2b: Profile saved - do NOT auto-run AI-suggest scan.
         // AI-suggested trends without live signal verification produce noisy results.
         // Prompt the user to run a real Live Scan instead.
         setNote('Domain profile detected. Click "Run Live Scan" to fetch real trending signals, or "AI-suggest candidates" for hypothesis-based ideas (lower confidence).');
@@ -145,9 +145,9 @@ export default function TrendsPage() {
       const res = await api.trends.autoDetectProfile(url, accountMeta.name);
       const detected = (res.data as any) || {};
       const suggested = String(detected.preferred_news_domains || '').trim();
-      if (!suggested) { showToast('No domain suggestions came back — try again', 'warn'); return; }
+      if (!suggested) { showToast('No domain suggestions came back - try again', 'warn'); return; }
       setField('preferred_news_domains', suggested);
-      showToast('News sources suggested — review, then Save Profile');
+      showToast('News sources suggested - review, then Save Profile');
     } finally {
       setSuggestingDomains(false);
     }
@@ -177,7 +177,7 @@ export default function TrendsPage() {
         const parts: string[] = [];
         if (res.data?.note) parts.push(res.data.note);
         if (typeof reviewed === 'number' && reviewed > 0) {
-          parts.push(`Supervisor reviewed ${reviewed} signals — all classified as reject.`);
+          parts.push(`Supervisor reviewed ${reviewed} signals - all classified as reject.`);
           if (summary?.generic_filtered) parts.push(`${summary.generic_filtered} filtered as generic.`);
           if (summary?.duplicates_merged) parts.push(`${summary.duplicates_merged} merged as duplicates.`);
           parts.push('Try broadening Domain Profile → Core Topics, or lower the specificity by adding brand-name / product terms so the supervisor has more angles to work with.');
@@ -189,13 +189,13 @@ export default function TrendsPage() {
       }
       if (!res.data?.saved) {
         const serverSaveErr = (res.data as any)?.save_error;
-        if (serverSaveErr) setNote(`Server-side save failed (${serverSaveErr}) — saved from browser instead.`);
+        if (serverSaveErr) setNote(`Server-side save failed (${serverSaveErr}) - saved from browser instead.`);
         const { error: saveErr } = await api.trends.saveScan(accountId, res.data?.source || mode, topics);
         if (saveErr) { setError(`Scanned but could not save: ${saveErr}`); return; }
       }
       auditLog({ accountId, action: 'trend_scan', targetType: 'trend', detail: { source: res.data?.source || mode, count: topics.length } }).catch(() => {});
       await loadRecords();
-      showToast(`Scan complete — ${topics.length} topics reviewed`);
+      showToast(`Scan complete - ${topics.length} topics reviewed`);
     } finally { setScanning(false); }
   }
 
@@ -310,7 +310,7 @@ export default function TrendsPage() {
         <div>
           <p className="eyebrow">Monitoring</p>
           <h1 className="page-title">Trends &amp; Alerts</h1>
-          <p className="page-desc">An AI supervisor scores, classifies, and routes trends — only qualified topics reach your content pipeline.</p>
+          <p className="page-desc">An AI supervisor scores, classifies, and routes trends - only qualified topics reach your content pipeline.</p>
         </div>
         <button
           onClick={() => runScan('live')}
