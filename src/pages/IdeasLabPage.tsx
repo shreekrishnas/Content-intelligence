@@ -170,6 +170,7 @@ function ExpandOutput({ type, data }: { type: ExpandType; data: any }) {
       <div>
         <OutBlock label="Overview"><Para text={data.overview} /></OutBlock>
         <OutBlock label="Target Audience"><Para text={data.target_audience} /></OutBlock>
+        {data.hook && <OutBlock label="Opening Hook"><Para text={data.hook} /></OutBlock>}
         <OutBlock label="Key Messages"><Bullets items={data.key_messages} /></OutBlock>
         <OutBlock label="Content Structure"><Bullets items={data.content_structure} /></OutBlock>
         <OutBlock label="Visual Mood"><Para text={data.visual_mood} /></OutBlock>
@@ -234,7 +235,9 @@ function ExpandOutput({ type, data }: { type: ExpandType; data: any }) {
           </OutBlock>
         )}
         <OutBlock label="Internal Links"><Bullets items={data.internal_links} /></OutBlock>
-        <OutBlock label="Featured Snippet Target"><Para text={data.featured_snippet_target} /></OutBlock>
+        <OutBlock label="Featured Snippet / AI Overview Target"><Para text={data.featured_snippet_target} /></OutBlock>
+        {data.cta && <OutBlock label="End CTA"><Para text={data.cta} /></OutBlock>}
+        {data.estimated_word_count > 0 && <OutBlock label="Estimated Word Count"><Para text={`~${data.estimated_word_count} words`} /></OutBlock>}
       </div>
     );
   }
@@ -244,8 +247,15 @@ function ExpandOutput({ type, data }: { type: ExpandType; data: any }) {
     <div>
       <OutBlock label="LinkedIn"><Para text={data.linkedin} /></OutBlock>
       <OutBlock label="Instagram"><Para text={data.instagram} /></OutBlock>
-      <OutBlock label="Twitter / X"><Para text={data.twitter} /></OutBlock>
+      <OutBlock label="Twitter / X">
+        {Array.isArray(data.twitter)
+          ? <Bullets items={data.twitter} />
+          : <Para text={data.twitter} />}
+      </OutBlock>
       <OutBlock label="Email Subject Lines"><Bullets items={data.email_subject_lines} /></OutBlock>
+      {data.email_preheaders?.length > 0 && (
+        <OutBlock label="Email Preheaders"><Bullets items={data.email_preheaders} /></OutBlock>
+      )}
     </div>
   );
 }
@@ -268,7 +278,9 @@ function expandToText(type: ExpandType, d: any): string {
     (d.faq_schema || []).forEach((f: any) => { L.push(`Q: ${f.question}`); L.push(`A: ${f.answer}`); L.push(''); });
     push('Internal Links', d.internal_links); push('Featured Snippet', d.featured_snippet_target);
   } else if (type === 'caption') {
-    push('LinkedIn', d.linkedin); push('Instagram', d.instagram); push('Twitter/X', d.twitter); push('Email Subjects', d.email_subject_lines);
+    push('LinkedIn', d.linkedin); push('Instagram', d.instagram);
+    push('Twitter/X', Array.isArray(d.twitter) ? d.twitter.join('\n---\n') : d.twitter);
+    push('Email Subjects', d.email_subject_lines); push('Email Preheaders', d.email_preheaders);
   } else {
     push('Overview', d.overview); push('Target Audience', d.target_audience); push('Key Messages', d.key_messages);
     push('Content Structure', d.content_structure); push('Visual Mood', d.visual_mood); push('Distribution Plan', d.distribution_plan);

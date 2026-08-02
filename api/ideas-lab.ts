@@ -209,45 +209,97 @@ Return ONLY: {"ideas": [ ... ]}`;
 function buildExpand(b: IdeasRequest): string {
   const idea = JSON.stringify(b.idea ?? {}, null, 2);
   const type = b.output_type || 'brief';
-  const schemas: Record<string, string> = {
-    brief: `{
-  "overview": "2-3 sentences",
-  "target_audience": "Detailed persona",
-  "key_messages": ["msg1", "msg2", "msg3"],
-  "content_structure": ["section 1", "section 2", "..."],
-  "visual_mood": "Design/mood direction",
-  "distribution_plan": "Where and how to publish",
-  "success_metrics": ["metric1", "metric2"],
-  "seo_notes": "Keywords / on-page notes"
+
+  const instructions: Record<string, string> = {
+    brief: `Produce a production brief a strategist would hand off to a writer and designer. Be specific — no vague direction.
+Rules:
+- content_structure must list concrete sections with one-line descriptions of what each covers
+- success_metrics must be specific and measurable (e.g. "300+ LinkedIn reactions in 48h", not "engagement")
+- distribution_plan must name platform, timing, and any cross-posting or repurposing sequence
+- seo_notes: primary keyword, 3–5 secondary keywords, and one featured-snippet target question
+
+Return ONLY:
+{
+  "overview": "2–3 sentences: the core argument + why this audience needs it now",
+  "target_audience": "Specific persona: role, situation, pain point",
+  "key_messages": ["Message 1 — a specific claim", "Message 2", "Message 3"],
+  "content_structure": ["Section 1: what it covers and why", "Section 2: ...", "..."],
+  "hook": "The exact first line of the piece (publishable as-is)",
+  "visual_mood": "One sentence a designer can execute: colours, imagery style, layout feel",
+  "distribution_plan": "Platform(s), publish timing, cross-post or repurpose sequence",
+  "success_metrics": ["Specific metric 1", "Specific metric 2"],
+  "seo_notes": "Primary keyword, secondary keywords, featured-snippet target"
 }`,
-    carousel: `{
-  "caption": "The post caption",
-  "slides": [ { "headline": "Slide headline", "body": "Slide body copy", "visual_note": "What to show", "speaker_note": "Optional voiceover" } ],
-  "design_system": "Colors, type, layout guidance"
+
+    carousel: `Produce a complete, ready-to-design LinkedIn carousel.
+Rules:
+- Slide 1 is the HOOK: bold claim or problem statement that stops the scroll. Max 15 words headline. 1 sentence body.
+- Slides 2–8: exactly ONE insight per slide. Headline (8–12 words) + body (max 40 words). No slide covers two ideas.
+- Final slide: CTA. Clear verb + destination. No "like and follow" — give them a reason.
+- Caption: 100–200 words. Restate the hook, add 1–2 lines of context, end with CTA. 3–5 hashtags at end.
+- design_system: colours, typography style, layout pattern (e.g. "dark background, white headline, indigo accent, centered layout").
+- speaker_note: optional voiceover text if the carousel is also a video.
+
+Return ONLY:
+{
+  "caption": "Full post caption with hashtags",
+  "slides": [
+    { "slide_number": 1, "type": "hook|insight|cta", "headline": "Slide headline", "body": "Slide body copy (max 40 words)", "visual_note": "What to show on this slide", "speaker_note": "Optional voiceover line" }
+  ],
+  "design_system": "Specific design direction: colours, type style, layout pattern"
 }`,
-    blog: `{
-  "meta_title": "Under 60 chars",
-  "meta_description": "Under 160 chars",
-  "outline": [ { "heading": "H2", "subpoints": ["H3 or bullet", "..."] } ],
-  "faq_schema": [ { "question": "Q", "answer": "A" } ],
-  "internal_links": ["suggested topic 1", "suggested topic 2"],
-  "featured_snippet_target": "The question/snippet to win"
+
+    blog: `Produce a complete blog/article outline with all on-page SEO assets.
+Rules:
+- meta_title: under 60 characters, primary keyword near the front
+- meta_description: under 160 characters, includes primary keyword and clear value prop
+- outline: 4–6 H2 sections + intro + conclusion. One of the H2s MUST be a FAQ section (label it "Frequently Asked Questions") with 5–8 Q&As
+- Each H2 heading must be a specific claim or question — NOT a generic label like "Introduction" or "Benefits"
+- subpoints: 2–4 concrete bullet points per H2, one idea each
+- internal_links: 3–5 topic suggestions where in-content links would fit
+- featured_snippet_target: the exact question this article should rank for in Google's featured snippet / AI overview
+
+Return ONLY:
+{
+  "meta_title": "Under 60 chars with primary keyword",
+  "meta_description": "Under 160 chars with keyword and value prop",
+  "estimated_word_count": 0,
+  "outline": [
+    { "heading": "H2 heading — a specific claim or question", "subpoints": ["Concrete bullet 1", "Concrete bullet 2"] }
+  ],
+  "faq_schema": [
+    { "question": "Question targeting a PAA result", "answer": "Concise answer (50–80 words)" }
+  ],
+  "internal_links": ["Topic suggestion where a link fits naturally", "..."],
+  "featured_snippet_target": "The exact question to win in AI overviews / featured snippets",
+  "cta": "Specific end-of-article CTA (verb + object)"
 }`,
-    caption: `{
-  "linkedin": "Ready-to-post LinkedIn caption",
-  "instagram": "Ready-to-post Instagram caption",
-  "twitter": "Ready-to-post X/Twitter post or thread opener",
-  "email_subject_lines": ["subject 1", "subject 2", "subject 3"]
+
+    caption: `Produce ready-to-post captions for each platform. Respect each platform's format and character constraints.
+Rules:
+- linkedin: 150–300 words. Hook first line. Line break after every 1–2 sentences. Specific CTA last. Max 3 hashtags at end.
+- instagram: Under 2,200 characters. Hook first line (appears before "more" cutoff — keep it under 125 chars). 5–10 relevant hashtags at end.
+- twitter: Under 280 characters for the opening tweet. Suggest 2–3 thread continuation tweets if the idea warrants it.
+- email_subject_lines: 3 options. Each under 50 characters. Vary the angle (curiosity, benefit, urgency). No clickbait.
+- email_preheaders: matching preheader (40–80 chars) for each subject line
+
+Return ONLY:
+{
+  "linkedin": "Full LinkedIn caption with hook, insights, and CTA",
+  "instagram": "Full Instagram caption with hook and hashtags",
+  "twitter": "Opening tweet (≤280 chars) + optionally 2–3 thread tweets as an array",
+  "email_subject_lines": ["Subject line 1 (<50 chars)", "Subject line 2", "Subject line 3"],
+  "email_preheaders": ["Preheader matching subject 1 (40–80 chars)", "Preheader 2", "Preheader 3"]
 }`,
   };
-  return `Expand this content idea into a full ${type} asset.
+
+  return `Expand this content idea into a production-ready ${type} asset.
 ${kbSection(b.knowledge_chunks)}
 
 IDEA:
 ${idea}
 
-Return ONLY a JSON object with this shape:
-${schemas[type] || schemas.brief}`;
+${instructions[type] || instructions.brief}`;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

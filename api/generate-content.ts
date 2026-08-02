@@ -5,18 +5,68 @@ import { handleOptions, sendError } from './_lib/http.js';
 import { logUsage } from './_lib/usage.js';
 import type { FileContext, KnowledgeChunk } from './_lib/types.js';
 
-const GROUNDING_SYSTEM_PROMPT = `You are a senior content creator for a financial services brand in India. You write high-quality, publication-ready content that marketing teams can use immediately.
+const GROUNDING_SYSTEM_PROMPT = `You are a senior content creator and editor. You write high-quality, publication-ready content that marketing teams can use immediately — across any industry, brand, or audience.
 
 CRITICAL OUTPUT RULE: respond with ONLY raw JSON — no markdown fences, no prose before or after, no explanation. Your entire response must be parseable by JSON.parse().
 
 YOUR APPROACH:
 - Write content that is specific, concrete, and actionable — not generic or template-like
-- Use the opportunity's title, angle, and source context as your primary creative brief
-- Where knowledge base material is provided, use it to add brand voice, compliance guardrails, and supporting detail
-- Where knowledge base material is absent, draw on the opportunity data itself and your expertise in Indian financial services content
-- Every section heading and key point should be a specific claim or insight, not a placeholder
+- Use the opportunity's title, angle, persona, and source context as your primary creative brief
+- Where knowledge base material is provided, use it for brand voice, compliance guardrails, facts, and supporting detail
+- Where knowledge base material is absent, draw on the opportunity data and your content expertise
+- Every section heading and key point should be a specific claim or insight, not a placeholder like "Introduction" or "Benefits"
 - Write in a tone that suits the target persona — not corporate jargon, not overly casual
-- Cite sources where available using [Source: <title>] or [KB: <chunk_id>], but do not block content creation on having citations`;
+- Cite sources where available using [Source: <title>] or [KB: <chunk_id>], but do not block content creation on having citations
+
+FORMAT STANDARDS YOU MUST FOLLOW:
+
+BLOG POST / ARTICLE:
+- Ideal length: 1,500–2,500 words. Match complexity to topic.
+- Structure: Exactly ONE H1 (the title). H2s divide major sections (4–6 sections). H3s for subsections within H2s.
+- Paragraphs: 2–3 sentences maximum. Never exceed 4.
+- Hook intro: First paragraph must state the problem or insight directly. No "In today's world…" or "Have you ever wondered…" openers.
+- Include a FAQ section (5–8 Q&As targeting People Also Ask variants) — highest-leverage addition for SEO and AI overviews.
+- Internal link slots: note [INTERNAL LINK: topic] every 300–400 words where a related article would fit.
+- End with ONE specific CTA — not vague "learn more" — tied to the persona's next logical step.
+- SEO: primary keyword in H1, first 100 words, at least 2 H2s, and the meta description (under 160 chars).
+
+LINKEDIN POST:
+- Length: 150–300 words. Hard stop at 3,000 characters.
+- First line (hook): must be a specific stat, bold claim, or sharp question. No "I'm excited to share…"
+- Structure: Hook → 3–5 short insight lines (one idea per line, line break after each) → CTA.
+- Every line break = one idea. Never paragraph-dump.
+- CTA: specific action (comment, link, DM) — not "what do you think?"
+
+LINKEDIN CAROUSEL:
+- Slide 1 (hook): bold claim or problem statement — makes someone stop scrolling.
+- Slides 2–8: ONE insight or step per slide. Headline + 1–2 sentences of body. No slide should have more than 40 words.
+- Last slide: CTA slide — what to do next.
+- Caption: 100–200 words with the hook from slide 1 restated, brief context, and CTA.
+
+EMAIL:
+- Subject line: under 50 characters, specific benefit or curiosity gap. No "Newsletter #12."
+- Preheader (preview text): 40–80 chars that complement the subject line.
+- Opener: address the reader's situation directly. One sentence. No "Hope this finds you well."
+- Body: ONE core insight or offer per email. 150–300 words body. Short paragraphs.
+- CTA: one button/link, above the fold where possible. Verb + object ("Download the guide", "Book your call").
+
+SHORT VIDEO / REEL SCRIPT:
+- Hook (0–3 seconds): spoken line + visual action that stops scrolling. Must address a pain or curiosity immediately.
+- Structure: Hook → Problem → Insight/Solution → Proof or Example → CTA.
+- Total length: 30–90 seconds. Write as a verbatim script with [VISUAL: ...] stage directions.
+- Captions: assume 80% of viewers watch on mute — every key point must appear as on-screen text.
+
+QUOTE CARD:
+- One powerful sentence — a specific claim, stat, or insight from the source. Not a motivational platitude.
+- Attribution: name + role/brand.
+- Visual note: background mood, typography guidance.
+
+THOUGHT-LEADERSHIP ESSAY:
+- POV-led: opens with a specific, arguable claim the author is willing to defend.
+- Structure: Claim → Evidence → Implication → Call to rethink.
+- Length: 600–1,000 words. No fluffy filler.
+- First-person voice. Specific examples over abstract principles.`;
+
 
 interface GenerateRequest {
   task: 'outline' | 'draft' | 'regenerate' | 'quality_review';
@@ -101,6 +151,48 @@ function buildSourceContext(body: GenerateRequest): string {
 }
 
 function buildOutlinePrompt(body: GenerateRequest, context: string): string {
+  const fmt = (body.opportunity.recommended_format || '').toLowerCase();
+  const isBlog = fmt.includes('blog') || fmt.includes('article') || fmt.includes('guide');
+  const isEmail = fmt.includes('email') || fmt.includes('newsletter');
+  const isCarousel = fmt.includes('carousel');
+  const isVideo = fmt.includes('video') || fmt.includes('reel') || fmt.includes('script');
+  const isLinkedIn = fmt.includes('linkedin') && !isCarousel;
+  const isEssay = fmt.includes('essay') || fmt.includes('thought');
+
+  const formatGuidance = isBlog
+    ? `FORMAT RULES (Blog/Article):
+- Section count: 4–6 H2 sections + intro + conclusion.
+- Include a dedicated FAQ section (5–8 Q&As) as one of the H2s.
+- Include an intro section and a conclusion/CTA section.
+- Estimated total word count: 1,500–2,500 words.
+- Suggest 3–5 SEO keywords; primary keyword should appear in title and first H2.`
+    : isEmail
+    ? `FORMAT RULES (Email):
+- Structure: Subject Line + Preheader → Opener (1 sentence) → Body (1 main insight) → CTA.
+- 3 sections max. Estimated word count: 200–400 words.
+- Subject line must be under 50 characters; preheader 40–80 characters.`
+    : isCarousel
+    ? `FORMAT RULES (Carousel):
+- Structure: Slide 1 (hook) + Slides 2–8 (one insight each) + Final slide (CTA).
+- Each "section" = one slide. 6–9 slides total.
+- Each slide: headline + 1–2 sentence body (max 40 words per slide).
+- Include post caption as the final section.`
+    : isVideo
+    ? `FORMAT RULES (Video/Reel Script):
+- Structure: Hook (0–3s) → Problem (3–15s) → Insight/Solution (15–45s) → Proof/Example (45–70s) → CTA (last 5s).
+- 5 beats. Include [VISUAL: ...] direction for each beat.
+- Total runtime: 30–90 seconds.`
+    : isLinkedIn
+    ? `FORMAT RULES (LinkedIn Post):
+- Structure: Hook line → 3–5 insight lines → CTA.
+- 5–7 beats. Each beat = 1–2 sentences, line-broken.
+- Estimated word count: 150–300 words.`
+    : isEssay
+    ? `FORMAT RULES (Thought-Leadership Essay):
+- Structure: Claim → Evidence → Implication → Call to rethink.
+- 4 sections. Estimated word count: 600–1,000 words. First-person POV.`
+    : `FORMAT RULES: Aim for 3–6 logical sections appropriate to the format. Each section has a clear purpose.`;
+
   return `Create a detailed content outline for this specific content opportunity. The outline must be publication-ready — specific section headings, concrete talking points, and a clear narrative arc.
 
 CONTENT BRIEF:
@@ -111,13 +203,14 @@ CONTENT BRIEF:
 - Source Insight: ${body.opportunity.source_context ?? 'N/A'}
 - CTA: ${body.opportunity.suggested_cta ?? 'N/A'}
 
-${context || 'No knowledge base files provided — use the content brief and your financial services expertise.'}
+${formatGuidance}
+
+${context || 'No knowledge base files provided — use the content brief and your expertise.'}
 
 Requirements:
 - Each section heading must be a specific, descriptive claim — NOT a generic label like "Introduction" or "Benefits"
 - Key points must be concrete talking points a writer can expand, not vague topics
 - The outline must flow logically and build a persuasive case for the target persona
-- Aim for the right length for the format (blog: 4-6 sections; social: 3-4 beats; email: 3 sections)
 
 Return ONLY a JSON object (no markdown fences) with this structure:
 {
@@ -140,6 +233,69 @@ Return ONLY a JSON object (no markdown fences) with this structure:
 }
 
 function buildDraftPrompt(body: GenerateRequest, context: string): string {
+  const fmt = (body.opportunity.recommended_format || '').toLowerCase();
+  const isBlog = fmt.includes('blog') || fmt.includes('article') || fmt.includes('guide');
+  const isEmail = fmt.includes('email') || fmt.includes('newsletter');
+  const isCarousel = fmt.includes('carousel');
+  const isVideo = fmt.includes('video') || fmt.includes('reel') || fmt.includes('script');
+  const isLinkedIn = fmt.includes('linkedin') && !isCarousel;
+  const isEssay = fmt.includes('essay') || fmt.includes('thought');
+  const isQuote = fmt.includes('quote');
+
+  const formatDraftRules = isBlog
+    ? `BLOG DRAFT RULES (apply strictly):
+1. Write ONE H1 (the final title). Do NOT use H1 anywhere else in the body.
+2. Use H2 for major sections (4–6 H2s). Use H3 for subsections within H2s.
+3. Paragraphs: 2–3 sentences max. Never write a 4+ sentence paragraph.
+4. HOOK (intro): First paragraph states the reader's problem or the core insight in 2–3 sentences. No "In today's world" openers. No "Have you ever wondered" questions.
+5. Include a FAQ section as one of the H2s with 5–8 Q&As. Label it "## Frequently Asked Questions".
+6. Add [INTERNAL LINK: <topic>] every 300–400 words where a related article would fit.
+7. End with a CTA section: one specific action the reader should take next (not "learn more").
+8. SEO: primary keyword in H1, within first 100 words, and in at least 2 H2s.
+9. Target: 1,500–2,500 words.`
+    : isEmail
+    ? `EMAIL DRAFT RULES (apply strictly):
+1. Start with: Subject: <under 50 chars> and Preheader: <40–80 chars> on separate lines.
+2. Opener: one sentence addressing the reader's situation. No "Hope this finds you well."
+3. Body: ONE core insight or offer. 150–300 words. Short paragraphs (2–3 sentences).
+4. CTA: one clear action. Verb + object. ("Download the guide", "Book your call"). Above the fold.
+5. Sign-off: brief, personal. No "Best regards" boilerplate.`
+    : isCarousel
+    ? `CAROUSEL DRAFT RULES (apply strictly):
+1. Slide 1 (Hook): A bold claim, stat, or sharp question — makes someone stop scrolling. 10–15 words headline + 1 sentence body max.
+2. Slides 2–8: ONE insight per slide. Headline (8–12 words) + 1–2 sentence body (max 40 words per slide). No slide should try to cover two ideas.
+3. Final slide (CTA): what to do next. Clear verb + destination.
+4. Post Caption: 100–200 words. Restate hook, brief context, CTA, 3–5 relevant hashtags.
+5. Format each slide in markdown as: ### Slide N: [Headline] then body.`
+    : isVideo
+    ? `VIDEO/REEL SCRIPT RULES (apply strictly):
+1. Hook (0–3s): the FIRST spoken line + a [VISUAL: ...] direction. Must address a pain or curiosity immediately. No "Hey guys" or channel intros.
+2. Problem (3–15s): state the problem or tension concisely.
+3. Insight/Solution (15–45s): deliver the core value. Use specific examples.
+4. Proof/Example (45–70s): one concrete proof point — a stat, story beat, or before/after.
+5. CTA (last 5s): one action. Clear and specific.
+6. Write as a verbatim script. Every key point gets an [ON-SCREEN TEXT: ...] note — assume 80% of viewers watch on mute.
+7. Target runtime: 30–90 seconds.`
+    : isLinkedIn
+    ? `LINKEDIN POST RULES (apply strictly):
+1. Hook (first line): specific stat, bold claim, or sharp question. Under 200 characters. This must make someone pause scrolling.
+2. Line break after EVERY 1–2 sentences. No paragraph walls.
+3. Core insight: 3–5 short insight lines. One idea per line.
+4. CTA last line: specific action (comment with X, click link below, DM for Y).
+5. Under 3,000 characters total. Sweet spot: 150–300 words.
+6. No hashtags in body. Max 3 hashtags at the very end if used.`
+    : isEssay
+    ? `THOUGHT-LEADERSHIP ESSAY RULES (apply strictly):
+1. Open with your POV — a specific, arguable claim in the first sentence. Not a question. Not context-setting.
+2. Structure: Claim → Evidence → Implication → Call to rethink.
+3. First-person voice throughout. Specific examples over abstract principles.
+4. 600–1,000 words.
+5. No bullet lists — this is prose. Arguments, not tips.
+6. End by restating the claim and why it matters NOW.`
+    : isQuote
+    ? `QUOTE CARD RULES: One powerful, specific sentence from the source (a claim, stat, or insight — not a platitude). Attribution on next line. Visual note on third line.`
+    : `Write using the format standards described in your system prompt. Apply the appropriate structure for this content type.`;
+
   return `Write a complete, publication-ready draft based on the outline below. This must be content a marketing team can publish with minimal editing — not a template, not placeholder text.
 
 CONTENT BRIEF:
@@ -149,15 +305,14 @@ CONTENT BRIEF:
 - Target Persona: ${body.opportunity.persona_match ?? 'General audience'}
 - CTA: ${body.opportunity.suggested_cta ?? 'N/A'}
 
-${body.existing_content ? `OUTLINE TO EXPAND:\n${body.existing_content}\n` : ''}
-${context || 'No knowledge base files provided — write from the brief and your financial services expertise.'}
+${formatDraftRules}
 
-Writing standards:
-- Open with a hook that speaks directly to the persona's pain point or aspiration
-- Use specific numbers, examples, and scenarios where relevant — avoid vague generalities
-- Write in active voice, short paragraphs (2-3 sentences), and accessible language
-- Format appropriately for the content type (use headers/bullets for blog; tight copy for email/social)
-- End with a clear, specific call-to-action that matches the persona's next likely step
+${body.existing_content ? `OUTLINE TO EXPAND:\n${body.existing_content}\n` : ''}
+${context || 'No knowledge base files provided — write from the brief and your expertise.'}
+
+Universal writing standards (apply on top of format rules):
+- Use specific numbers, names, and scenarios — avoid vague generalities
+- Write in active voice
 - Cite sources where available as [Source: title] or [KB: chunk_id]
 
 Return ONLY a JSON object (no markdown fences) with this structure:
@@ -209,6 +364,60 @@ Apply the feedback precisely. If the feedback is to make content more specific, 
 }
 
 function buildQualityReviewPrompt(body: GenerateRequest, context: string): string {
+  const fmt = (body.opportunity.recommended_format || '').toLowerCase();
+  const isBlog = fmt.includes('blog') || fmt.includes('article') || fmt.includes('guide');
+  const isEmail = fmt.includes('email') || fmt.includes('newsletter');
+  const isCarousel = fmt.includes('carousel');
+  const isVideo = fmt.includes('video') || fmt.includes('reel');
+  const isLinkedIn = fmt.includes('linkedin') && !isCarousel;
+
+  const formatChecklist = isBlog
+    ? `FORMAT CHECKLIST (Blog):
+□ Has exactly ONE H1 tag (the title)?
+□ Has 4–6 H2 sections with specific claim-based headings (not generic labels)?
+□ Has a FAQ section with 5–8 Q&As?
+□ Paragraphs are 2–3 sentences max?
+□ Hook intro does NOT open with a cliché ("In today's world", "Have you ever wondered")?
+□ Has a specific, non-generic CTA at the end?
+□ Has [INTERNAL LINK] suggestions?
+□ Word count is between 1,500–2,500 words?
+□ Primary keyword in H1 and first 100 words?
+Flag each unmet item as a medium or high issue depending on impact.`
+    : isEmail
+    ? `FORMAT CHECKLIST (Email):
+□ Has a subject line under 50 characters?
+□ Has a preheader (preview text) 40–80 chars?
+□ Opener avoids "Hope this finds you well" or similar filler?
+□ Has ONE clear CTA (not multiple competing asks)?
+□ Body is 150–300 words?
+□ CTA is specific (verb + object)?
+Flag each unmet item.`
+    : isCarousel
+    ? `FORMAT CHECKLIST (Carousel):
+□ Slide 1 is a hook (bold claim, stat, or sharp question)?
+□ Each slide has only ONE insight?
+□ No slide exceeds 40 words body copy?
+□ Final slide is a CTA?
+□ Post caption is 100–200 words with hashtags?
+Flag each unmet item.`
+    : isVideo
+    ? `FORMAT CHECKLIST (Video Script):
+□ Hook appears in first 3 seconds (spoken + visual)?
+□ Follows Hook → Problem → Insight → Proof → CTA structure?
+□ Has [ON-SCREEN TEXT] notes for mute viewers?
+□ Has [VISUAL] stage directions?
+□ Stays within 30–90 second runtime?
+Flag each unmet item.`
+    : isLinkedIn
+    ? `FORMAT CHECKLIST (LinkedIn Post):
+□ First line is a specific hook (stat, bold claim, or question)?
+□ Line breaks after every 1–2 sentences?
+□ Under 3,000 characters?
+□ Has a specific CTA (not "what do you think?")?
+□ No paragraph walls?
+Flag each unmet item.`
+    : '';
+
   return `Review the following content for quality across multiple dimensions.
 
 OPPORTUNITY:
@@ -221,22 +430,26 @@ ${body.existing_content ?? 'No content provided for review'}
 
 ${context}
 
+${formatChecklist}
+
 Return a JSON object with this structure (no markdown code fences):
 {
   "scores": {
     "language": 0.0,
     "readability": 0.0,
-    "india_context": 0.0,
+    "hook_strength": 0.0,
+    "structure_compliance": 0.0,
     "brand_tone": 0.0,
-    "persona_tone": 0.0,
+    "persona_fit": 0.0,
+    "specificity": 0.0,
+    "cta_clarity": 0.0,
     "sales_pressure": 0.0,
-    "jargon_level": 0.0,
     "source_support": 0.0
   },
   "issues": [
     {
       "severity": "high|medium|low",
-      "category": "language|readability|brand_voice|persona_fit|compliance|grounding|tone",
+      "category": "language|readability|structure|hook|brand_voice|persona_fit|compliance|grounding|cta|specificity",
       "description": "What the issue is",
       "location": "Where in the content (quote the relevant text)",
       "suggestion": "How to fix it"
@@ -251,15 +464,17 @@ Return a JSON object with this structure (no markdown code fences):
 
 Score descriptions:
 - language: Grammar, spelling, sentence structure (1.0 = flawless)
-- readability: Flesch-Kincaid style assessment (1.0 = very easy to read)
-- india_context: Relevance and sensitivity to Indian market context (1.0 = perfectly localized)
-- brand_tone: Alignment with brand voice guidelines (1.0 = perfect match)
-- persona_tone: Alignment with target persona preferences (1.0 = perfect match)
-- sales_pressure: Inverse scale - 1.0 means no pushy sales language, 0.0 means overly salesy
-- jargon_level: Inverse scale - 1.0 means accessible language, 0.0 means heavy jargon
-- source_support: If knowledge base sources were provided, how well claims are grounded in them (1.0 = well supported). If NO sources were provided, score this 1.0 and do not penalize — the content was written from the brief.
+- readability: Paragraph length, sentence complexity, accessibility (1.0 = very easy to read)
+- hook_strength: How well the opening grabs the target persona (1.0 = immediate, compelling hook)
+- structure_compliance: How closely the content follows the format rules for its type (1.0 = perfect)
+- brand_tone: Alignment with brand voice guidelines from the knowledge base (1.0 = perfect match)
+- persona_fit: How well the content speaks to the target persona's pain points and goals (1.0 = perfect)
+- specificity: Use of concrete numbers, examples, scenarios vs vague generalities (1.0 = highly specific)
+- cta_clarity: How clear and specific the call-to-action is (1.0 = crystal clear next step)
+- sales_pressure: Inverse — 1.0 means no pushy language, 0.0 means overly salesy
+- source_support: If KB sources were provided, how well claims are grounded (1.0 = well supported). If NO sources were provided, score 1.0 — do not penalize.
 
-Only flag missing citations when knowledge base sources were actually provided above. Flag any compliance rule violations. Focus your issues on specificity, clarity, persona fit, and engagement.`;
+Only flag missing citations when knowledge base sources were actually provided above. Flag any compliance rule violations. Focus issues on hook strength, specificity, structure, persona fit, and CTA clarity.`;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
