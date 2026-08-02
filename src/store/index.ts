@@ -51,7 +51,7 @@ export const useAppStore = create<AppState>((set) => ({
       return { theme: next };
     }),
 
-  activeTab: 'analyze',
+  activeTab: 'overview',
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   activeStudioOpp: null,

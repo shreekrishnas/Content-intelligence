@@ -8,9 +8,16 @@ interface TopbarProps {
   activeTab: string;
   onToggleTheme: () => void;
   theme: 'light' | 'dark';
+  onOpenCmdk?: () => void;
+  onOpenCopilot?: () => void;
+  onOpenNotifs?: () => void;
 }
 
 const tabMeta: Record<string, { title: string; subtitle: string }> = {
+  overview: {
+    title: 'Overview',
+    subtitle: "Your content pipeline at a glance — sourced from live analyses, trends, and studio activity.",
+  },
   admin: {
     title: 'Admin Panel',
     subtitle: 'Team assignments, client accounts, and access management.',
@@ -49,14 +56,6 @@ const tabMeta: Record<string, { title: string; subtitle: string }> = {
   },
 };
 
-const ROLE_COLORS: Record<string, string> = {
-  td_management: '#8B5CF6',
-  pod_head: '#2563EB',
-  manager: '#059669',
-  executive: '#D97706',
-  designer: '#DB2777',
-  intern: '#6B7280',
-};
 
 function AccountSwitcher() {
   const { account, accounts, isAdmin, switchAccount } = useAccount();
@@ -421,12 +420,26 @@ function FeedbackButton({ activeTab }: { activeTab: string }) {
   );
 }
 
-export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps) {
+function UserAvatar({ name, email }: { name?: string | null; email?: string | null }) {
+  const initials = name
+    ? name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()
+    : (email?.split('@')[0]?.[0] || '?').toUpperCase();
+  return (
+    <div
+      className="avatar"
+      style={{ width: 34, height: 34, fontSize: '.78rem', flexShrink: 0 }}
+      title={name || email || ''}
+    >
+      {initials}
+    </div>
+  );
+}
+
+export default function Topbar({ activeTab, onToggleTheme, theme, onOpenCmdk, onOpenCopilot, onOpenNotifs }: TopbarProps) {
   const meta = tabMeta[activeTab] ?? { title: activeTab, subtitle: '' };
   const user = useAuthStore((s) => s.user);
   const signOut = useAuthStore((s) => s.signOut);
-  const { userRole, isAdmin } = useAccount();
-  const roleColor = ROLE_COLORS[userRole || ''] || 'var(--text-muted)';
+  useAccount();
 
   return (
     <div className="topbar">
@@ -435,44 +448,69 @@ export default function Topbar({ activeTab, onToggleTheme, theme }: TopbarProps)
         <div className="topbar-sub">{meta.subtitle}</div>
       </div>
       <div className="topbar-right">
+        {/* Cmd+K search pill */}
+        <button
+          onClick={onOpenCmdk}
+          className="pill-elevated"
+          style={{ width: 220, justifyContent: 'space-between', color: 'var(--text-muted)' }}
+          title="Search (⌘K)"
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: '.45rem' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
+            </svg>
+            Search or jump to…
+          </span>
+          <kbd style={{ fontSize: '.65rem', border: '1px solid var(--border-default)', borderRadius: '.35rem', padding: '.1rem .35rem' }}>⌘K</kbd>
+        </button>
+
         <ViewModeToggle />
         <AccountSwitcher />
         <FeedbackButton activeTab={activeTab} />
-        {user && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-            <span style={{ fontSize: '0.72rem', color: 'var(--text-primary)', fontWeight: 500 }}>
-              {user.name || user.email?.split('@')[0]}
-            </span>
-            {(userRole || isAdmin) && (
-              <span style={{
-                fontSize: '0.6rem', fontWeight: 700, letterSpacing: '0.05em',
-                color: roleColor, textTransform: 'capitalize',
-              }}>
-                {isAdmin && !userRole ? 'Admin' : (userRole || '').replace('_', ' ')}
-              </span>
-            )}
-          </div>
-        )}
-        <div className="icon-btn" onClick={onToggleTheme} title="Toggle theme">
+
+        {/* Copilot button */}
+        <button className="btn btn-brand btn-sm" onClick={onOpenCopilot} style={{ gap: '.4rem' }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
+            <path d="M12 2l1.6 5.2L19 9l-5.4 1.8L12 16l-1.6-5.2L5 9l5.4-1.8L12 2z"/>
+          </svg>
+          Copilot
+        </button>
+
+        {/* Notifications bell */}
+        <div className="icon-circle" onClick={onOpenNotifs} title="Notifications" style={{ cursor: 'pointer' }}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+            <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.7 21a2 2 0 0 1-3.4 0"/>
+          </svg>
+          <span className="notif-dot" />
+        </div>
+
+        {/* Theme toggle */}
+        <div className="icon-circle" onClick={onToggleTheme} title="Toggle theme" style={{ cursor: 'pointer' }}>
           {theme === 'dark' ? (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+              <circle cx="12" cy="12" r="4"/>
+              <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
             </svg>
           ) : (
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
-              <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />
+              <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>
             </svg>
           )}
         </div>
+
+        {/* Avatar + sign out */}
         {user && (
-          <div className="icon-btn" onClick={() => signOut()} title="Sign out">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-          </div>
+          <>
+            <UserAvatar name={user.name} email={user.email} />
+            <div className="icon-circle" onClick={() => signOut()} title="Sign out" style={{ cursor: 'pointer' }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="18" height="18">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+            </div>
+          </>
         )}
       </div>
     </div>

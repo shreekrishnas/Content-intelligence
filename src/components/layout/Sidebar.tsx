@@ -10,6 +10,16 @@ interface SidebarProps {
 
 const tabs = [
   {
+    id: "overview",
+    label: "Overview",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 11.5L12 4l9 7.5"/>
+        <path d="M5 10v9a1 1 0 001 1h4v-6h4v6h4a1 1 0 001-1v-9"/>
+      </svg>
+    ),
+  },
+  {
     id: "analyze",
     label: "New Analysis",
     icon: (

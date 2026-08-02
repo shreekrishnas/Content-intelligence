@@ -982,7 +982,11 @@ button.badge:hover {
   z-index: 210;
   display: flex;
   flex-direction: column;
-  animation: slideInRight 0.25s ease;
+  transform: translateX(100%);
+  transition: transform 0.28s ease;
+}
+.drawer-panel.open {
+  transform: translateX(0);
 }
 
 .drawer-header {
@@ -1102,3 +1106,41 @@ tr:hover td { background: var(--surface-hover); }
 /* ── Selection ───────────────────────────────────────────────────── */
 
 ::selection { background: rgba(124,58,237,0.25); }
+
+/* ── Topbar pill & icon-circle ───────────────────────────────────── */
+
+.pill-elevated {
+  height: 40px;
+  border-radius: 9999px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 14px rgba(15,23,42,0.07);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: inherit;
+  transition: background 0.15s ease;
+}
+.pill-elevated:hover { background: var(--surface-hover); }
+
+.icon-circle {
+  width: 38px;
+  height: 38px;
+  border-radius: 9999px;
+  background: var(--surface-card);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 14px rgba(15,23,42,0.07);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+.icon-circle:hover { background: var(--surface-hover); }

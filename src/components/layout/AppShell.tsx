@@ -1,10 +1,14 @@
-import { useEffect, useState, lazy, Suspense } from 'react';
+import { useEffect, useState, lazy, Suspense, useCallback } from 'react';
 import { useAppStore } from '@/store';
 import { useAccount } from '@/contexts/AccountContext';
 import Atmosphere from './Atmosphere';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
+import CommandPalette from '@/components/CommandPalette';
+import CopilotDrawer from '@/components/CopilotDrawer';
+import NotificationsDrawer from '@/components/NotificationsDrawer';
 
+const OverviewPage = lazy(() => import('@/pages/OverviewPage'));
 const AnalyzePage = lazy(() => import('@/pages/AnalyzePage'));
 const OpportunitiesPage = lazy(() => import('@/pages/OpportunitiesPage'));
 const StudioPage = lazy(() => import('@/pages/StudioPage'));
@@ -16,6 +20,7 @@ const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const AdminPage = lazy(() => import('@/pages/AdminPage'));
 
 const pages: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
+  overview: OverviewPage,
   analyze: AnalyzePage,
   opportunities: OpportunitiesPage,
   studio: StudioPage,
@@ -34,24 +39,34 @@ export default function AppShell() {
   const toggleTheme = useAppStore((s) => s.toggleTheme);
   const { isAdmin } = useAccount();
 
+  const [cmdkOpen, setCmdkOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [notifsOpen, setNotifsOpen] = useState(false);
+
+  // Redirect old 'dashboard' default to 'overview'
   useEffect(() => {
-    if (activeTab === 'dashboard') setActiveTab('analyze');
+    if (activeTab === 'dashboard') setActiveTab('overview');
   }, [activeTab, setActiveTab]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
-  const currentTab = activeTab === 'dashboard' ? 'analyze' : activeTab;
+  // Cmd+K global shortcut
+  const openCmdk = useCallback(() => setCmdkOpen(true), []);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        openCmdk();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openCmdk]);
 
-  // Keep-alive tabs: once a tab has been opened, its page component stays
-  // mounted (just hidden) instead of unmounting on every switch. Previously
-  // each tab was conditionally rendered by key, so leaving and returning to
-  // a tab remounted the component from scratch — re-running every
-  // data-fetching useEffect and discarding all in-progress state (scroll
-  // position, wizard steps, unsaved form fields, loaded records). Now that
-  // work only happens once per session per tab; switching back just shows
-  // the pane as it was left.
+  const currentTab = activeTab === 'dashboard' ? 'overview' : activeTab;
+
   const [visitedTabs, setVisitedTabs] = useState<string[]>([currentTab]);
   useEffect(() => {
     setVisitedTabs((prev) => (prev.includes(currentTab) ? prev : [...prev, currentTab]));
@@ -64,7 +79,14 @@ export default function AppShell() {
         <div className="glass-panel">
           <Sidebar activeTab={currentTab} onTabChange={setActiveTab} isAdmin={isAdmin} />
           <div className="app-content">
-            <Topbar activeTab={currentTab} onToggleTheme={toggleTheme} theme={theme} />
+            <Topbar
+              activeTab={currentTab}
+              onToggleTheme={toggleTheme}
+              theme={theme}
+              onOpenCmdk={openCmdk}
+              onOpenCopilot={() => setCopilotOpen(true)}
+              onOpenNotifs={() => setNotifsOpen(true)}
+            />
             <div className="app-main" style={{ position: 'relative' }}>
               {visitedTabs.map((tabKey) => {
                 const Page = pages[tabKey];
@@ -72,13 +94,6 @@ export default function AppShell() {
                 const isActive = tabKey === currentTab;
                 return (
                   <div key={tabKey} style={{ display: isActive ? 'block' : 'none' }}>
-                    {/* Each tab gets its own Suspense boundary. A single shared
-                        boundary would mean loading a brand-new tab's chunk
-                        suspends the WHOLE boundary — React discards and
-                        remounts every already-loaded sibling in it, wiping
-                        out any data/state they were holding. Scoping the
-                        boundary per tab means loading tab B's chunk can never
-                        touch tab A's already-committed state. */}
                     <Suspense fallback={<div className="empty-state"><p>Loading...</p></div>}>
                       <Page />
                     </Suspense>
@@ -89,6 +104,10 @@ export default function AppShell() {
           </div>
         </div>
       </div>
+
+      <CommandPalette open={cmdkOpen} onClose={() => setCmdkOpen(false)} />
+      <CopilotDrawer open={copilotOpen} onClose={() => setCopilotOpen(false)} />
+      <NotificationsDrawer open={notifsOpen} onClose={() => setNotifsOpen(false)} />
     </div>
   );
 }
