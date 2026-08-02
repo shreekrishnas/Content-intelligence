@@ -37,7 +37,7 @@ export default function AppShell() {
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const theme = useAppStore((s) => s.theme);
   const toggleTheme = useAppStore((s) => s.toggleTheme);
-  const { isAdmin } = useAccount();
+  const { isMasterAdmin } = useAccount();
 
   const [cmdkOpen, setCmdkOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
@@ -77,7 +77,7 @@ export default function AppShell() {
       <Atmosphere />
       <div className="app-shell">
         <div className="glass-panel">
-          <Sidebar activeTab={currentTab} onTabChange={setActiveTab} isAdmin={isAdmin} />
+          <Sidebar activeTab={currentTab} onTabChange={setActiveTab} isAdmin={isMasterAdmin} />
           <div className="app-content">
             <Topbar
               activeTab={currentTab}
