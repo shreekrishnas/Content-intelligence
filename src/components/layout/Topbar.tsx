@@ -264,10 +264,15 @@ function ViewModeToggle() {
   );
 }
 
+const MAX_ATTACH_BYTES = 4 * 1024 * 1024; // 4 MB
+
 function FeedbackButton({ activeTab }: { activeTab: string }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [attachment, setAttachment] = useState<{ name: string; type: string; data: string } | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const user = useAuthStore((s) => s.user);
   const { account } = useAccount();
@@ -286,6 +291,36 @@ function FeedbackButton({ activeTab }: { activeTab: string }) {
     };
   }, [open]);
 
+  function handleFile(file: File) {
+    setAttachError(null);
+    if (file.size > MAX_ATTACH_BYTES) {
+      setAttachError('File too large — max 4 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setAttachment({ name: file.name, type: file.type, data: reader.result as string });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+    e.target.value = '';
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFile(file);
+  }
+
+  function removeAttachment() {
+    setAttachment(null);
+    setAttachError(null);
+  }
+
   async function submit() {
     const text = message.trim();
     if (!text) { showToast('Please write a message before sending.', 'error'); return; }
@@ -295,15 +330,18 @@ function FeedbackButton({ activeTab }: { activeTab: string }) {
       message: text,
       account_label: account?.name || '',
       page: activeTab,
+      attachment: attachment ?? undefined,
     });
     setSending(false);
     if (error) { showToast(error, 'error'); return; }
     showToast(`Feedback sent to ${data?.delivered_to || 'the team'}. Thanks!`);
     setMessage('');
+    setAttachment(null);
     setOpen(false);
   }
 
   const remaining = 5000 - message.length;
+  const isImage = attachment?.type.startsWith('image/');
 
   return (
     <div style={{ position: 'relative' }}>
@@ -311,18 +349,11 @@ function FeedbackButton({ activeTab }: { activeTab: string }) {
         onClick={() => setOpen((v) => !v)}
         title="Send feedback"
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '6px 12px',
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-          background: 'var(--surface-card)',
-          color: 'var(--text-primary)',
-          fontSize: '0.78rem',
-          fontWeight: 600,
-          cursor: 'pointer',
-          whiteSpace: 'nowrap',
+          display: 'flex', alignItems: 'center', gap: 6,
+          padding: '6px 12px', borderRadius: 8,
+          border: '1px solid var(--border)', background: 'var(--surface-card)',
+          color: 'var(--text-primary)', fontSize: '0.78rem', fontWeight: 600,
+          cursor: 'pointer', whiteSpace: 'nowrap',
         }}
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -335,63 +366,90 @@ function FeedbackButton({ activeTab }: { activeTab: string }) {
         <div
           ref={cardRef}
           style={{
-            position: 'absolute',
-            top: 'calc(100% + 6px)',
-            right: 0,
-            width: 340,
-            background: 'var(--surface-card)',
-            border: '1px solid var(--border)',
-            borderRadius: 12,
-            boxShadow: '0 12px 40px rgba(0,0,0,0.22)',
-            zIndex: 200,
-            padding: 14,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
+            position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 360,
+            background: 'var(--surface-card)', border: '1px solid var(--border)',
+            borderRadius: 12, boxShadow: '0 12px 40px rgba(0,0,0,0.22)',
+            zIndex: 200, padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
           }}
         >
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
             <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>Send feedback</div>
-            <button
-              onClick={() => setOpen(false)}
+            <button onClick={() => setOpen(false)}
               style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, lineHeight: 1, cursor: 'pointer' }}
-              title="Close"
-            >&times;</button>
+              title="Close">&times;</button>
           </div>
 
           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
             Tell us what's working, what isn't, or what you'd like to see next.
-            {user?.email && (
-              <> Sent from <strong style={{ color: 'var(--text-primary)' }}>{user.email}</strong>.</>
-            )}
+            {user?.email && <> Sent from <strong style={{ color: 'var(--text-primary)' }}>{user.email}</strong>.</>}
           </div>
 
           <textarea
             value={message}
             onChange={(e) => setMessage(e.target.value.slice(0, 5000))}
             placeholder="What would you like to share?"
-            rows={6}
+            rows={5}
             autoFocus
             disabled={sending}
             style={{
-              width: '100%',
-              padding: '10px 12px',
-              borderRadius: 8,
-              border: '1px solid var(--border)',
-              background: 'var(--surface-hover)',
-              color: 'var(--text-primary)',
-              fontSize: '0.82rem',
-              lineHeight: 1.5,
-              resize: 'vertical',
-              minHeight: 110,
-              outline: 'none',
-              fontFamily: 'inherit',
-              boxSizing: 'border-box',
+              width: '100%', padding: '10px 12px', borderRadius: 8,
+              border: '1px solid var(--border)', background: 'var(--surface-hover)',
+              color: 'var(--text-primary)', fontSize: '0.82rem', lineHeight: 1.5,
+              resize: 'vertical', minHeight: 100, outline: 'none',
+              fontFamily: 'inherit', boxSizing: 'border-box',
             }}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submit(); }
-            }}
+            onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submit(); } }}
           />
+
+          {/* Attachment area */}
+          {!attachment ? (
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={onDrop}
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                border: '1.5px dashed var(--border)', borderRadius: 8,
+                padding: '10px 12px', cursor: 'pointer', textAlign: 'center',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                color: 'var(--text-muted)', fontSize: '0.74rem',
+                transition: 'border-color 0.15s',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              Attach screenshot or file (max 4 MB)
+              <input ref={fileInputRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }} onChange={onFileChange} />
+            </div>
+          ) : (
+            <div style={{
+              border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden',
+              background: 'var(--surface-hover)',
+            }}>
+              {isImage && (
+                <img src={attachment.data} alt={attachment.name}
+                  style={{ width: '100%', maxHeight: 160, objectFit: 'contain', display: 'block', background: '#0001' }} />
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--accent-primary)' }}>
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                </svg>
+                <span style={{ flex: 1, fontSize: '0.74rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {attachment.name}
+                </span>
+                <button onClick={removeAttachment}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px' }}
+                  title="Remove attachment">&times;</button>
+              </div>
+            </div>
+          )}
+
+          {attachError && (
+            <div style={{ fontSize: '0.72rem', color: '#DC2626' }}>{attachError}</div>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <span style={{ fontSize: '0.68rem', color: remaining < 200 ? '#F59E0B' : 'var(--text-muted)' }}>
@@ -401,13 +459,10 @@ function FeedbackButton({ activeTab }: { activeTab: string }) {
               onClick={submit}
               disabled={sending || !message.trim()}
               style={{
-                padding: '7px 14px',
-                borderRadius: 7,
-                border: 'none',
+                padding: '7px 14px', borderRadius: 7, border: 'none',
                 background: sending || !message.trim() ? 'var(--surface-hover)' : 'var(--accent-primary)',
                 color: sending || !message.trim() ? 'var(--text-muted)' : '#fff',
-                fontSize: '0.78rem',
-                fontWeight: 600,
+                fontSize: '0.78rem', fontWeight: 600,
                 cursor: sending || !message.trim() ? 'default' : 'pointer',
               }}
             >

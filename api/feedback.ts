@@ -50,7 +50,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // ---- 2. Validate the message -------------------------------------------
-  const body = (req.body || {}) as { message?: string; account_label?: string; page?: string };
+  const body = (req.body || {}) as {
+    message?: string;
+    account_label?: string;
+    page?: string;
+    attachment?: { name?: string; type?: string; data?: string };
+  };
   const message = String(body.message || '').trim();
   if (!message) {
     return sendError(res, 400, 'missing_message', 'Please write a message before sending.');
@@ -64,6 +69,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const accountLabel = String(body.account_label || '').trim();
   const page = String(body.page || '').trim();
   const timestamp = new Date().toISOString();
+
+  // Attachment — optional base64 data URL (max ~5 MB raw)
+  const attachName = body.attachment?.name ? String(body.attachment.name).slice(0, 255) : null;
+  const attachType = body.attachment?.type ? String(body.attachment.type).slice(0, 100) : null;
+  const attachData = body.attachment?.data ? String(body.attachment.data) : null;
+  // Sanity: reject suspiciously large payloads (> 5 MB of base64 ≈ ~6.7 MB decoded)
+  if (attachData && attachData.length > 7_000_000) {
+    return sendError(res, 400, 'attachment_too_large', 'Attachment is too large (max ~5 MB).');
+  }
 
   // ---- 3. Send via Resend -------------------------------------------------
   const resendKey = process.env.RESEND_API_KEY;
@@ -89,7 +103,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     `Sent: ${timestamp}`,
   ].filter(Boolean).join('\n');
 
-  const text = `${meta}\n\n---\n\n${message}`;
+  const attachmentNote = attachName ? `\n\nAttachment: ${attachName}` : '';
+  const text = `${meta}\n\n---\n\n${message}${attachmentNote}`;
+
+  const isImageAttach = attachType?.startsWith('image/');
+  const attachHtml = attachData
+    ? isImageAttach
+      ? `<div style="margin-top:20px;"><div style="font-size:12px;color:#6b7280;margin-bottom:6px;">Attachment: ${escapeHtml(attachName || 'image')}</div><img src="${attachData}" alt="${escapeHtml(attachName || 'attachment')}" style="max-width:100%;border-radius:6px;border:1px solid #e5e7eb;" /></div>`
+      : `<div style="margin-top:20px;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;color:#374151;">📎 Attachment: ${escapeHtml(attachName || 'file')} (${escapeHtml(attachType || 'unknown type')})</div>`
+    : '';
+
   const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#111;">
     <div style="background:#f3f4f6;border-radius:8px;padding:12px 16px;font-size:13px;color:#374151;margin-bottom:16px;">
       <div><strong>From:</strong> ${escapeHtml(senderName ? `${senderName} <${senderEmail}>` : senderEmail)}</div>
@@ -98,6 +121,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       <div><strong>Sent:</strong> ${escapeHtml(timestamp)}</div>
     </div>
     <div style="font-size:15px;line-height:1.6;white-space:pre-wrap;">${escapeHtml(message)}</div>
+    ${attachHtml}
   </div>`;
 
   // Send email + persist to feedback table in parallel. The DB row is the
@@ -141,6 +165,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     message,
     delivered: !deliverError,
     deliver_error: deliverError,
+    attachment_name: attachName,
+    attachment_type: attachType,
+    attachment_data: attachData,
   });
 
   if (deliverError) {

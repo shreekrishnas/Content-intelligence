@@ -1142,7 +1142,7 @@ export const api = {
   // Feedback — sends to the fixed destination via email
   // --------------------------------------------------------------------------
   feedback: {
-    async send(input: { message: string; account_label?: string; page?: string }): Promise<Result<{ delivered_to: string }>> {
+    async send(input: { message: string; account_label?: string; page?: string; attachment?: { name: string; type: string; data: string } }): Promise<Result<{ delivered_to: string }>> {
       const jwt = await getJwt();
       if (!jwt) return err('You must be signed in to send feedback.');
       const resp = await fetch('/api/feedback', {
@@ -1188,4 +1188,7 @@ export interface FeedbackItem {
   delivered: boolean;
   deliver_error: string | null;
   created_at: string;
+  attachment_name: string | null;
+  attachment_type: string | null;
+  attachment_data: string | null;
 }

@@ -218,6 +218,39 @@ export default function SettingsPage() {
                             Delivery error: {f.deliver_error}
                           </div>
                         )}
+                        {/* Attachment preview */}
+                        {f.attachment_data && isOpen && (
+                          <div style={{ marginTop: 10 }}>
+                            {f.attachment_type?.startsWith('image/') ? (
+                              <div>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+                                  📎 {f.attachment_name || 'attachment'}
+                                </div>
+                                <a href={f.attachment_data} download={f.attachment_name || 'attachment'} target="_blank" rel="noopener noreferrer">
+                                  <img
+                                    src={f.attachment_data}
+                                    alt={f.attachment_name || 'screenshot'}
+                                    style={{ maxWidth: '100%', maxHeight: 320, borderRadius: 6, border: '1px solid var(--border)', display: 'block', cursor: 'zoom-in' }}
+                                  />
+                                </a>
+                                <div style={{ marginTop: 4, fontSize: '0.68rem', color: 'var(--text-muted)' }}>Click image to download</div>
+                              </div>
+                            ) : (
+                              <a
+                                href={f.attachment_data}
+                                download={f.attachment_name || 'attachment'}
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '0.74rem', color: 'var(--accent-primary)', fontWeight: 600, textDecoration: 'none', padding: '6px 10px', background: 'var(--surface-hover)', borderRadius: 6, border: '1px solid var(--border)' }}
+                              >
+                                📎 Download {f.attachment_name || 'attachment'}
+                              </a>
+                            )}
+                          </div>
+                        )}
+                        {f.attachment_data && !isOpen && (
+                          <div style={{ marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                            📎 {f.attachment_name || 'attachment attached'}
+                          </div>
+                        )}
                         <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center' }}>
                           <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{whenLabel}</span>
                           {f.message.length > 200 && (
