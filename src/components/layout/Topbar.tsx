@@ -416,11 +416,11 @@ function FeedbackButton({ activeTab }: { activeTab: string }) {
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: '0.6rem', fontWeight: 700, color: '#fff', flexShrink: 0,
                 }}>
-                  {(user.user_metadata?.full_name || user.email || '?')[0].toUpperCase()}
+                  {(user.name || user.email || '?')[0].toUpperCase()}
                 </div>
                 <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                  {user.user_metadata?.full_name
-                    ? <><strong style={{ color: 'var(--text-primary)' }}>{user.user_metadata.full_name}</strong> · {user.email}</>
+                  {user.name
+                    ? <><strong style={{ color: 'var(--text-primary)' }}>{user.name}</strong> · {user.email}</>
                     : user.email}
                 </span>
               </div>
