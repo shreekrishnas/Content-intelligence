@@ -270,6 +270,7 @@ async function handleManual(req: VercelRequest, res: VercelResponse) {
   const body: ScanBody = req.body || {};
   const profile = body.profile || {};
   const mode = body.mode === 'suggest' ? 'suggest' : 'live';
+  const accountId = body.account_id || (req.headers['x-account-id'] as string) || '';
   const { signals, source, note, stats } = await collect(profile, body.account_label, mode);
   if (!signals.length) {
     return res.status(200).json({ success: true, topics: [], summary: null, source, note: note || 'No candidate signals were found for this profile. Add more core topics or keywords.', saved: false, stats });
@@ -298,7 +299,6 @@ async function handleManual(req: VercelRequest, res: VercelResponse) {
   let saved = false;
   let saveError: string | undefined;
   let savedRecords: unknown[] = [];
-  const accountId = body.account_id || (req.headers['x-account-id'] as string) || '';
   if (accountId) {
     try {
       const admin = getServiceClient();
