@@ -366,107 +366,210 @@ function FeedbackButton({ activeTab }: { activeTab: string }) {
         <div
           ref={cardRef}
           style={{
-            position: 'absolute', top: 'calc(100% + 6px)', right: 0, width: 360,
+            position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 380,
             background: 'var(--surface-card)', border: '1px solid var(--border)',
-            borderRadius: 12, boxShadow: '0 12px 40px rgba(0,0,0,0.22)',
-            zIndex: 200, padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
+            borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08)',
+            zIndex: 200, overflow: 'hidden',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
-            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>Send feedback</div>
+          {/* Header */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '14px 16px 12px',
+            borderBottom: '1px solid var(--border)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{
+                width: 28, height: 28, borderRadius: 8,
+                background: 'linear-gradient(135deg, var(--accent-primary), #7c3aed)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              </div>
+              <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-primary)' }}>Send feedback</span>
+            </div>
             <button onClick={() => setOpen(false)}
-              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 18, lineHeight: 1, cursor: 'pointer' }}
+              style={{
+                background: 'none', border: 'none', color: 'var(--text-muted)',
+                width: 26, height: 26, borderRadius: 6, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 16, lineHeight: 1,
+              }}
               title="Close">&times;</button>
           </div>
 
-          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
-            Tell us what's working, what isn't, or what you'd like to see next.
-            {user?.email && <> Sent from <strong style={{ color: 'var(--text-primary)' }}>{user.email}</strong>.</>}
-          </div>
+          {/* Body */}
+          <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Sender pill */}
+            {user?.email && (
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: 7,
+                padding: '5px 10px 5px 6px', borderRadius: 20,
+                background: 'var(--surface-hover)', border: '1px solid var(--border)',
+                alignSelf: 'flex-start',
+              }}>
+                <div style={{
+                  width: 20, height: 20, borderRadius: '50%',
+                  background: 'linear-gradient(135deg, var(--accent-primary), #7c3aed)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '0.6rem', fontWeight: 700, color: '#fff', flexShrink: 0,
+                }}>
+                  {(user.user_metadata?.full_name || user.email || '?')[0].toUpperCase()}
+                </div>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                  {user.user_metadata?.full_name
+                    ? <><strong style={{ color: 'var(--text-primary)' }}>{user.user_metadata.full_name}</strong> · {user.email}</>
+                    : user.email}
+                </span>
+              </div>
+            )}
 
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value.slice(0, 5000))}
-            placeholder="What would you like to share?"
-            rows={5}
-            autoFocus
-            disabled={sending}
-            style={{
-              width: '100%', padding: '10px 12px', borderRadius: 8,
-              border: '1px solid var(--border)', background: 'var(--surface-hover)',
-              color: 'var(--text-primary)', fontSize: '0.82rem', lineHeight: 1.5,
-              resize: 'vertical', minHeight: 100, outline: 'none',
-              fontFamily: 'inherit', boxSizing: 'border-box',
-            }}
-            onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submit(); } }}
-          />
-
-          {/* Attachment area */}
-          {!attachment ? (
+            {/* Unified input box */}
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={onDrop}
-              onClick={() => fileInputRef.current?.click()}
               style={{
-                border: '1.5px dashed var(--border)', borderRadius: 8,
-                padding: '10px 12px', cursor: 'pointer', textAlign: 'center',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                color: 'var(--text-muted)', fontSize: '0.74rem',
+                border: '1.5px solid var(--border)', borderRadius: 10,
+                background: 'var(--surface-hover)', overflow: 'hidden',
                 transition: 'border-color 0.15s',
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
-              onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
+              onFocusCapture={(e) => (e.currentTarget.style.borderColor = 'var(--accent-primary)')}
+              onBlurCapture={(e) => (e.currentTarget.style.borderColor = 'var(--border)')}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-                <polyline points="21 15 16 10 5 21"/>
-              </svg>
-              Attach screenshot or file (max 4 MB)
-              <input ref={fileInputRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }} onChange={onFileChange} />
-            </div>
-          ) : (
-            <div style={{
-              border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden',
-              background: 'var(--surface-hover)',
-            }}>
-              {isImage && (
-                <img src={attachment.data} alt={attachment.name}
-                  style={{ width: '100%', maxHeight: 160, objectFit: 'contain', display: 'block', background: '#0001' }} />
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value.slice(0, 5000))}
+                placeholder="What's on your mind? Bug, idea, or praise…"
+                rows={5}
+                autoFocus
+                disabled={sending}
+                style={{
+                  width: '100%', padding: '12px 14px 8px',
+                  border: 'none', background: 'transparent',
+                  color: 'var(--text-primary)', fontSize: '0.83rem', lineHeight: 1.55,
+                  resize: 'none', outline: 'none',
+                  fontFamily: 'inherit', boxSizing: 'border-box', display: 'block',
+                }}
+                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); submit(); } }}
+              />
+
+              {/* Attachment preview inside box */}
+              {attachment && (
+                <div style={{ borderTop: '1px solid var(--border)', padding: '8px 10px' }}>
+                  {isImage ? (
+                    <div style={{ position: 'relative', display: 'inline-block' }}>
+                      <img src={attachment.data} alt={attachment.name}
+                        style={{ height: 64, width: 'auto', maxWidth: '100%', borderRadius: 6, display: 'block', objectFit: 'cover', border: '1px solid var(--border)' }} />
+                      <button onClick={removeAttachment}
+                        style={{
+                          position: 'absolute', top: -6, right: -6,
+                          width: 18, height: 18, borderRadius: '50%', border: 'none',
+                          background: '#111', color: '#fff', fontSize: 11, lineHeight: 1,
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>&times;</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: 6, background: '#EDE9FE',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                      </div>
+                      <span style={{ flex: 1, fontSize: '0.74rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {attachment.name}
+                      </span>
+                      <button onClick={removeAttachment}
+                        style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '2px 4px', borderRadius: 4 }}
+                        title="Remove">&times;</button>
+                    </div>
+                  )}
+                </div>
               )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--accent-primary)' }}>
-                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-                </svg>
-                <span style={{ flex: 1, fontSize: '0.74rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {attachment.name}
+
+              {/* Toolbar row inside box */}
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '8px 10px', borderTop: '1px solid var(--border)',
+              }}>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Attach screenshot or file"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    color: 'var(--text-muted)', fontSize: '0.72rem', fontWeight: 500,
+                    padding: '3px 6px', borderRadius: 6, transition: 'color 0.12s',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent-primary)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                  {attachment ? 'Replace' : 'Attach'}
+                </button>
+                <input ref={fileInputRef} type="file" accept="image/*,.pdf" style={{ display: 'none' }} onChange={onFileChange} />
+                <span style={{ fontSize: '0.66rem', color: remaining < 200 ? '#F59E0B' : 'var(--text-muted)' }}>
+                  {remaining < 500 ? `${remaining} left` : ''}
                 </span>
-                <button onClick={removeAttachment}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px' }}
-                  title="Remove attachment">&times;</button>
               </div>
             </div>
-          )}
 
-          {attachError && (
-            <div style={{ fontSize: '0.72rem', color: '#DC2626' }}>{attachError}</div>
-          )}
+            {attachError && (
+              <div style={{ fontSize: '0.72rem', color: '#DC2626', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                {attachError}
+              </div>
+            )}
+          </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <span style={{ fontSize: '0.68rem', color: remaining < 200 ? '#F59E0B' : 'var(--text-muted)' }}>
-              {remaining} chars left · ⌘/Ctrl+Enter to send
+          {/* Footer */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 16px 14px', gap: 8,
+          }}>
+            <span style={{ fontSize: '0.67rem', color: 'var(--text-muted)' }}>
+              ⌘/Ctrl+Enter to send
             </span>
             <button
               onClick={submit}
               disabled={sending || !message.trim()}
               style={{
-                padding: '7px 14px', borderRadius: 7, border: 'none',
-                background: sending || !message.trim() ? 'var(--surface-hover)' : 'var(--accent-primary)',
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '8px 18px', borderRadius: 8, border: 'none',
+                background: sending || !message.trim()
+                  ? 'var(--surface-hover)'
+                  : 'linear-gradient(135deg, var(--accent-primary), #7c3aed)',
                 color: sending || !message.trim() ? 'var(--text-muted)' : '#fff',
-                fontSize: '0.78rem', fontWeight: 600,
+                fontSize: '0.8rem', fontWeight: 600,
                 cursor: sending || !message.trim() ? 'default' : 'pointer',
+                boxShadow: sending || !message.trim() ? 'none' : '0 2px 8px rgba(124,58,237,0.35)',
+                transition: 'all 0.15s',
               }}
             >
-              {sending ? 'Sending…' : 'Send'}
+              {sending ? (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" style={{ animation: 'spin 1s linear infinite' }}>
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                  </svg>
+                  Sending…
+                </>
+              ) : (
+                <>
+                  Send
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                  </svg>
+                </>
+              )}
             </button>
           </div>
         </div>
