@@ -3,6 +3,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { AccountProvider, useAccount } from './contexts/AccountContext';
 import AppShell from './components/layout/AppShell';
+import LoginPage from './pages/LoginPage';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/ui/Toast';
 
@@ -73,6 +74,8 @@ function LoadingScreen() {
 }
 
 function AuthGate({ children }: { children: ReactNode }) {
+  const user = useAuthStore((s) => s.user);
+  if (!user) return <LoginPage />;
   return <>{children}</>;
 }
 
