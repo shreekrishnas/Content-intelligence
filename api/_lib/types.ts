@@ -5,9 +5,14 @@ export interface DomainProfile {
   products?: string;
   services?: string;
   core_topics?: string;
+  // Comma/newline-separated list of 4-6 content pillars within the niche.
+  // Used for per-pillar relevance scoring and bridge targeting. Takes
+  // precedence over core_topics when both are present.
+  niche_pillars?: string;
   target_keywords?: string;
   target_locations?: string;
   target_audience?: string;
+  audience_sophistication?: 'beginner' | 'intermediate' | 'expert';
   business_goals?: string;
   content_categories?: string;
   brand_tone?: string;
@@ -17,6 +22,11 @@ export interface DomainProfile {
   max_recommendations?: number;
   risk_tolerance?: string;
   enabled?: boolean;
+  // Regulatory body or compliance domain (e.g. "SEBI", "FDA", "FCA", null).
+  // When set, all output topics get a compliance_flag if they touch regulated areas.
+  compliance_domain?: string;
+  // News velocity of the niche — calibrates scan window and query aggression.
+  niche_velocity?: 'fast' | 'medium' | 'slow';
   // Comma/newline-separated list of preferred news domains for reactive
   // queries (e.g. "moneycontrol.com, livemint.com, ndtv.com"). When set,
   // Tavily searches for this account only surface results from these
@@ -33,6 +43,8 @@ export interface TrendSignal {
   published_at?: string;
   content?: string;
   score?: number;
+  // Raw mention count from source for velocity proxy
+  mention_count?: number;
   // 'reactive' = this-week news, good for newsjacking. 'strategic' = a
   // durable multi-month shift (regulatory phase-in, market report, seasonal
   // category) worth planning a content pillar around. Set at collection

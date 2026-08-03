@@ -217,9 +217,11 @@ export interface TrendProfile {
   products?: string;
   services?: string;
   core_topics?: string;
+  niche_pillars?: string;
   target_keywords?: string;
   target_locations?: string;
   target_audience?: string;
+  audience_sophistication?: 'beginner' | 'intermediate' | 'expert';
   business_goals?: string;
   content_categories?: string;
   brand_tone?: string;
@@ -228,6 +230,8 @@ export interface TrendProfile {
   allowed_formats?: string;
   max_recommendations?: number;
   risk_tolerance?: string;
+  compliance_domain?: string;
+  niche_velocity?: 'fast' | 'medium' | 'slow';
   preferred_news_domains?: string;
 }
 
@@ -262,6 +266,12 @@ export interface TrendRecord {
   sensitivity_warning?: string;
   status: "new" | "accepted" | "monitoring" | "rejected" | "actioned";
   created_at: string;
+  // Spec output schema fields
+  data_anchor?: string;
+  niche_pillar?: string;
+  angle_type?: "direct-niche" | "moment-bridge";
+  urgency_score?: number;
+  compliance_flag?: boolean;
 }
 
 export interface AuditLogEntry {

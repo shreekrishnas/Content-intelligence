@@ -38,15 +38,20 @@ function newsDomainsFor(p: DomainProfile): string[] {
 }
 
 // Reactive queries: this week's news, for time-boxed newsjacking content.
+// Prefers niche_pillars (explicit content pillars) over core_topics if both present.
 function buildReactiveQueries(p: DomainProfile): string[] {
   const q: string[] = [];
   const loc = p.target_locations ? ` ${p.target_locations}` : '';
   const splitList = (s?: string) => (s || '').split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
-  splitList(p.core_topics).slice(0, 3).forEach((t) => q.push(`${t}${loc} latest news this week`));
+  // niche_pillars take priority — they're more specific than core_topics
+  const pillars = splitList(p.niche_pillars || p.core_topics);
+  pillars.slice(0, 4).forEach((t) => q.push(`${t}${loc} latest news this week`));
   if (p.industry) q.push(`${p.industry}${loc} news announcement this week`);
   if (p.competitors) splitList(p.competitors).slice(0, 2).forEach((c) => q.push(`${c} news announcement`));
+  // Add compliance-domain signals if set (regulatory body news is authority-tier signal)
+  if (p.compliance_domain) q.push(`${p.compliance_domain} announcement regulation this week`);
   if (!q.length && p.business_name) q.push(`${p.business_name}${loc} news`);
-  return [...new Set(q)].slice(0, 5);
+  return [...new Set(q)].slice(0, 6);
 }
 
 async function runTavilySearch(
@@ -269,7 +274,26 @@ async function handleManual(req: VercelRequest, res: VercelResponse) {
   if (!signals.length) {
     return res.status(200).json({ success: true, topics: [], summary: null, source, note: note || 'No candidate signals were found for this profile. Add more core topics or keywords.', saved: false, stats });
   }
-  const { topics, summary, analysis_date } = await supervise({ domain_profile: profile, signals, account_label: body.account_label });
+  // Dedup: fetch recent topic headlines (last 30 days) so the supervisor
+  // avoids reusing phrasing the account has already seen this month.
+  let recentTopics: string[] = [];
+  if (accountId) {
+    try {
+      const admin = getServiceClient();
+      const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: recent } = await admin
+        .from('trend_records')
+        .select('topic')
+        .eq('account_id', accountId)
+        .gte('created_at', cutoff)
+        .limit(50);
+      recentTopics = (recent || []).map((r: any) => String(r.topic || '')).filter(Boolean);
+    } catch {
+      // Non-fatal — supervisor proceeds without dedup context
+    }
+  }
+
+  const { topics, summary, analysis_date } = await supervise({ domain_profile: profile, signals, account_label: body.account_label, recent_topics: recentTopics });
 
   let saved = false;
   let saveError: string | undefined;
@@ -341,7 +365,10 @@ async function handleCron(req: VercelRequest, res: VercelResponse) {
       const profile: DomainProfile = { ...tp, business_name: tp.business_name || acc.name };
       const { signals, source } = await collect(profile, acc.name, 'live');
       if (!signals.length) { results.push({ account: acc.name, inserted: 0, source }); continue; }
-      const { topics, summary } = await supervise({ domain_profile: profile, signals, account_label: acc.name });
+      const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const { data: recentRecs } = await admin.from('trend_records').select('topic').eq('account_id', acc.id).gte('created_at', cutoff).limit(50);
+      const recentTopics = (recentRecs || []).map((r: any) => String(r.topic || '')).filter(Boolean);
+      const { topics, summary } = await supervise({ domain_profile: profile, signals, account_label: acc.name, recent_topics: recentTopics });
       const counts = { domain: 0, superts: 0, mon: 0, rej: 0 };
       topics.forEach((t: any) => {
         const c = t.classification;

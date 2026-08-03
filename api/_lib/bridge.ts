@@ -73,57 +73,95 @@ ${signals.map((s, i) => `[${i}] ${s.title || s.topic || 'Untitled'}${s.content ?
   }
 }
 
-// Batched bridge layer. For each viral signal, extract underlying theme +
-// emotion, then attempt a creative connection to the brand niche. Drops
-// anything the model marks bridgeable=false or confidence="forced".
-export async function bridgeSignals(signals: TrendSignal[], profile: DomainProfile, accountLabel?: string): Promise<TrendSignal[]> {
-  if (!signals.length) return [];
-
-  const sys = `You are a creative strategist who specializes in trend-jacking for brands. For each viral trend, extract its UNDERLYING theme and try to connect it to the brand's niche. Output ONLY raw JSON.
+// Step A: Validity gate — for each signal, determine YES/NO whether a
+// real (not contrived) connection exists between the trend and any niche
+// pillar. Returns indices of signals that passed, with one-line reasoning.
+// Spec rule: reject vague justifications ("this relates to growth mindset").
+async function gateValidity(signals: TrendSignal[], profile: DomainProfile, accountLabel?: string): Promise<Map<number, string>> {
+  if (!signals.length) return new Map();
+  const pillars = profile.niche_pillars || profile.content_categories || profile.core_topics || 'unknown';
+  const sys = `You are a brand-safety and relevance gatekeeper. Given a list of trending topics and a brand's niche pillars, decide for each trend: does a REAL, non-contrived connection exist between this trend and at least one pillar? Output ONLY raw JSON.
 
 RULES:
-- Never force a connection. If the bridge feels like a stretch that would embarrass the brand, return bridgeable=false.
-- Extract themes/emotions FIRST, then build the bridge angle.
-- The audience should recognize the trend instantly but walk away learning about the brand's space.
-- Prefer "natural_fit" over "creative_stretch". Reject "forced".
-- Bridge angle must be ONE concrete sentence — a hook the brand could actually publish.
-- Do NOT invent facts about the trend. Use only what the signal states.`;
+- YES only if the connection is mechanistic, factual, or behavioral — not metaphorical or inspirational.
+- Reject "this relates to discipline" or "both involve planning" — these are vague and apply to everything.
+- A good YES reason names the specific mechanism: e.g. "IPL viewership data shows same demographic as wealth management clients" or "RBI rate decision directly affects fixed-income returns our audience holds".
+- Be strict: fewer, better bridges beat many weak ones.`;
 
   const user = `BRAND: ${accountLabel || profile.business_name || 'Unknown'}
-INDUSTRY: ${profile.industry || 'unknown'}
+NICHE PILLARS: ${pillars}
 AUDIENCE: ${profile.target_audience || 'unknown'}
-CORE TOPICS: ${profile.core_topics || 'unknown'}
-BRAND TONE: ${profile.brand_tone || 'neutral, professional'}
-PILLARS: ${profile.content_categories || profile.core_topics || 'unknown'}
 
-VIRAL SIGNALS:
-${signals.map((s, i) => `[${i}] ${s.title || s.topic || 'Untitled'}${s.content ? ` — ${String(s.content).slice(0, 250)}` : ''}${s.url ? ` (${s.url})` : ''}`).join('\n')}
+TRENDS TO GATE:
+${signals.map((s, i) => `[${i}] ${s.title || s.topic || 'Untitled'}${s.content ? ` — ${String(s.content).slice(0, 200)}` : ''}`).join('\n')}
 
-For every signal, decide if it bridges to this brand. Return ONLY:
-{"bridges":[{"i":0,"bridgeable":true,"confidence":"natural_fit|creative_stretch|forced","underlying_theme":"one sentence — persistence, underdog, binge behavior, etc.","emotion":"joy|pride|surprise|nostalgia|frustration|hope","bridge_angle":"one-sentence hook connecting the trend to the brand's niche","content_idea":"2-3 sentence concept for the actual content piece"}]}
-
-Skip signals you cannot bridge — set bridgeable=false. Be selective: better to bridge 2 signals well than 5 badly.`;
+For each trend, return yes or no with a one-line reason. Return ONLY:
+{"gates":[{"i":0,"pass":true,"reason":"specific mechanism that connects this trend to a named pillar"}]}`;
 
   try {
-    const { content: raw } = await callLLM(sys, user, { maxTokens: 2000, temperature: 0.5 });
+    const { content: raw } = await callLLM(sys, user, { maxTokens: 1000, temperature: 0.1 });
     const parsed: any = extractJSON(raw);
-    const bridges = (parsed?.bridges || []) as Array<any>;
+    const result = new Map<number, string>();
+    for (const g of (parsed?.gates || [])) {
+      if (typeof g.i !== 'number' || !g.pass) continue;
+      result.set(g.i, String(g.reason || ''));
+    }
+    return result;
+  } catch {
+    // On gate failure, pass everything through to Step B — better than silently dropping all
+    return new Map(signals.map((_, i) => [i, ''] as [number, string]));
+  }
+}
+
+// Step B: Bridge generation — only for signals that passed Step A.
+// Extracts underlying theme + emotion, generates a concrete bridge angle.
+// Spec: must cite a real data point from the trend; no rhetorical questions.
+async function generateBridges(signals: TrendSignal[], gateReasons: Map<number, string>, profile: DomainProfile, accountLabel?: string): Promise<TrendSignal[]> {
+  const candidates = signals.filter((_, i) => gateReasons.has(i));
+  if (!candidates.length) return [];
+
+  const pillars = profile.niche_pillars || profile.content_categories || profile.core_topics || 'unknown';
+  const sys = `You are a creative strategist specialising in trend-jacking for brands. These trends have already passed a validity gate — a real connection exists. Now generate the bridge content. Output ONLY raw JSON.
+
+RULES:
+- Bridge angle must cite a real data point or mechanism from the trend signal (not invented).
+- Must land on ONE specific pillar, not the niche in general.
+- No rhetorical-question headlines ("Are you ready for X?").
+- Bridge angle is ONE concrete sentence — a hook the brand could publish today.
+- confidence must be "natural_fit" — if you'd rate it "creative_stretch" or worse, set bridgeable=false.`;
+
+  const user = `BRAND: ${accountLabel || profile.business_name || 'Unknown'}
+NICHE PILLARS: ${pillars}
+AUDIENCE: ${profile.target_audience || 'unknown'}
+BRAND TONE: ${profile.brand_tone || 'neutral, professional'}
+
+GATED SIGNALS (connection confirmed — generate bridge):
+${candidates.map((s, i) => {
+  const origIdx = signals.indexOf(s);
+  const reason = gateReasons.get(origIdx) || '';
+  return `[${i}] ${s.title || s.topic || 'Untitled'}${s.content ? ` — ${String(s.content).slice(0, 250)}` : ''}\n   Gate reason: ${reason}`;
+}).join('\n')}
+
+Return ONLY:
+{"bridges":[{"i":0,"bridgeable":true,"confidence":"natural_fit","underlying_theme":"one sentence","emotion":"joy|pride|surprise|nostalgia|frustration|hope","bridge_angle":"one-sentence hook citing a real fact from the trend","content_idea":"2-3 sentence concept","data_anchor":"the specific number/name/date from the signal that anchors this"}]}`;
+
+  try {
+    const { content: raw } = await callLLM(sys, user, { maxTokens: 2000, temperature: 0.4 });
+    const parsed: any = extractJSON(raw);
     const bridged: TrendSignal[] = [];
-    for (const b of bridges) {
-      if (typeof b.i !== 'number' || b.i < 0 || b.i >= signals.length) continue;
-      // Only accept "natural_fit" bridges — creative_stretch and forced are
-      // both dropped. The user gets fewer trend-jack cards, but every one
-      // that survives is one the brand can actually publish without cringe.
+    for (const b of (parsed?.bridges || [])) {
+      if (typeof b.i !== 'number' || b.i < 0 || b.i >= candidates.length) continue;
       if (!b.bridgeable || b.confidence !== 'natural_fit') continue;
-      const src = signals[b.i];
+      const src = candidates[b.i];
       bridged.push({
         ...src,
         signal_type: 'viral_bridged',
         underlying_theme: String(b.underlying_theme || '').trim(),
         bridge_angle: String(b.bridge_angle || '').trim(),
-        bridge_confidence: b.confidence === 'natural_fit' ? 'natural_fit' : 'creative_stretch',
+        bridge_confidence: 'natural_fit',
         summary: [
           b.content_idea ? `Content idea: ${b.content_idea}` : '',
+          b.data_anchor ? `Data anchor: ${b.data_anchor}` : '',
           b.underlying_theme ? `Underlying theme: ${b.underlying_theme}` : '',
           b.emotion ? `Emotion: ${b.emotion}` : '',
           src.summary || src.content ? `Trend context: ${String(src.summary || src.content).slice(0, 200)}` : '',
@@ -134,4 +172,16 @@ Skip signals you cannot bridge — set bridgeable=false. Be selective: better to
   } catch {
     return [];
   }
+}
+
+// Batched bridge layer — now implements explicit Step A → Step B pipeline
+// per the spec: validity gate first (real connection? yes/no + reason),
+// bridge generation only for those that pass. No forced connections.
+export async function bridgeSignals(signals: TrendSignal[], profile: DomainProfile, accountLabel?: string): Promise<TrendSignal[]> {
+  if (!signals.length) return [];
+  // Step A: gate validity
+  const gateReasons = await gateValidity(signals, profile, accountLabel);
+  if (!gateReasons.size) return [];
+  // Step B: generate bridges for survivors only
+  return generateBridges(signals, gateReasons, profile, accountLabel);
 }

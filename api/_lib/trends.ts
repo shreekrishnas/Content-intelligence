@@ -14,6 +14,23 @@ YOUR JOB:
 - Assign priority, trend_stage, estimated_lifespan, time_horizon (always "reactive"), and confidence_score.
 - Always tag time_horizon = "reactive" — every surviving topic is a specific, dated thing happening now/this week.
 
+DATA ANCHOR RULE (non-negotiable): every topic output MUST include a data_anchor — the single concrete fact (a number, name, date, announcement, or verified event) the content piece is built on. If you cannot identify one concrete fact from the signals, do NOT emit a topic for that cluster. Generic output without a data anchor is worse than no output.
+
+NICHE PILLAR MAPPING: for each topic, identify which niche_pillar from the profile it best maps to. If no pillar fits, it's a reject unless it qualifies as supertrend_exception (broad cultural relevance).
+
+ANGLE TYPE: classify each topic as:
+- "direct-niche": the trend IS about the brand's niche — publish as-is
+- "moment-bridge": an outside trend connected to the niche via a creative bridge — requires bridge_angle to be non-empty
+
+URGENCY SCORE (1-10): based on signal recency and window proximity:
+- 9-10: breaking/today, window closing imminently
+- 7-8: 1-3 days old, strong momentum
+- 5-6: 4-7 days old, still relevant
+- 3-4: 7-10 days old, fading
+- 1-2: stale or no clear date
+
+COMPLIANCE FLAG: if a compliance_domain is specified in the profile AND the topic touches anything regulated by that body, set compliance_flag=true. This means the topic needs review before publishing.
+
 MANDATORY MINIMUM OUTPUT: you MUST return at least one topic if the input contains any real news signals. If nothing meets the domain_trend bar, promote the top 1-2 candidates to "monitor" instead. Returning an empty topics array when signals were provided is a failure — the user needs SOMETHING to react to.
 
 CLASSIFICATION RULES (soft guidelines — use judgment, not rigid arithmetic):
@@ -33,10 +50,15 @@ OUTPUT RULE: only include domain_trend / supertrend_exception / monitor items in
 GUARDRAILS: never invent trend data. Never force a brand connection. If a topic touches politics, health, finance, law, tragedy, or controversy, raise its risk and set needs_human_review = true. Never exceed max_recommendations for domain_trend + supertrend combined.`;
 
 export function profileBlock(p: DomainProfile = {}): string {
+  const pillars = p.niche_pillars || p.core_topics;
   const rows: Array<[string, unknown]> = [
-    ['Business', p.business_name], ['Industry', p.industry], ['Core topics', p.core_topics],
+    ['Business', p.business_name], ['Industry', p.industry],
+    ['Niche pillars (use for pillar mapping)', pillars],
     ['Target keywords', p.target_keywords], ['Locations', p.target_locations],
-    ['Audience', p.target_audience], ['Brand tone', p.brand_tone],
+    ['Audience', p.target_audience],
+    ['Audience sophistication', p.audience_sophistication],
+    ['Brand tone', p.brand_tone],
+    ['Compliance domain (flag regulated topics)', p.compliance_domain],
     ['Restricted topics', p.restricted_topics], ['Competitors', p.competitors],
     ['Allowed formats', p.allowed_formats], ['Risk tolerance', p.risk_tolerance],
   ];
@@ -61,7 +83,7 @@ export function signalsBlock(signals: TrendSignal[] = []): string {
   }).join('\n');
 }
 
-export async function supervise(body: { domain_profile?: DomainProfile; signals?: TrendSignal[]; account_label?: string }) {
+export async function supervise(body: { domain_profile?: DomainProfile; signals?: TrendSignal[]; account_label?: string; recent_topics?: string[] }) {
   // Cap max recommendations at 3 hard — quality feed, not volume.
   const max = Math.min(body.domain_profile?.max_recommendations ?? 3, 3);
 
@@ -75,12 +97,16 @@ export async function supervise(body: { domain_profile?: DomainProfile; signals?
     ? `\nSOURCE NOTE: Some signals are AI-generated hypotheses (marked source: ai-suggested). Score these more conservatively than verified live signals.`
     : '';
 
+  const recentBlock = body.recent_topics?.length
+    ? `\nRECENT TOPICS (last 30 days — do NOT reuse these phrasings or the same underlying story):\n${body.recent_topics.slice(0, 20).map((t) => `- ${t}`).join('\n')}\n`
+    : '';
+
   const prompt = `TODAY: ${new Date().toISOString().slice(0, 10)}
 ACCOUNT: ${body.account_label || body.domain_profile?.business_name || 'General'}
 
 DOMAIN PROFILE:
 ${profileBlock(body.domain_profile)}
-${sourceNote}
+${sourceNote}${recentBlock}
 RAW TREND SIGNALS (cluster duplicates — many overlap, be aggressive about merging):
 ${signalsBlock(signals)}
 
@@ -95,7 +121,7 @@ TASK: Supervise strictly. Deduplicate aggressively — collapse near-duplicate s
 TREND-JACKED SIGNALS: signals tagged [type: viral_bridged] came from broad viral culture and were pre-connected to this brand by the bridge layer. For those, PRESERVE the bridge_angle, underlying_theme, and signal_type=viral_bridged fields on the output topic — they are the whole point of the trend-jack. Still enforce specificity (a named event/date/number must anchor the trend) and safety. Use suggested_connection for the bridge angle when you accept one.
 
 Return ONLY this JSON (no extra fields, no markdown):
-{"analysis_date":"YYYY-MM-DD","summary":{"total_topics_reviewed":0,"domain_trends_sent":0,"supertrends_sent":0,"topics_monitored":0,"topics_rejected":0},"topics":[{"topic":"","summary":"","classification":"domain_trend|supertrend_exception|monitor","time_horizon":"reactive|strategic","signal_type":"niche|viral_bridged","bridge_angle":"","underlying_theme":"","bridge_confidence":"natural_fit|creative_stretch|","domain_relevance_score":0,"trend_impact_score":0,"adaptability_score":0,"risk_score":0,"confidence_score":0,"priority":"high|medium|low","trend_stage":"emerging|growing|peak|declining","estimated_lifespan":"","recommended_route":"","recommended_formats":[],"suggested_connection":"","content_angle":"One specific content piece this brand should make","related_keywords":[],"needs_human_review":false,"reason":""}]}`;
+{"analysis_date":"YYYY-MM-DD","summary":{"total_topics_reviewed":0,"domain_trends_sent":0,"supertrends_sent":0,"topics_monitored":0,"topics_rejected":0},"topics":[{"topic":"","summary":"","classification":"domain_trend|supertrend_exception|monitor","time_horizon":"reactive|strategic","signal_type":"niche|viral_bridged","angle_type":"direct-niche|moment-bridge","niche_pillar":"which pillar from profile this maps to","data_anchor":"the ONE concrete fact (number/name/date/event) the piece is built on — REQUIRED","urgency_score":8,"compliance_flag":false,"bridge_angle":"","underlying_theme":"","bridge_confidence":"natural_fit|creative_stretch|","domain_relevance_score":0,"trend_impact_score":0,"adaptability_score":0,"risk_score":0,"confidence_score":0,"priority":"high|medium|low","trend_stage":"emerging|growing|peak|declining","estimated_lifespan":"","recommended_route":"","recommended_formats":[],"suggested_connection":"","content_angle":"One specific content piece this brand should make","related_keywords":[],"needs_human_review":false,"reason":""}]}`;
   const { content: raw } = await callLLM(SUPERVISOR_SYSTEM_PROMPT, prompt, { maxTokens: 3000, temperature: 0.2 });
   const parsed: any = extractJSON(raw);
   const rawTopics = Array.isArray(parsed) ? parsed : (parsed.topics || []);
@@ -195,11 +221,18 @@ export function topicToRecord(t: any): Record<string, unknown> {
   const status = classification === 'domain_trend' || classification === 'supertrend_exception'
     ? 'accepted' : classification === 'reject' ? 'rejected' : 'monitoring';
   const num = (v: unknown) => Math.max(0, Math.min(100, Math.round(Number(v) || 0)));
+  const urgency = Math.max(1, Math.min(10, Math.round(Number(t.urgency_score) || 5)));
   return {
     topic: String(t.topic || 'Untitled'),
     summary: String(t.summary || ''),
     classification,
     time_horizon: t.time_horizon === 'strategic' ? 'strategic' : 'reactive',
+    // Spec output schema fields
+    data_anchor: String(t.data_anchor || ''),
+    niche_pillar: String(t.niche_pillar || ''),
+    angle_type: t.angle_type === 'moment-bridge' ? 'moment-bridge' : 'direct-niche',
+    urgency_score: urgency,
+    compliance_flag: !!t.compliance_flag,
     domain_relevance_score: num(t.domain_relevance_score),
     trend_impact_score: num(t.trend_impact_score),
     adaptability_score: num(t.adaptability_score),

@@ -365,10 +365,45 @@ export default function TrendsPage() {
           <div className="grid grid-2" style={{ gap: '0.7rem' }}>
             <Field label="Business Name" v={profile.business_name} on={(v) => setField('business_name', v)} />
             <Field label="Industry" v={profile.industry} on={(v) => setField('industry', v)} />
-            <Field label="Core Topics (comma/newline)" v={profile.core_topics} on={(v) => setField('core_topics', v)} />
+            <div className="field" style={{ gridColumn: '1 / -1' }}>
+              <label className="field-label">Niche Pillars <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(4–6 core content pillars, comma/newline — used for per-pillar scoring)</span></label>
+              <input
+                className="glass-input"
+                value={profile.niche_pillars ?? ''}
+                onChange={(e) => setField('niche_pillars', e.target.value)}
+                placeholder="e.g. portfolio allocation, tax planning, retirement, insurance, market timing"
+              />
+            </div>
+            <Field label="Core Topics (fallback if pillars empty)" v={profile.core_topics} on={(v) => setField('core_topics', v)} />
             <Field label="Target Keywords" v={profile.target_keywords} on={(v) => setField('target_keywords', v)} />
             <Field label="Target Locations" v={profile.target_locations} on={(v) => setField('target_locations', v)} />
             <Field label="Target Audience" v={profile.target_audience} on={(v) => setField('target_audience', v)} />
+            <div className="field">
+              <label className="field-label">Audience Sophistication</label>
+              <select className="glass-input" value={profile.audience_sophistication ?? ''} onChange={(e) => setField('audience_sophistication', e.target.value as any)}>
+                <option value="">— select —</option>
+                <option value="beginner">Beginner</option>
+                <option value="intermediate">Intermediate</option>
+                <option value="expert">Expert</option>
+              </select>
+            </div>
+            <div className="field">
+              <label className="field-label">Compliance Domain <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(regulatory body, or leave blank)</span></label>
+              <input
+                className="glass-input"
+                value={profile.compliance_domain ?? ''}
+                onChange={(e) => setField('compliance_domain', e.target.value)}
+                placeholder="e.g. SEBI, FDA, FCA, RBI — or leave blank"
+              />
+            </div>
+            <div className="field">
+              <label className="field-label">Niche Velocity <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(how fast this niche moves)</span></label>
+              <select className="glass-input" value={profile.niche_velocity ?? 'medium'} onChange={(e) => setField('niche_velocity', e.target.value as any)}>
+                <option value="fast">Fast (finance, tech, crypto)</option>
+                <option value="medium">Medium (most B2B/B2C)</option>
+                <option value="slow">Slow (home goods, lifestyle)</option>
+              </select>
+            </div>
             <Field label="Competitors" v={profile.competitors} on={(v) => setField('competitors', v)} />
             <Field label="Restricted Topics" v={profile.restricted_topics} on={(v) => setField('restricted_topics', v)} />
             <Field label="Brand Tone" v={profile.brand_tone} on={(v) => setField('brand_tone', v)} />
@@ -486,17 +521,28 @@ export default function TrendsPage() {
             const actionable = t.classification === 'domain_trend' || t.classification === 'supertrend_exception';
             const isBridged = t.signal_type === 'viral_bridged';
             const borderColor = isBridged ? '#D946EF' : cm.color;
+            const urgency = t.urgency_score ?? 0;
+            const urgencyColor = urgency >= 8 ? '#DC2626' : urgency >= 6 ? '#F59E0B' : urgency >= 4 ? '#0EA5E9' : '#9CA3AF';
             return (
               <div key={t.id} className="glass-card-static" style={{ padding: 16, borderLeft: `3px solid ${borderColor}`, opacity: t.status === 'actioned' ? 0.7 : 1 }}>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8, alignItems: 'center' }}>
                   {isBridged && (
                     <span className="badge" style={{ fontSize: '0.6rem', background: '#D946EF18', color: '#D946EF', fontWeight: 700 }}>
-                      🌉 Trend-jacked{t.bridge_confidence === 'creative_stretch' ? ' · stretch' : ''}
+                      🌉 Trend-jacked
                     </span>
+                  )}
+                  {t.angle_type === 'direct-niche' && !isBridged && (
+                    <span className="badge" style={{ fontSize: '0.6rem', background: '#10B98118', color: '#10B981' }}>🎯 Direct niche</span>
+                  )}
+                  {t.angle_type === 'moment-bridge' && !isBridged && (
+                    <span className="badge" style={{ fontSize: '0.6rem', background: '#8B5CF618', color: '#8B5CF6' }}>🌉 Moment bridge</span>
                   )}
                   <span className="badge" style={{ fontSize: '0.6rem', background: cm.color + '18', color: cm.color }}>{cm.label}</span>
                   <span className="badge" style={{ fontSize: '0.6rem', background: pc + '18', color: pc }}>{t.priority}</span>
                   <span className="badge" style={{ fontSize: '0.6rem' }}>{t.trend_stage}</span>
+                  {t.compliance_flag && (
+                    <span className="badge" style={{ fontSize: '0.6rem', background: '#EF444418', color: '#EF4444', fontWeight: 700 }}>⚖️ Compliance</span>
+                  )}
                   {t.status === 'actioned' && <span className="badge" style={{ fontSize: '0.6rem', background: '#10B98118', color: '#10B981' }}>Actioned</span>}
                   {t.needs_human_review && <span className="badge" style={{ fontSize: '0.6rem', background: '#F59E0B18', color: '#F59E0B' }}>Review</span>}
                   <span style={{ marginLeft: 'auto', fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600 }}>
@@ -504,7 +550,23 @@ export default function TrendsPage() {
                   </span>
                 </div>
 
+                {/* Urgency bar */}
+                {urgency > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                    <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', flexShrink: 0 }}>Urgency</span>
+                    <div style={{ flex: 1, height: 4, borderRadius: 2, background: 'var(--border)', overflow: 'hidden' }}>
+                      <div style={{ width: `${urgency * 10}%`, height: '100%', background: urgencyColor, transition: 'width .3s' }} />
+                    </div>
+                    <span style={{ fontSize: '0.6rem', color: urgencyColor, fontWeight: 700, flexShrink: 0 }}>{urgency}/10</span>
+                  </div>
+                )}
+
                 <div style={{ fontWeight: 700, fontSize: '0.92rem', marginBottom: 4, lineHeight: 1.3 }}>{t.topic}</div>
+                {t.niche_pillar && (
+                  <div style={{ fontSize: '0.66rem', color: 'var(--accent-primary)', fontWeight: 600, marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Pillar: {t.niche_pillar}
+                  </div>
+                )}
                 {t.summary && <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: 8 }}>{t.summary}</div>}
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
@@ -513,6 +575,13 @@ export default function TrendsPage() {
                   {t.classification === 'supertrend_exception' && <ScorePill label="Adp" value={t.adaptability_score} />}
                   <ScorePill label="Risk" value={t.risk_score} invert />
                 </div>
+
+                {(t as any).data_anchor && (
+                  <div style={{ fontSize: '0.78rem', marginBottom: 6, padding: '8px 10px', background: 'var(--surface-elevated, var(--surface-card))', borderRadius: 8, borderLeft: '2px solid var(--accent-primary)' }}>
+                    <strong style={{ fontSize: '0.62rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent-primary)' }}>Data anchor</strong>
+                    <div style={{ marginTop: 3 }}>{(t as any).data_anchor}</div>
+                  </div>
+                )}
 
                 {isBridged && (t.bridge_angle || t.underlying_theme) && (
                   <div style={{ fontSize: '0.78rem', marginBottom: 6, padding: '8px 10px', background: '#D946EF10', borderRadius: 8, borderLeft: '2px solid #D946EF' }}>
