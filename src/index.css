@@ -11,8 +11,8 @@
 
 :root {
   --text-primary: #1E1B4B;
-  --text-secondary: #475569;
-  --text-muted: #9CA3AF;
+  --text-secondary: #2D3748;
+  --text-muted: #64748B;
   --text-on-accent: #FFFFFF;
 
   --surface-base: #FFFFFF;
@@ -45,7 +45,7 @@
 
 [data-theme="dark"] {
   --text-primary: #F1F5F9;
-  --text-secondary: #CBD5E1;
+  --text-secondary: #E2E8F0;
   --text-muted: #94A3B8;
   --text-on-accent: #FFFFFF;
 
@@ -216,8 +216,7 @@ h1, h2, h3, p, div, span, label { color: inherit; }
 
 .topbar-sub {
   font-size: 0.78rem;
-  color: var(--text-primary);
-  opacity: 0.65;
+  color: var(--text-muted);
   font-weight: 500;
   margin-top: 1px;
 }
@@ -295,8 +294,7 @@ h1, h2, h3, p, div, span, label { color: inherit; }
 
 .page-desc {
   font-size: 0.85rem;
-  color: var(--text-primary);
-  opacity: 0.72;
+  color: var(--text-secondary);
   margin: 0 0 1.5rem 0;
   max-width: 760px;
   line-height: 1.5;
