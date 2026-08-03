@@ -216,7 +216,8 @@ h1, h2, h3, p, div, span, label { color: inherit; }
 
 .topbar-sub {
   font-size: 0.78rem;
-  color: var(--text-muted);
+  color: var(--text-primary);
+  opacity: 0.65;
   font-weight: 500;
   margin-top: 1px;
 }
@@ -294,7 +295,8 @@ h1, h2, h3, p, div, span, label { color: inherit; }
 
 .page-desc {
   font-size: 0.85rem;
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  opacity: 0.72;
   margin: 0 0 1.5rem 0;
   max-width: 760px;
   line-height: 1.5;
