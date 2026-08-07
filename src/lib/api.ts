@@ -7,6 +7,7 @@ import type {
   Analysis,
   Opportunity,
   CalendarItem,
+  CalendarPost,
   Integration,
   SourceType,
   TrendProfile,
@@ -1133,6 +1134,73 @@ export const api = {
         .from('accounts')
         .update({ profile })
         .eq('id', accountId);
+      if (error) return err(pgError(error));
+      return ok(undefined as void);
+    },
+  },
+
+  // --------------------------------------------------------------------------
+  // AI Content Calendar
+  // --------------------------------------------------------------------------
+  aiCalendar: {
+    async generate(params: {
+      accountId: string;
+      month: string;
+      context?: string;
+      postCount?: number;
+    }): Promise<Result<{ posts: CalendarPost[]; meta: { month: string; level: number; kb_chunks_used: number; total_posts: number } }>> {
+      try {
+        const { ok: isOk, data } = await fetchAPI('/api/calendar-generate', {
+          account_id: params.accountId,
+          month: params.month,
+          context: params.context || '',
+          post_count: params.postCount ?? 20,
+        });
+        if (!isOk || data.error) return err(data.error || 'Calendar generation failed');
+        return ok(data);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : 'Network error during calendar generation');
+      }
+    },
+
+    async list(accountId: string, month: string): Promise<Result<CalendarPost[]>> {
+      const { data, error } = await supabase
+        .from('calendar_posts')
+        .select('*')
+        .eq('account_id', accountId)
+        .eq('month', month)
+        .order('post_date', { ascending: true });
+      if (error) return err(pgError(error));
+      return ok(data as CalendarPost[]);
+    },
+
+    async listMonths(accountId: string): Promise<Result<string[]>> {
+      const { data, error } = await supabase
+        .from('calendar_posts')
+        .select('month')
+        .eq('account_id', accountId)
+        .order('month', { ascending: false });
+      if (error) return err(pgError(error));
+      const months = [...new Set((data || []).map((r: any) => r.month as string))];
+      return ok(months);
+    },
+
+    async update(accountId: string, id: string, patch: Partial<Pick<CalendarPost, 'title' | 'hook' | 'body_points' | 'cta' | 'hashtags' | 'pillar' | 'post_type' | 'status'>>): Promise<Result<void>> {
+      const { error } = await supabase
+        .from('calendar_posts')
+        .update(patch)
+        .eq('id', id)
+        .eq('account_id', accountId);
+      if (error) return err(pgError(error));
+      return ok(undefined as void);
+    },
+
+    async deleteMonth(accountId: string, month: string): Promise<Result<void>> {
+      const { error } = await supabase
+        .from('calendar_posts')
+        .delete()
+        .eq('account_id', accountId)
+        .eq('month', month);
       if (error) return err(pgError(error));
       return ok(undefined as void);
     },

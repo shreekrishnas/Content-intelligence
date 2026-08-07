@@ -274,6 +274,24 @@ export interface TrendRecord {
   compliance_flag?: boolean;
 }
 
+export interface CalendarPost {
+  id: string;
+  account_id: string;
+  month: string;
+  generation: number;
+  post_date: string;
+  pillar: string;
+  post_type: 'Carousel' | 'Static Image' | 'Reel' | 'Poll';
+  title: string;
+  hook: string | null;
+  body_points: string[];
+  cta: string | null;
+  hashtags: string[];
+  kb_chunks_used: number;
+  status: 'draft' | 'approved';
+  created_at: string;
+}
+
 export interface AuditLogEntry {
   id: string;
   account_id: string;

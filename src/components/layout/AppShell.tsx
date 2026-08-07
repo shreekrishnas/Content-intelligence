@@ -16,6 +16,7 @@ const KnowledgeBasePage = lazy(() => import('@/pages/KnowledgeBasePage'));
 const IdeasLabPage = lazy(() => import('@/pages/IdeasLabPage'));
 const TrendsPage = lazy(() => import('@/pages/TrendsPage'));
 const CalendarPage = lazy(() => import('@/pages/CalendarPage'));
+const AICalendarPage = lazy(() => import('@/pages/AICalendarPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const AdminPage = lazy(() => import('@/pages/AdminPage'));
 
@@ -28,6 +29,7 @@ const pages: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
   ideas: IdeasLabPage,
   trends: TrendsPage,
   calendar: CalendarPage,
+  'ai-calendar': AICalendarPage,
   settings: SettingsPage,
   admin: AdminPage,
 };

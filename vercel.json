@@ -14,7 +14,8 @@
     "api/auto-profile.ts": { "maxDuration": 120 },
     "api/kb-ask.ts": { "maxDuration": 60 },
     "api/feedback.ts": { "maxDuration": 15 },
-    "api/feedback-list.ts": { "maxDuration": 15 }
+    "api/feedback-list.ts": { "maxDuration": 15 },
+    "api/calendar-generate.ts": { "maxDuration": 300 }
   },
   "crons": [],
   "rewrites": [
