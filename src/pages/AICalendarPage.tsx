@@ -216,7 +216,7 @@ export default function AICalendarPage() {
       <p className="eyebrow">Content</p>
       <h1 className="page-title">AI Content Calendar</h1>
       <p className="page-desc">
-        Generate a full month of social media posts grounded in your knowledge base. Click any cell to edit.
+        Generate Right Horizons' full-month LinkedIn &amp; Instagram calendar, grounded in your knowledge base. Posts follow the brand content DNA: Retirement Planning · NRI Wealth · ESOPs · Family Office.
       </p>
 
       {/* Controls */}
@@ -320,7 +320,7 @@ export default function AICalendarPage() {
       {posts.length === 0 && !generating && (
         <div className="empty-state">
           <p>
-            No calendar generated for {formatMonth(month)} yet. Click <strong>Generate Calendar</strong> to create posts grounded in your knowledge base.
+            No Right Horizons calendar for {formatMonth(month)} yet. Click <strong>Generate Calendar</strong> to create posts across all four brand pillars, grounded in your knowledge base.
           </p>
         </div>
       )}
